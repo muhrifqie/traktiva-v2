@@ -3,16 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Bookmark, Clapperboard, Copy, Download, Film, Frame, FolderOpen, Loader2, Music, Pause, Play, Plus, Redo2, Scissors, Sparkles, Sticker, Trash2, Type, Undo2, Upload, Volume2, VolumeX, Wand2,
+  AudioLines, Bot, Maximize2, Minimize2, Mic, Palette, Send, Bookmark, Clapperboard, Copy, Download, Film, Frame, FolderOpen, Loader2, Music, Pause, Play, Plus, Redo2, Scissors, Sparkles, Sticker, Trash2, Type, Undo2, Upload, Volume2, VolumeX, Wand2,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { VideoProject } from "@/lib/db/schema";
 import {
-  ACCENTS, applyTemplate, beatTimes, RESEARCH_TEMPLATES, autoCaptions, blitCaption, CAPTION_ANIMS, CAPTION_PRESETS, clamp, drawCaption, fxAt, layersOf, normalizeEdit, OVERLAY_KINDS, round2,
+  ACCENTS, applyTemplate, beatTimes, CAPTION_FONTS, RESEARCH_TEMPLATES, TEXT_COLORS, autoCaptions, blitCaption, CAPTION_ANIMS, CAPTION_PRESETS, clamp, drawCaption, fxAt, layersOf, normalizeEdit, OVERLAY_KINDS, round2,
   SAFE_PRESETS, styleOf, TRANSITIONS, uid,
   type Box, type CaptionAnim, type CaptionPos, type CaptionStyle, type EditCaption, type EditFx, type EditOverlay, type EditTemplate, type Layer,
   type OverlayKind, type ProjectEdit, type SafeArea,
 } from "@/lib/edit";
+import { fontPreview, loadCaptionFonts } from "@/lib/caption-fonts";
 import { mediaUrl } from "@/lib/media-url";
 import { voiceLine } from "@/lib/voice";
 import {
@@ -31,6 +32,14 @@ const secondary = `${btn} border bg-background hover:bg-accent`;
 const icon = "grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40";
 const field = "w-full rounded-md border bg-background px-2 py-1 text-xs outline-none focus:border-ring disabled:opacity-60";
 const LANE = 34;
+const INSPECTOR_TABS = [
+  ["teks", "Teks", Type, "Teks & subtitle"],
+  ["stiker", "Stiker", Sticker, "Stiker: judul, harga, CTA, info"],
+  ["efek", "Efek", Wand2, "Efek, transisi & format laris"],
+  ["audio", "Audio", AudioLines, "Audio: suara, musik, SFX"],
+  ["ai", "AI", Bot, "AI Director & asisten"],
+  ["posting", "Posting", Send, "Siap posting"],
+] as const;
 const HEAD = 92;
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
@@ -153,6 +162,8 @@ export function TimelineEditor({ p }: { p: Project }) {
   const [hits, setHits] = useState<Hit[]>([]); // what is on screen now (drag targets)
   const [guide, setGuide] = useState(false); // centre line while dragging
   const [showSafe, setShowSafe] = useState(true);
+  const [focus, setFocus] = useState(false); // full-window workspace (CapCut-like)
+  const [fontsKey, setFontsKey] = useState(0); // bumps once the caption fonts are loaded
   // rendered stills, cropped to their box (a full-frame canvas per layer would eat memory with karaoke)
   const stills = useRef(new Map<string, { canvas: HTMLCanvasElement; box: Box }>());
   const layerMemo = useRef<{ e: ProjectEdit | null; layers: Layer[] }>({ e: null, layers: [] });
@@ -169,6 +180,24 @@ export function TimelineEditor({ p }: { p: Project }) {
   const scroller = useRef<HTMLDivElement>(null);
   const [laneWidth, setLaneWidth] = useState(800);
   const gains = useGains();
+
+  // caption fonts must be loaded before the canvas measures text; then redraw every cached still
+  useEffect(() => {
+    let alive = true;
+    void loadCaptionFonts().then(() => {
+      if (!alive) return;
+      stills.current.clear();
+      layerMemo.current = { e: null, layers: [] };
+      setFontsKey((n) => n + 1);
+    });
+    return () => void (alive = false);
+  }, []);
+  useEffect(() => {
+    if (!focus) return;
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setFocus(false);
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [focus]);
 
   // build the base video (first open, or after clips were re-rendered)
   useEffect(() => {
@@ -242,7 +271,7 @@ export function TimelineEditor({ p }: { p: Project }) {
             stills.current.set(l.key, st);
           }
           // paused = show it fully (for editing); playing = with its entrance animation
-          blitCaption(ctx, st.canvas, st.box, cv.height, l.anim, on ? t - l.start : 99, 0, 0);
+          blitCaption(ctx, st.canvas, st.box, cv.height, l.anim, on ? t - l.start : 99, 0, 0, on && !!l.out, l.end - t);
           shown.push({ id: l.id, kind: l.kind, box: st.box });
         }
         setHits((cur) => (cur.length === shown.length && cur.every((h, i) => h.id === shown[i].id && h.box === shown[i].box) ? cur : shown));
@@ -452,6 +481,7 @@ export function TimelineEditor({ p }: { p: Project }) {
     if (!edit) return;
     setBusy("export");
     try {
+      await loadCaptionFonts();
       const W = edit.width, H = edit.height;
       const full = document.createElement("canvas");
       full.width = W;
@@ -464,7 +494,7 @@ export function TimelineEditor({ p }: { p: Project }) {
         crop.width = Math.max(1, box.w);
         crop.height = Math.max(1, box.h);
         crop.getContext("2d")!.drawImage(full, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
-        return { start: round2(l.start), end: round2(l.end), x: box.x, y: box.y, w: box.w, h: box.h, anim: l.anim, png: crop.toDataURL("image/png") };
+        return { start: round2(l.start), end: round2(l.end), x: box.x, y: box.y, w: box.w, h: box.h, anim: l.anim, out: !!l.out, png: crop.toDataURL("image/png") };
       });
       await saveEdit(p.id, patchOf(edit));
       await exportTimeline(p.id, patchOf(edit), overlays);
@@ -538,11 +568,11 @@ export function TimelineEditor({ p }: { p: Project }) {
   const ticks = pps > 60 ? 0.5 : pps > 25 ? 1 : 2;
 
   return (
-    <div className="space-y-3">
+    <div className={focus ? "fixed inset-0 z-[60] space-y-3 overflow-auto bg-background p-3" : "space-y-3"}>
       <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)]">
         {/* preview: height-driven so preview + panel + timeline fit one screen */}
         <div className="mx-auto space-y-1.5">
-          <div className="relative h-[min(50vh,560px)] min-h-72 overflow-hidden rounded-xl border bg-black" style={{ aspectRatio: `${edit.width}/${edit.height}` }}>
+          <div className={`relative ${focus ? "h-[min(62vh,720px)]" : "h-[min(50vh,560px)]"} min-h-72 overflow-hidden rounded-xl border bg-black`} style={{ aspectRatio: `${edit.width}/${edit.height}` }}>
             <video
               ref={video}
               src={mediaUrl(edit.base)}
@@ -593,19 +623,34 @@ export function TimelineEditor({ p }: { p: Project }) {
             <button type="button" className={`${icon} ml-auto ${showSafe ? "bg-primary/10 text-primary" : ""}`} onClick={() => setShowSafe((v) => !v)} title="Safe area: area yang tertutup tombol & teks aplikasi">
               <Frame className="size-3.5" />
             </button>
+            <button type="button" className={`${icon} ${focus ? "bg-primary/10 text-primary" : ""}`} onClick={() => setFocus((v) => !v)} title={focus ? "Keluar mode fokus (Esc)" : "Mode fokus: editor layar penuh"}>
+              {focus ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+            </button>
           </div>
         </div>
 
         {/* inspector */}
         <div className="relative min-h-80">
-        <div className="flex flex-col rounded-xl border bg-card lg:absolute lg:inset-0">
-          <div className="flex items-center gap-0.5 border-b p-1">
-            {([["teks", "Teks", Type], ["stiker", "Stiker", Sticker], ["efek", "Efek", Film], ["audio", "Audio", Volume2], ["ai", "AI", Sparkles], ["posting", "Posting", Upload]] as const).map(([id, label, I]) => (
-              <button key={id} type="button" onClick={() => setTab(id)} className={`flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium ${tab === id ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-                <I className="size-3.5" /> {label}
+        <div className="flex overflow-hidden rounded-xl border bg-card lg:absolute lg:inset-0">
+          {/* icon rail, like CapCut's left toolbar */}
+          <nav className="flex w-[62px] shrink-0 flex-col gap-0.5 border-r bg-muted/30 p-1" aria-label="Panel editor">
+            {INSPECTOR_TABS.map(([id, label, I]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTab(id)}
+                aria-current={tab === id}
+                className={`flex flex-col items-center gap-0.5 rounded-lg py-2 text-[10px] font-medium transition-colors ${tab === id ? "bg-primary/12 text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+              >
+                <I className="size-[18px]" />
+                {label}
               </button>
             ))}
-            <span className={`ml-auto whitespace-nowrap pr-2 text-[11px] ${version > exportedV ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>{version > exportedV ? "● Belum diekspor" : "✓ Diekspor"}</span>
+          </nav>
+          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
+            <span className="text-[13px] font-semibold">{INSPECTOR_TABS.find((x) => x[0] === tab)?.[3]}</span>
+            <span className={`ml-auto whitespace-nowrap text-[11px] ${version > exportedV ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>{version > exportedV ? "● Belum diekspor" : "✓ Diekspor"}</span>
           </div>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
             {tab === "teks" && (
@@ -622,6 +667,7 @@ export function TimelineEditor({ p }: { p: Project }) {
                 onRemove={removeSel}
                 onSplit={splitSel}
                 onRegen={(n) => regenCaptions(n)}
+                fontsKey={fontsKey}
                 count={edit.captions.length}
               />
             )}
@@ -691,6 +737,7 @@ export function TimelineEditor({ p }: { p: Project }) {
             )}
             {tab === "posting" && <PostingPanel p={p} />}
           </div>
+          </div>
         </div>
         </div>
       </div>
@@ -717,12 +764,12 @@ export function TimelineEditor({ p }: { p: Project }) {
           {/* track headers */}
           <div className="shrink-0 border-r text-[11px]" style={{ width: HEAD }}>
             <div className="h-5 border-b" />
-            <TrackHead label="Video" />
-            <TrackHead label="Teks" />
-            <TrackHead label="Stiker" />
-            <TrackHead label="Suara" muted={edit.voiceVolume === 0} onMute={edit.voices.length ? () => set((e) => ({ ...e, voiceVolume: e.voiceVolume ? 0 : 1 })) : undefined} />
-            <TrackHead label="SFX" muted={edit.sfx.length > 0 && edit.sfx.every((x) => x.volume === 0)} onMute={edit.sfx.length ? () => set((e) => ({ ...e, sfx: e.sfx.map((x) => ({ ...x, volume: e.sfx.every((y) => y.volume === 0) ? 0.6 : 0 })) })) : undefined} />
-            <TrackHead label="Musik" muted={!!edit.bgm && edit.bgm.volume === 0} onMute={edit.bgm ? () => set((e) => ({ ...e, bgm: e.bgm && { ...e.bgm, volume: e.bgm.volume ? 0 : 0.2 } })) : undefined} />
+            <TrackHead label="Video" icon={Film} />
+            <TrackHead label="Teks" icon={Type} />
+            <TrackHead label="Stiker" icon={Sticker} />
+            <TrackHead label="Suara" icon={Mic} muted={edit.voiceVolume === 0} onMute={edit.voices.length ? () => set((e) => ({ ...e, voiceVolume: e.voiceVolume ? 0 : 1 })) : undefined} />
+            <TrackHead label="SFX" icon={Sparkles} muted={edit.sfx.length > 0 && edit.sfx.every((x) => x.volume === 0)} onMute={edit.sfx.length ? () => set((e) => ({ ...e, sfx: e.sfx.map((x) => ({ ...x, volume: e.sfx.every((y) => y.volume === 0) ? 0.6 : 0 })) })) : undefined} />
+            <TrackHead label="Musik" icon={Music} muted={!!edit.bgm && edit.bgm.volume === 0} onMute={edit.bgm ? () => set((e) => ({ ...e, bgm: e.bgm && { ...e.bgm, volume: e.bgm.volume ? 0 : 0.2 } })) : undefined} />
           </div>
           {/* lanes */}
           <div ref={scroller} className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden" onPointerDown={() => setSel(null)}>
@@ -750,8 +797,13 @@ export function TimelineEditor({ p }: { p: Project }) {
               {/* video */}
               <Lane>
                 {edit.clips.map((c, i) => (
-                  <div key={i} className="absolute top-1 bottom-1 overflow-hidden rounded-md border border-sky-500/40 bg-sky-500/15 px-2 text-[10px] leading-[24px] text-sky-900 dark:text-sky-100" style={{ left: c.start * pps, width: c.dur * pps - 2 }} onPointerDown={(ev) => (ev.stopPropagation(), seek(c.start))}>
-                    <span className="truncate">{i + 1}. {c.label}</span>
+                  <div
+                    key={i}
+                    className="absolute top-1 bottom-1 overflow-hidden rounded-md border border-sky-500/50 bg-sky-500/15 bg-repeat-x text-[10px] leading-[24px] text-white"
+                    style={{ left: c.start * pps, width: c.dur * pps - 2, backgroundImage: p.scenes[i]?.image ? `url("${mediaUrl(p.scenes[i]!.image!)}")` : undefined, backgroundSize: "auto 100%" }}
+                    onPointerDown={(ev) => (ev.stopPropagation(), seek(c.start))}
+                  >
+                    <span className="block truncate bg-gradient-to-r from-black/70 to-transparent px-2 font-medium">{i + 1}. {c.label}</span>
                   </div>
                 ))}
               </Lane>
@@ -899,9 +951,10 @@ function Lane({ children }: { children: React.ReactNode }) {
   return <div className="relative border-b last:border-b-0" style={{ height: LANE }}>{children}</div>;
 }
 
-function TrackHead({ label, muted, onMute }: { label: string; muted?: boolean; onMute?: () => void }) {
+function TrackHead({ label, icon: I, muted, onMute }: { label: string; icon?: React.ComponentType<{ className?: string }>; muted?: boolean; onMute?: () => void }) {
   return (
-    <div className="flex items-center gap-1 border-b px-2 font-medium last:border-b-0" style={{ height: LANE }}>
+    <div className="flex items-center gap-1.5 border-b px-2 font-medium last:border-b-0" style={{ height: LANE }}>
+      {I && <I className="size-3.5 text-muted-foreground" />}
       <span className="flex-1">{label}</span>
       {onMute && (
         <button type="button" onClick={onMute} className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={muted ? "Bunyikan" : "Bisukan"}>
@@ -965,8 +1018,9 @@ const chip = (on: boolean) =>
   `h-6 rounded-full border px-2.5 text-[11px] ${on ? "border-primary bg-primary/10 font-medium text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`;
 
 function TextPanel({
-  style, onStyle, onPos, onAnim, safe, onSafe, selected, onCaption, onAdd, onRemove, onSplit, onRegen, count,
+  style, onStyle, onPos, onAnim, safe, onSafe, selected, onCaption, onAdd, onRemove, onSplit, onRegen, count, fontsKey = 0,
 }: {
+  fontsKey?: number;
   style: CaptionStyle; onStyle: (s: Partial<CaptionStyle>, record?: boolean) => void; onPos: (p: Partial<CaptionPos>, record?: boolean) => void;
   onAnim: (a: CaptionAnim) => void; safe: SafeArea; onSafe: (s: Partial<SafeArea>, record?: boolean) => void; selected?: EditCaption;
   onCaption: (p: Partial<EditCaption>, record?: boolean) => void; onAdd: () => void; onRemove: () => void; onSplit: () => void; onRegen: (words?: number) => void; count: number;
@@ -1011,34 +1065,70 @@ function TextPanel({
       </div>
 
       {sub === "gaya" && (
-        <div className="space-y-2.5">
-          <div className="grid grid-cols-4 gap-1">
-            {CAPTION_PRESETS.map((x) => (
-              <button key={x.id} type="button" title={x.label} onClick={() => onStyle({ preset: x.id })} className={`rounded-md border p-0.5 ${style.preset === x.id ? "border-primary ring-1 ring-primary" : "hover:bg-accent"}`}>
-                <PresetSwatch style={{ ...style, preset: x.id }} />
-              </button>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-1">
-            <span className="w-14 text-xs text-muted-foreground">Animasi</span>
-            {CAPTION_ANIMS.map((x) => (
-              <button key={x.id} type="button" onClick={() => onAnim(x.id)} className={chip(style.anim === x.id)}>{x.label}</button>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-1">
-            <span className="w-14 text-xs text-muted-foreground">Karaoke</span>
-            <button type="button" className={chip(!style.karaoke)} onClick={() => onStyle({ karaoke: false })}>Mati</button>
-            <button type="button" className={chip(style.karaoke)} onClick={() => onStyle({ karaoke: true })}>Kata menyala</button>
-            {style.karaoke &&
-              ACCENTS.map((c) => (
-                <button key={c} type="button" onClick={() => onStyle({ accent: c })} className={`size-5 rounded-full border-2 ${style.accent === c ? "border-foreground" : "border-transparent"}`} style={{ background: c }} aria-label={`Warna ${c}`} />
+        <div className="space-y-3">
+          <Section title="Template teks" icon={Palette}>
+            <div className="grid grid-cols-5 gap-1">
+              {CAPTION_PRESETS.map((x) => (
+                <button key={x.id} type="button" title={x.label} onClick={() => onStyle({ preset: x.id })} className={`overflow-hidden rounded-md border text-[9px] text-muted-foreground ${style.preset === x.id ? "border-primary ring-1 ring-primary" : "hover:bg-accent"}`}>
+                  <PresetSwatch style={{ ...style, preset: x.id, color: null, box: null }} fontsKey={fontsKey} />
+                  <span className="block py-0.5">{x.label}</span>
+                </button>
               ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-1">
-            <span className="w-14 text-xs text-muted-foreground">Huruf</span>
-            <button type="button" className={chip(!style.upper)} onClick={() => onStyle({ upper: false })}>Aa</button>
-            <button type="button" className={chip(style.upper)} onClick={() => onStyle({ upper: true })}>AA</button>
-          </div>
+            </div>
+          </Section>
+          <Section title="Font" icon={Type}>
+            <div className="grid grid-cols-3 gap-1">
+              {CAPTION_FONTS.map((f) => (
+                <button key={f.id} type="button" onClick={() => onStyle({ font: f.id })} className={`h-8 truncate rounded-md border px-1.5 text-[13px] ${style.font === f.id ? "border-primary bg-primary/10" : "hover:bg-accent"}`} style={{ fontFamily: fontPreview(f.id), fontWeight: f.weight }}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </Section>
+          <Section title="Warna" icon={Palette}>
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="w-12 text-[11px] text-muted-foreground">Teks</span>
+              <button type="button" className={chip(!style.color)} onClick={() => onStyle({ color: null })}>Auto</button>
+              {TEXT_COLORS.map((c) => (
+                <button key={c} type="button" onClick={() => onStyle({ color: c })} className={`size-6 rounded-full border-2 ${style.color === c ? "border-primary" : "border-border"}`} style={{ background: c }} aria-label={`Warna teks ${c}`} />
+              ))}
+            </div>
+            {["kotak", "bubble", "merah"].includes(style.preset) && (
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="w-12 text-[11px] text-muted-foreground">Kotak</span>
+                <button type="button" className={chip(!style.box)} onClick={() => onStyle({ box: null })}>Auto</button>
+                {["#ffffff", "#111111", "#e11d2e", "#7c3aed", "#16a34a", "#ffe03d", "#0ea5e9"].map((c) => (
+                  <button key={c} type="button" onClick={() => onStyle({ box: c })} className={`size-6 rounded-md border-2 ${style.box === c ? "border-primary" : "border-border"}`} style={{ background: c }} aria-label={`Warna kotak ${c}`} />
+                ))}
+              </div>
+            )}
+          </Section>
+          <Section title="Animasi" icon={Sparkles}>
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="w-12 text-[11px] text-muted-foreground">Masuk</span>
+              {CAPTION_ANIMS.map((x) => (
+                <button key={x.id} type="button" onClick={() => onAnim(x.id)} className={chip(style.anim === x.id)}>{x.label}</button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="w-12 text-[11px] text-muted-foreground">Keluar</span>
+              <button type="button" className={chip(!style.out)} onClick={() => onStyle({ out: false })}>Potong</button>
+              <button type="button" className={chip(style.out)} onClick={() => onStyle({ out: true })}>Fade keluar</button>
+            </div>
+          </Section>
+          <Section title="Karaoke & huruf" icon={Mic}>
+            <div className="flex flex-wrap items-center gap-1">
+              <button type="button" className={chip(!style.karaoke)} onClick={() => onStyle({ karaoke: false })}>Karaoke mati</button>
+              <button type="button" className={chip(style.karaoke)} onClick={() => onStyle({ karaoke: true })}>Kata menyala</button>
+              {style.karaoke &&
+                ACCENTS.map((c) => (
+                  <button key={c} type="button" onClick={() => onStyle({ accent: c })} className={`size-5 rounded-full border-2 ${style.accent === c ? "border-foreground" : "border-transparent"}`} style={{ background: c }} aria-label={`Warna ${c}`} />
+                ))}
+              <span className="mx-1 h-4 w-px bg-border" />
+              <button type="button" className={chip(!style.upper)} onClick={() => onStyle({ upper: false })}>Aa</button>
+              <button type="button" className={chip(style.upper)} onClick={() => onStyle({ upper: true })}>AA</button>
+            </div>
+          </Section>
         </div>
       )}
 
@@ -1102,16 +1192,26 @@ function SafeGuides({ safe }: { safe: SafeArea }) {
   );
 }
 
-function PresetSwatch({ style }: { style: CaptionStyle }) {
+function PresetSwatch({ style, fontsKey = 0 }: { style: CaptionStyle; fontsKey?: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
     const ctx = c.getContext("2d")!;
     ctx.clearRect(0, 0, c.width, c.height);
-    drawCaption(ctx, c.width, c.height, "Aa Promo", { ...style, x: 0.5, y: 0.5, size: 0.17 }, { top: 0, bottom: 0, left: 0, right: 0 });
-  }, [style]);
-  return <canvas ref={ref} width={160} height={70} className="h-8 w-full rounded bg-[linear-gradient(135deg,#5b6b7a,#2a3440)]" />;
+    drawCaption(ctx, c.width, c.height, "Promo", { ...style, x: 0.5, y: 0.5, size: 0.2, karaoke: false }, { top: 0, bottom: 0, left: 0, right: 0 });
+  }, [style, fontsKey]);
+  return <canvas ref={ref} width={150} height={80} className="h-9 w-full bg-[linear-gradient(135deg,#5b6b7a,#2a3440)]" />;
+}
+
+/** Titled group inside an inspector panel. */
+function Section({ title, icon: I, children }: { title: string; icon: React.ComponentType<{ className?: string }>; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"><I className="size-3.5" /> {title}</p>
+      {children}
+    </div>
+  );
 }
 
 const AI_CHIPS = [

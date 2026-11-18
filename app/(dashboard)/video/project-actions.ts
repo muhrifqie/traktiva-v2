@@ -11,7 +11,10 @@ import fs from "node:fs/promises";
 import { createProjectFolder, removeMedia, resolveMedia, writeMedia } from "@/lib/media";
 import { aiAdjustEdit, exportEdit, fitClipsToVoice, fullVoiceOver, prepareEdit, writeFullScript } from "@/lib/editor";
 import { addMusic, copyMusicToProject, ensureSfx, listMusic, removeMusic } from "@/lib/audio-library";
-import { clamp, DEFAULT_FX, DEFAULT_SAFE, round2, SFX_DIR, toTemplate, type EditTemplate, type ProjectEdit } from "@/lib/edit";
+import {
+  CAPTION_ANIMS, CAPTION_FONTS, CAPTION_PRESETS, clamp, DEFAULT_FX, DEFAULT_SAFE, round2, SFX_DIR, toTemplate,
+  type CaptionAnim, type CaptionFont, type CaptionPreset, type EditTemplate, type ProjectEdit,
+} from "@/lib/edit";
 import { defaultOptions, draftCaption, presetById, projectName } from "@/lib/presets";
 import { addToLibrary, copyIntoProject, listGenerated, listUploads } from "@/lib/library";
 import { queueImages, queueRender } from "@/lib/projects";
@@ -336,20 +339,25 @@ export async function previewVoiceLine(text: string, voiceId: string, speed = 1)
 // ---- Timeline editor (Hasil) ----
 
 const Num = z.number().finite();
-const Anim = z.enum(["none", "fade", "pop", "naik", "sapu"]);
+const Anim = z.enum(CAPTION_ANIMS.map((a) => a.id) as [CaptionAnim, ...CaptionAnim[]]);
+const Hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const EditInput = z.object({
   clipVolume: Num,
   voiceVolume: Num,
   captions: z.array(z.object({ id: z.string().max(20), start: Num, end: Num, text: z.string().max(200), pos: z.object({ x: Num, y: Num, size: Num }).nullish() })).max(200),
   captionStyle: z.object({
-    preset: z.enum(["tiktok", "kotak", "kuning", "bersih", "minimal"]),
+    preset: z.enum(CAPTION_PRESETS.map((x) => x.id) as [CaptionPreset, ...CaptionPreset[]]),
     x: Num.default(0.5),
     y: Num,
     size: Num,
     upper: z.boolean(),
     anim: Anim.default("pop"),
     karaoke: z.boolean().default(false),
-    accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#ffe03d"),
+    accent: Hex.default("#ffe03d"),
+    font: z.enum(CAPTION_FONTS.map((f) => f.id) as [CaptionFont, ...CaptionFont[]]).default("segoe"),
+    color: Hex.nullish(),
+    box: Hex.nullish(),
+    out: z.boolean().default(false),
   }),
   safe: z.object({ top: Num, bottom: Num, left: Num, right: Num }).optional(),
   overlays: z
@@ -388,6 +396,10 @@ function mergeEdit(p: Awaited<ReturnType<typeof get>>, patch: EditPatch): Projec
       anim: d.captionStyle.anim,
       karaoke: d.captionStyle.karaoke,
       accent: d.captionStyle.accent,
+      font: d.captionStyle.font,
+      color: d.captionStyle.color ?? null,
+      box: d.captionStyle.box ?? null,
+      out: d.captionStyle.out,
     },
     overlays: d.overlays
       ? d.overlays.map((o) => {
@@ -537,7 +549,7 @@ export async function deleteEditTemplate(templateId: string) {
   return list;
 }
 
-const Overlay = z.array(z.object({ start: Num, end: Num, x: Num, y: Num, w: Num.default(0), h: Num.default(0), anim: Anim.optional(), png: z.string().startsWith("data:image/png;base64,").max(3_000_000) })).max(500);
+const Overlay = z.array(z.object({ start: Num, end: Num, x: Num, y: Num, w: Num.default(0), h: Num.default(0), anim: Anim.optional(), out: z.boolean().optional(), png: z.string().startsWith("data:image/png;base64,").max(3_000_000) })).max(500);
 
 export async function exportTimeline(id: number, patch: EditPatch, overlays: z.input<typeof Overlay>) {
   const p = await get(id);

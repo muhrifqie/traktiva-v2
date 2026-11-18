@@ -1,8 +1,9 @@
 // Timeline editor model (Studio → Hasil), shared by the browser editor and the ffmpeg export.
 // Times are seconds on the final video's timeline. Volumes are gains (1 = original, max 2).
 
-export type CaptionPreset = "tiktok" | "kotak" | "kuning" | "bersih" | "minimal";
-export type CaptionAnim = "none" | "fade" | "pop" | "naik" | "sapu";
+export type CaptionPreset = "tiktok" | "kotak" | "kuning" | "bersih" | "minimal" | "neon" | "komik" | "gradasi" | "bubble" | "merah";
+export type CaptionAnim = "none" | "fade" | "pop" | "naik" | "sapu" | "zoom" | "kiri" | "pantul";
+export type CaptionFont = "segoe" | "montserrat" | "poppins" | "anton" | "bebas" | "oswald" | "lilita" | "bangers" | "pacifico" | "marker";
 // x/y: center of the text block as 0-1 of width/height, size: font px / video width
 export type CaptionStyle = {
   preset: CaptionPreset;
@@ -13,6 +14,10 @@ export type CaptionStyle = {
   anim: CaptionAnim;
   karaoke: boolean; // highlight the word being spoken
   accent: string; // karaoke highlight colour (#rrggbb)
+  font: CaptionFont;
+  color?: string | null; // text colour override (#rrggbb)
+  box?: string | null; // box colour override for kotak / bubble / merah
+  out: boolean; // fade out at the end of each caption
 };
 export type CaptionPos = { x: number; y: number; size: number };
 export type EditCaption = { id: string; start: number; end: number; text: string; pos?: CaptionPos | null }; // pos: own position/size
@@ -50,13 +55,18 @@ export type ProjectEdit = {
   exportedAt?: number | null;
 };
 
-export const DEFAULT_CAPTION_STYLE: CaptionStyle = { preset: "tiktok", x: 0.5, y: 0.7, size: 0.062, upper: false, anim: "pop", karaoke: false, accent: "#ffe03d" };
+export const DEFAULT_CAPTION_STYLE: CaptionStyle = { preset: "tiktok", x: 0.5, y: 0.7, size: 0.062, upper: false, anim: "pop", karaoke: false, accent: "#ffe03d", font: "segoe", color: null, box: null, out: false };
 export const CAPTION_PRESETS: { id: CaptionPreset; label: string }[] = [
   { id: "tiktok", label: "TikTok" },
   { id: "kotak", label: "Kotak" },
   { id: "kuning", label: "Kuning" },
   { id: "bersih", label: "Bersih" },
   { id: "minimal", label: "Minimal" },
+  { id: "neon", label: "Neon" },
+  { id: "komik", label: "Komik" },
+  { id: "gradasi", label: "Gradasi" },
+  { id: "bubble", label: "Bubble" },
+  { id: "merah", label: "Berita" },
 ];
 export const CAPTION_ANIMS: { id: CaptionAnim; label: string }[] = [
   { id: "none", label: "Tanpa" },
@@ -64,10 +74,36 @@ export const CAPTION_ANIMS: { id: CaptionAnim; label: string }[] = [
   { id: "fade", label: "Fade" },
   { id: "naik", label: "Naik" },
   { id: "sapu", label: "Sapu" },
+  { id: "zoom", label: "Zoom" },
+  { id: "kiri", label: "Geser" },
+  { id: "pantul", label: "Pantul" },
 ];
+
+/**
+ * Caption fonts. `css` is the CSS font-family the canvas draws with; the editor replaces it with the self-hosted
+ * next/font family (registerCaptionFonts) so the export never depends on fonts installed on the PC.
+ */
+export const CAPTION_FONTS: { id: CaptionFont; label: string; css: string; weight: number }[] = [
+  { id: "segoe", label: "Segoe UI", css: '"Segoe UI", "Helvetica Neue", Arial', weight: 800 },
+  { id: "montserrat", label: "Montserrat", css: "Montserrat", weight: 900 },
+  { id: "poppins", label: "Poppins", css: "Poppins", weight: 800 },
+  { id: "anton", label: "Anton", css: "Anton", weight: 400 },
+  { id: "bebas", label: "Bebas Neue", css: '"Bebas Neue"', weight: 400 },
+  { id: "oswald", label: "Oswald", css: "Oswald", weight: 700 },
+  { id: "lilita", label: "Lilita One", css: '"Lilita One"', weight: 400 },
+  { id: "bangers", label: "Bangers", css: "Bangers", weight: 400 },
+  { id: "pacifico", label: "Pacifico", css: "Pacifico", weight: 400 },
+  { id: "marker", label: "Marker", css: '"Permanent Marker"', weight: 400 },
+];
+const fontCss: Partial<Record<CaptionFont, string>> = {};
+export const registerCaptionFonts = (map: Partial<Record<CaptionFont, string>>) => Object.assign(fontCss, map);
+const fontOf = (id: CaptionFont | undefined) => CAPTION_FONTS.find((f) => f.id === id) ?? CAPTION_FONTS[0];
+export const fontFamily = (id: CaptionFont | undefined) => `${fontCss[fontOf(id).id] ?? fontOf(id).css}, "Segoe UI Emoji", sans-serif`;
+export const TEXT_COLORS = ["#ffffff", "#ffe03d", "#39ff88", "#ff4d8d", "#38bdf8", "#ff7a1a", "#111111"];
 export const ACCENTS = ["#ffe03d", "#39ff88", "#ff4d8d", "#38bdf8", "#ff7a1a"];
 /** Entrance length (seconds) per animation. The ffmpeg export mirrors animState() with the same numbers. */
-export const ANIM_DUR: Record<CaptionAnim, number> = { none: 0, fade: 0.25, pop: 0.3, naik: 0.3, sapu: 0.45 };
+export const ANIM_DUR: Record<CaptionAnim, number> = { none: 0, fade: 0.25, pop: 0.3, naik: 0.3, sapu: 0.45, zoom: 0.3, kiri: 0.35, pantul: 0.6 };
+export const OUT_DUR = 0.2; // exit fade
 
 export const OVERLAY_KINDS: { id: OverlayKind; label: string; text: string; y: number; size: number }[] = [
   { id: "judul", label: "Judul hook", text: "Wajib punya!", y: 0.22, size: 0.085 },
@@ -147,7 +183,6 @@ export function wordTimes(c: { start: number; end: number; text: string }) {
   return out;
 }
 
-const FONT = '"Segoe UI", "Segoe UI Emoji", "Helvetica Neue", Arial, sans-serif';
 
 function wrap(ctx: CanvasRenderingContext2D, words: string[], max: number) {
   const lines: string[][] = [];
@@ -173,8 +208,9 @@ const fit = (c: number, half: number, lo: number, hi: number) => (hi - lo < half
 export function drawCaption(ctx: CanvasRenderingContext2D, W: number, H: number, raw: string, style: CaptionStyle, safe: SafeArea = DEFAULT_SAFE, hl = -1): Box {
   const text = style.upper ? raw.toUpperCase() : raw;
   const px = Math.round(style.size * W);
-  const bold = style.preset === "bersih" ? 600 : style.preset === "minimal" ? 700 : 800;
-  ctx.font = `${bold} ${px}px ${FONT}`;
+  const f = fontOf(style.font);
+  const bold = f.id !== "segoe" ? f.weight : style.preset === "bersih" ? 600 : style.preset === "minimal" ? 700 : 800;
+  ctx.font = `${bold} ${px}px ${fontFamily(style.font)}`;
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   ctx.lineJoin = "round";
@@ -189,6 +225,8 @@ export function drawCaption(ctx: CanvasRenderingContext2D, W: number, H: number,
   const cy = fit(style.y * H, bh / 2, st, sb);
   const top = cy - bh / 2;
   const accent = style.accent || DEFAULT_CAPTION_STYLE.accent;
+  const fill = (fallback: string) => style.color || fallback;
+  const boxFill = style.box || (style.preset === "merah" ? "#e11d2e" : style.preset === "bubble" ? "#7c3aed" : "#ffffff");
   let minX = W, maxX = 0, wi = 0;
   lines.forEach((l, i) => {
     const y = top + lh * (i + 0.5);
@@ -196,11 +234,11 @@ export function drawCaption(ctx: CanvasRenderingContext2D, W: number, H: number,
     const x0 = cx - w / 2;
     minX = Math.min(minX, x0);
     maxX = Math.max(maxX, x0 + w);
-    if (style.preset === "kotak") {
-      const pad = px * 0.28;
-      ctx.fillStyle = "#ffffff";
+    if (style.preset === "kotak" || style.preset === "bubble" || style.preset === "merah") {
+      const pad = px * (style.preset === "bubble" ? 0.4 : 0.28);
+      ctx.fillStyle = boxFill;
       ctx.beginPath();
-      ctx.roundRect(x0 - pad, y - lh / 2, w + pad * 2, lh, px * 0.22);
+      ctx.roundRect(x0 - pad, y - lh / 2, w + pad * 2, lh, style.preset === "bubble" ? lh / 2 : style.preset === "merah" ? px * 0.06 : px * 0.22);
       ctx.fill();
     }
     let x = x0;
@@ -214,8 +252,41 @@ export function drawCaption(ctx: CanvasRenderingContext2D, W: number, H: number,
           ctx.roundRect(x - px * 0.1, y - lh / 2 + px * 0.08, ww + px * 0.2, lh - px * 0.16, px * 0.15);
           ctx.fill();
         }
-        ctx.fillStyle = "#111111";
+        ctx.fillStyle = fill("#111111");
         ctx.fillText(word, x, y + px * 0.03);
+      } else if (style.preset === "bubble" || style.preset === "merah") {
+        ctx.fillStyle = on ? accent : fill("#ffffff");
+        ctx.fillText(word, x, y + px * 0.03);
+      } else if (style.preset === "neon") {
+        // glow: the same word drawn with a wide coloured blur, then a crisp core
+        const glow = style.color || "#22d3ee";
+        ctx.shadowColor = on ? accent : glow;
+        ctx.shadowBlur = px * 0.6;
+        ctx.fillStyle = on ? accent : glow;
+        ctx.fillText(word, x, y);
+        ctx.shadowBlur = px * 0.2;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(word, x, y);
+        ctx.shadowColor = "transparent";
+      } else if (style.preset === "komik") {
+        // thick outline with a hard drop shadow
+        ctx.lineWidth = px * 0.24;
+        ctx.strokeStyle = "#000000";
+        ctx.strokeText(word, x + px * 0.08, y + px * 0.08);
+        ctx.fillStyle = "#000000";
+        ctx.fillText(word, x + px * 0.08, y + px * 0.08);
+        ctx.strokeText(word, x, y);
+        ctx.fillStyle = on ? accent : fill("#ffe03d");
+        ctx.fillText(word, x, y);
+      } else if (style.preset === "gradasi") {
+        const g = ctx.createLinearGradient(x, y - px / 2, x, y + px / 2);
+        g.addColorStop(0, on ? accent : "#ffd23f");
+        g.addColorStop(1, on ? accent : "#ff3d7f");
+        ctx.lineWidth = px * 0.14;
+        ctx.strokeStyle = "#1a0b1f";
+        ctx.strokeText(word, x, y);
+        ctx.fillStyle = g;
+        ctx.fillText(word, x, y);
       } else if (style.preset === "minimal") {
         // small white text, thin outline + soft shadow: what most best-selling affiliate videos use
         ctx.shadowColor = "rgba(0,0,0,.55)";
@@ -224,27 +295,27 @@ export function drawCaption(ctx: CanvasRenderingContext2D, W: number, H: number,
         ctx.strokeStyle = "rgba(0,0,0,.85)";
         ctx.strokeText(word, x, y);
         ctx.shadowColor = "transparent";
-        ctx.fillStyle = on ? accent : "#ffffff";
+        ctx.fillStyle = on ? accent : fill("#ffffff");
         ctx.fillText(word, x, y);
       } else if (style.preset === "bersih") {
         ctx.shadowColor = "rgba(0,0,0,.75)";
         ctx.shadowBlur = px * 0.25;
         ctx.shadowOffsetY = px * 0.05;
-        ctx.fillStyle = on ? accent : "#ffffff";
+        ctx.fillStyle = on ? accent : fill("#ffffff");
         ctx.fillText(word, x, y);
         ctx.shadowColor = "transparent";
       } else {
         ctx.lineWidth = px * 0.16;
         ctx.strokeStyle = "#000000";
         ctx.strokeText(word, x, y);
-        const base = style.preset === "kuning" ? "#ffe03d" : "#ffffff";
+        const base = fill(style.preset === "kuning" ? "#ffe03d" : "#ffffff");
         ctx.fillStyle = on ? (accent.toLowerCase() === base ? "#ffffff" : accent) : base;
         ctx.fillText(word, x, y);
       }
       x += ww + space;
     }
   });
-  const pad = px * 0.45;
+  const pad = px * (style.preset === "neon" ? 0.8 : style.preset === "bubble" ? 0.6 : 0.45);
   const x0 = Math.max(0, Math.floor(minX - pad)), y0 = Math.max(0, Math.floor(top - pad));
   return { x: x0, y: y0, w: Math.min(W, Math.ceil(maxX + pad)) - x0, h: Math.min(H, Math.ceil(top + bh + pad)) - y0 };
 }
@@ -256,7 +327,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, W: number, H: number,
   if (o.kind === "judul")
     return drawCaption(ctx, W, H, o.text, { ...DEFAULT_CAPTION_STYLE, preset: "tiktok", upper: true, x: o.x, y: o.y, size: o.size }, safe);
   const px = Math.round(o.size * W);
-  ctx.font = `800 ${px}px ${FONT}`;
+  ctx.font = `800 ${px}px ${fontFamily("segoe")}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   const tw = Math.min(ctx.measureText(o.text).width, W * (1 - safe.left - safe.right) - px);
@@ -281,7 +352,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, W: number, H: number,
 }
 
 /** One still drawn on top of the video for [start, end): a caption (or one karaoke word state) or an overlay. */
-export type Layer = { id: string; kind: "caption" | "overlay"; start: number; end: number; anim: CaptionAnim; key: string; draw: (ctx: CanvasRenderingContext2D, W: number, H: number) => Box };
+export type Layer = { id: string; kind: "caption" | "overlay"; start: number; end: number; anim: CaptionAnim; out?: boolean; key: string; draw: (ctx: CanvasRenderingContext2D, W: number, H: number) => Box };
 
 /** Everything drawn over the video, in paint order (captions, then overlays on top). Used by preview and export. */
 export function layersOf(e: ProjectEdit): Layer[] {
@@ -292,12 +363,12 @@ export function layersOf(e: ProjectEdit): Layer[] {
     const st = styleOf(cs, c);
     const base = JSON.stringify([c.text, st, e.safe]);
     if (!cs.karaoke) {
-      out.push({ id: c.id, kind: "caption", start: c.start, end: c.end, anim: st.anim, key: base, draw: (ctx, W, H) => drawCaption(ctx, W, H, c.text, st, e.safe) });
+      out.push({ id: c.id, kind: "caption", start: c.start, end: c.end, anim: st.anim, out: st.out, key: base, draw: (ctx, W, H) => drawCaption(ctx, W, H, c.text, st, e.safe) });
       continue;
     }
     const t = wordTimes(c);
     for (let i = 0; i < t.length - 1; i++)
-      out.push({ id: c.id, kind: "caption", start: t[i], end: t[i + 1], anim: i === 0 ? st.anim : "none", key: `${base}#${i}`, draw: (ctx, W, H) => drawCaption(ctx, W, H, c.text, st, e.safe, i) });
+      out.push({ id: c.id, kind: "caption", start: t[i], end: t[i + 1], anim: i === 0 ? st.anim : "none", out: st.out && i === t.length - 2, key: `${base}#${i}`, draw: (ctx, W, H) => drawCaption(ctx, W, H, c.text, st, e.safe, i) });
   }
   for (const o of e.overlays ?? [])
     if (o.text.trim()) out.push({ id: o.id, kind: "overlay", start: o.start, end: o.end, anim: o.anim, key: JSON.stringify([o, e.safe]), draw: (ctx, W, H) => drawOverlay(ctx, W, H, o, e.safe) });
@@ -311,22 +382,29 @@ const easeOutBack = (p: number) => 1 + 2.70158 * Math.pow(p - 1, 3) + 1.70158 * 
 export function animState(anim: CaptionAnim, p: number) {
   const q = clamp(p, 0, 1);
   switch (anim) {
-    case "fade": return { alpha: q, scale: 1, dy: 0, reveal: 1 };
+    case "fade": return { alpha: q, scale: 1, dy: 0, reveal: 1 } as { alpha: number; scale: number; dy: number; dx?: number; reveal: number };
     case "pop": return { alpha: Math.min(1, q * 4), scale: 0.6 + 0.4 * easeOutBack(q), dy: 0, reveal: 1 };
     case "naik": return { alpha: q, scale: 1, dy: (1 - easeOutCubic(q)) * 0.05, reveal: 1 };
     case "sapu": return { alpha: 1, scale: 1, dy: 0, reveal: q };
+    case "zoom": return { alpha: Math.min(1, q * 4), scale: 1.5 - 0.5 * easeOutCubic(q), dy: 0, reveal: 1 };
+    case "kiri": return { alpha: q, scale: 1, dy: 0, dx: -0.25 * Math.pow(1 - q, 3), reveal: 1 };
+    case "pantul": return { alpha: Math.min(1, q * 5), scale: 1, dy: -0.08 * Math.exp(-5 * q) * Math.cos(10.5 * q) * (1 - q), reveal: 1 };
     default: return { alpha: 1, scale: 1, dy: 0, reveal: 1 };
   }
 }
 
-/** Paint a pre-rendered still (src = full-frame canvas, box = its painted area) at time t into its life. */
-export function blitCaption(ctx: CanvasRenderingContext2D, src: CanvasImageSource, box: Box, H: number, anim: CaptionAnim, t: number, sx = box.x, sy = box.y) {
+/**
+ * Paint a pre-rendered still (src = full-frame canvas, box = its painted area) at time t into its life.
+ * `left` = seconds until it ends (exit fade over the last OUT_DUR when `out`). dx/dy are fractions of the height.
+ */
+export function blitCaption(ctx: CanvasRenderingContext2D, src: CanvasImageSource, box: Box, H: number, anim: CaptionAnim, t: number, sx = box.x, sy = box.y, out = false, left = Infinity) {
   const a = animState(anim, ANIM_DUR[anim] ? t / ANIM_DUR[anim] : 1);
-  if (a.alpha <= 0 || a.reveal <= 0) return;
+  const alpha = a.alpha * (out ? clamp(left / OUT_DUR, 0, 1) : 1);
+  if (alpha <= 0 || a.reveal <= 0) return;
   const w = box.w * a.scale, h = box.h * a.scale;
   ctx.save();
-  ctx.globalAlpha = a.alpha;
-  ctx.drawImage(src, sx, sy, box.w * a.reveal, box.h, box.x + (box.w - w) / 2, box.y + (box.h - h) / 2 + a.dy * H, w * a.reveal, h);
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(src, sx, sy, box.w * a.reveal, box.h, box.x + (box.w - w) / 2 + (a.dx ?? 0) * H, box.y + (box.h - h) / 2 + a.dy * H, w * a.reveal, h);
   ctx.restore();
 }
 

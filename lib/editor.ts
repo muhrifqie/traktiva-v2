@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import ffmpegPath from "ffmpeg-static";
 import type { VideoProject } from "@/lib/db/schema";
 import {
-  ACCENTS, ANIM_DUR, autoCaptions, captionsFromWords, CAPTION_ANIMS, clamp, cutsOf, DEFAULT_CAPTION_STYLE, DEFAULT_FX, DEFAULT_SAFE, FX, needsNormalize, normalizeEdit, OVERLAY_KINDS, round2, TRANSITIONS, uid,
+  ACCENTS, ANIM_DUR, autoCaptions, captionsFromWords, CAPTION_ANIMS, CAPTION_FONTS, CAPTION_PRESETS, OUT_DUR, clamp, cutsOf, DEFAULT_CAPTION_STYLE, DEFAULT_FX, DEFAULT_SAFE, FX, needsNormalize, normalizeEdit, OVERLAY_KINDS, round2, TRANSITIONS, uid,
   type CaptionAnim, type EditOverlay, type EditVoice, type ProjectEdit,
 } from "@/lib/edit";
 import { probeMedia, resolveMedia, writeMedia } from "@/lib/media";
@@ -83,7 +83,7 @@ export async function prepareEdit(p: VideoProject): Promise<ProjectEdit> {
   };
 }
 
-export type CaptionOverlay = { start: number; end: number; x: number; y: number; w: number; h: number; png: string; anim?: CaptionAnim };
+export type CaptionOverlay = { start: number; end: number; x: number; y: number; w: number; h: number; png: string; anim?: CaptionAnim; out?: boolean };
 
 /** Zoom-punch / Ken Burns (scale + centre crop) and flash / dip-to-black (eq brightness). Same curves as fxAt(). */
 function fxFilter(e: ProjectEdit) {
@@ -118,7 +118,7 @@ export async function exportEdit(p: VideoProject, e: ProjectEdit, overlays: Capt
   for (const [i, o] of overlays.entries()) {
     const rel = await writeMedia(`${dir}/caption-${i + 1}.png`, Buffer.from(o.png.replace(/^data:image\/png;base64,/, ""), "base64"));
     // animated: a looped still that only exists during the caption (itsoffset = its start on the timeline)
-    if (animOf(o) !== "none") args.push("-loop", "1", "-framerate", "30", "-t", (o.end - o.start).toFixed(2), "-itsoffset", o.start.toFixed(2));
+    if (animOf(o) !== "none" || o.out) args.push("-loop", "1", "-framerate", "30", "-t", (o.end - o.start).toFixed(2), "-itsoffset", o.start.toFixed(2));
     args.push("-i", resolveMedia(rel));
     pngIn.push(n++);
   }
@@ -133,11 +133,11 @@ export async function exportEdit(p: VideoProject, e: ProjectEdit, overlays: Capt
   overlays.forEach((o, i) => {
     const x = Math.round(o.x), y = Math.round(o.y);
     const anim = animOf(o);
-    if (anim === "none") {
+    if (anim === "none" && !o.out) {
       f.push(`[${v}][${pngIn[i]}:v]overlay=${x}:${y}:enable='between(t,${o.start.toFixed(2)},${o.end.toFixed(2)})'[v${i}]`);
     } else {
       // same curves as animState() in lib/edit.ts
-      const d = ANIM_DUR[anim], a = o.start.toFixed(2);
+      const d = ANIM_DUR[anim] || 0.01, a = o.start.toFixed(2);
       const P = (tv: string) => `clip((${tv}-${a})/${d},0,1)`;
       let chain = "format=rgba";
       let ox = String(x), oy = String(y);
@@ -150,6 +150,21 @@ export async function exportEdit(p: VideoProject, e: ProjectEdit, overlays: Capt
         oy = `'${y}+(${Math.round(o.h)}-overlay_h)/2'`;
       }
       if (anim === "sapu") chain += `,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lt(X,W*${P("T")}),alpha(X,Y),0)'`;
+      if (anim === "zoom") {
+        chain += `,scale=w='max(2,trunc(iw*(1.5-0.5*(1-pow(1-${P("t")},3)))/2)*2)':h=-2:eval=frame,fade=t=in:st=${a}:d=${round2(d / 4)}:alpha=1`;
+        ox = `'${x}+(${Math.round(o.w)}-overlay_w)/2'`;
+        oy = `'${y}+(${Math.round(o.h)}-overlay_h)/2'`;
+      }
+      if (anim === "kiri") {
+        chain += `,fade=t=in:st=${a}:d=${d}:alpha=1`;
+        ox = `'${x}-${round2(0.25 * e.height)}*pow(1-${P("t")},3)'`;
+      }
+      if (anim === "pantul") {
+        chain += `,fade=t=in:st=${a}:d=${round2(d / 5)}:alpha=1`;
+        oy = `'${y}-${round2(0.08 * e.height)}*exp(-5*${P("t")})*cos(10.5*${P("t")})*(1-${P("t")})'`;
+      }
+      // exit fade over the last OUT_DUR seconds (blitCaption does the same)
+      if (o.out) chain += `,fade=t=out:st=${Math.max(o.start, o.end - OUT_DUR).toFixed(2)}:d=${OUT_DUR}:alpha=1`;
       f.push(`[${pngIn[i]}:v]${chain}[c${i}]`, `[${v}][c${i}]overlay=x=${ox}:y=${oy}:eof_action=pass[v${i}]`);
     }
     v = `v${i}`;
@@ -244,7 +259,7 @@ ${task}
 
 Rules:
 - Captions are on-screen text in casual Indonesian, max ~5 words each, must not overlap, must stay inside 0..durationSec, and should match when the voice speaks.
-- captionStyle.preset is one of tiktok|kotak|kuning|bersih|minimal (minimal = small white text, what most best sellers use); captionStyle.anim is the entrance animation, one of none|pop|fade|naik|sapu; captionStyle.karaoke true = the spoken word lights up in captionStyle.accent (one of ${ACCENTS.join(", ")}); captionStyle.x / captionStyle.y are the horizontal / vertical center (0-1; text is kept inside the safe area "safe" automatically); captionStyle.size is font size / video width (0.04-0.09); captionStyle.upper true = UPPERCASE.
+- captionStyle.preset is one of ${CAPTION_PRESETS.map((x) => x.id).join("|")} (minimal = small white text, what most best sellers use); captionStyle.font is one of ${CAPTION_FONTS.map((f) => f.id).join("|")}; captionStyle.anim is the entrance animation, one of ${CAPTION_ANIMS.map((a) => a.id).join("|")}; captionStyle.out true = fade out at the end; captionStyle.karaoke true = the spoken word lights up in captionStyle.accent (one of ${ACCENTS.join(", ")}); captionStyle.x / captionStyle.y are the horizontal / vertical center (0-1; text is kept inside the safe area "safe" automatically); captionStyle.size is font size / video width (0.04-0.09); captionStyle.upper true = UPPERCASE.
 - overlays are stickers on their own track: kind is one of judul|harga|cta|info (info = small 2-line text at the top for the whole video, use \\n for the line break); x/y center 0-1; size 0.04-0.1; anim like captions. Keep them from covering the captions (different y).
 - fx.transition at each clip cut is one of ${TRANSITIONS.map((t) => t.id).join("|")}; fx.kenburns true = slow zoom on every clip.
 - You may move voices (start), change their volume (0-2) or speed (0.8-1.4). Keep voices from overlapping each other.
@@ -280,7 +295,7 @@ Output ONLY JSON with the same shape: {"captions":[...],"captionStyle":{...},"ov
     const s = ans.captionStyle;
     const cs = e.captionStyle;
     next.captionStyle = {
-      preset: ["tiktok", "kotak", "kuning", "bersih", "minimal"].includes(String(s.preset)) ? (s.preset as ProjectEdit["captionStyle"]["preset"]) : cs.preset,
+      preset: CAPTION_PRESETS.some((x) => x.id === s.preset) ? (s.preset as ProjectEdit["captionStyle"]["preset"]) : cs.preset,
       x: s.x != null ? round2(clamp(Number(s.x), 0.1, 0.9)) : cs.x,
       y: s.y != null ? round2(clamp(Number(s.y), 0.1, 0.9)) : cs.y,
       anim: isAnim(s.anim) ? s.anim : cs.anim,
@@ -288,6 +303,10 @@ Output ONLY JSON with the same shape: {"captions":[...],"captionStyle":{...},"ov
       upper: s.upper != null ? !!s.upper : cs.upper,
       karaoke: s.karaoke != null ? !!s.karaoke : cs.karaoke,
       accent: /^#[0-9a-f]{6}$/i.test(String(s.accent)) ? String(s.accent) : cs.accent,
+      font: CAPTION_FONTS.some((f) => f.id === s.font) ? s.font! : cs.font,
+      color: s.color === null || /^#[0-9a-f]{6}$/i.test(String(s.color)) ? (s.color ?? null) : cs.color,
+      box: cs.box,
+      out: s.out != null ? !!s.out : cs.out,
     };
   }
   if (Array.isArray(ans.overlays))
