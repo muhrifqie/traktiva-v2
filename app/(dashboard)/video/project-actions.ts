@@ -8,9 +8,10 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { googleAccounts, videoProjects, type ProjectScene } from "@/lib/db/schema";
 import fs from "node:fs/promises";
-import { createProjectFolder, probeMedia, removeMedia, resolveMedia, writeMedia } from "@/lib/media";
-import { aiAdjustEdit, exportEdit, prepareEdit } from "@/lib/editor";
-import { clamp, DEFAULT_FX, DEFAULT_SAFE, round2, toTemplate, type EditTemplate, type ProjectEdit } from "@/lib/edit";
+import { createProjectFolder, removeMedia, resolveMedia, writeMedia } from "@/lib/media";
+import { aiAdjustEdit, exportEdit, fitClipsToVoice, fullVoiceOver, prepareEdit, writeFullScript } from "@/lib/editor";
+import { addMusic, copyMusicToProject, ensureSfx, listMusic, removeMusic } from "@/lib/audio-library";
+import { clamp, DEFAULT_FX, DEFAULT_SAFE, round2, SFX_DIR, toTemplate, type EditTemplate, type ProjectEdit } from "@/lib/edit";
 import { defaultOptions, draftCaption, presetById, projectName } from "@/lib/presets";
 import { addToLibrary, copyIntoProject, listGenerated, listUploads } from "@/lib/library";
 import { queueImages, queueRender } from "@/lib/projects";
@@ -357,7 +358,8 @@ const EditInput = z.object({
     .optional(),
   fx: z.object({ transition: z.enum(["none", "zoom", "flash", "gelap"]), kenburns: z.boolean() }).optional(),
   voices: z.array(z.object({ id: z.string(), start: Num, speed: Num, volume: Num })).max(50),
-  bgm: z.object({ src: z.string(), name: z.string().max(120), dur: Num, volume: Num, offset: Num, fade: z.boolean() }).nullable(),
+  bgm: z.object({ src: z.string(), name: z.string().max(120), dur: Num, volume: Num, offset: Num, fade: z.boolean(), bpm: Num.nullish(), beat: Num.nullish() }).nullable(),
+  sfx: z.array(z.object({ id: z.string().max(20), src: z.string().max(300), name: z.string().max(60), start: Num, dur: Num, volume: Num, auto: z.boolean().optional() })).max(200).optional(),
 });
 type EditPatch = z.input<typeof EditInput>;
 
@@ -400,6 +402,13 @@ function mergeEdit(p: Awaited<ReturnType<typeof get>>, patch: EditPatch): Projec
       return x ? { ...v, start: round2(clamp(x.start, 0, D - 0.1)), speed: round2(clamp(x.speed, 0.5, 2)), volume: round2(clamp(x.volume, 0, 2)) } : v;
     }),
     bgm: d.bgm && { ...d.bgm, volume: round2(clamp(d.bgm.volume, 0, 2)), offset: round2(clamp(d.bgm.offset, 0, Math.max(0, d.bgm.dur - 0.5))) },
+    // sound effects: built-in ones or files inside this project only
+    sfx: d.sfx
+      ? d.sfx
+          .filter((x) => x.src.startsWith(`${SFX_DIR}/`) || x.src.startsWith(`${p.folder}/`))
+          .filter((x) => !x.src.includes(".."))
+          .map((x) => ({ ...x, start: round2(clamp(x.start, 0, D - 0.05)), volume: round2(clamp(x.volume, 0, 2)) }))
+      : (e.sfx ?? []),
   };
 }
 
@@ -426,10 +435,59 @@ export async function uploadMusic(id: number, form: FormData) {
   const ext = AUDIO_TYPES[f.type] ?? (/\.(mp3|wav|m4a|aac|ogg)$/i.exec(f.name)?.[0].toLowerCase() || null);
   if (!ext) throw new Error("Format musik harus MP3, WAV, M4A, AAC, atau OGG.");
   if (f.size > 25 * 1024 * 1024) throw new Error("Ukuran musik maksimal 25 MB.");
-  const src = await writeMedia(`${p.folder}/musik/bgm-${Date.now().toString(36)}${ext}`, Buffer.from(await f.arrayBuffer()));
-  const { seconds } = await probeMedia(src);
-  if (!seconds) throw new Error("File musik tidak bisa dibaca.");
-  return { src, name: f.name.slice(0, 120), dur: round2(seconds), volume: 0.2, offset: 0, fade: true };
+  // goes into the shared library first (tempo detected once), then a copy into this project
+  const item = await addMusic(Buffer.from(await f.arrayBuffer()), f.name, ext);
+  const m = await copyMusicToProject(item.src, p.folder);
+  return { src: m.src, name: m.name, dur: m.dur, volume: 0.2, offset: 0, fade: true, bpm: m.bpm, beat: m.beat };
+}
+
+// ---- audio library (Pustaka): music + built-in sound effects ----
+
+export async function audioLibrary() {
+  const [music, sfx] = await Promise.all([listMusic(), ensureSfx()]);
+  return { music, sfx };
+}
+
+export async function pickLibraryMusic(id: number, src: string) {
+  const p = await get(id);
+  const m = await copyMusicToProject(z.string().max(300).parse(src), p.folder);
+  return { src: m.src, name: m.name, dur: m.dur, volume: 0.2, offset: 0, fade: true, bpm: m.bpm, beat: m.beat };
+}
+
+export async function deleteLibraryMusic(src: string) {
+  await removeMusic(z.string().max(300).parse(src));
+  return listMusic();
+}
+
+// ---- one-take voice-over & fitting clips to the voice ----
+
+export async function draftFullScript(id: number, patch: EditPatch, wish = "") {
+  const p = await get(id);
+  return writeFullScript(p, mergeEdit(p, patch), z.string().max(300).parse(wish));
+}
+
+export async function makeFullVoice(id: number, patch: EditPatch, script: string, words = 2) {
+  const p = await get(id);
+  const text = z.string().trim().min(10, "Naskah terlalu pendek.").max(2000).parse(script);
+  const r = await fullVoiceOver(p, mergeEdit(p, patch), text, z.number().int().min(1).max(6).parse(words));
+  await db.update(videoProjects).set({ edit: r.edit }).where(eq(videoProjects.id, p.id));
+  return r;
+}
+
+export async function fitToVoice(id: number, patch: EditPatch) {
+  const p = await get(id);
+  const edit = await fitClipsToVoice(p, mergeEdit(p, patch));
+  await db.update(videoProjects).set({ edit }).where(eq(videoProjects.id, p.id));
+  return edit;
+}
+
+export async function undoFit(id: number) {
+  const p = await get(id);
+  const before = p.edit?.beforeFit;
+  if (!before) throw new Error("Tidak ada potongan untuk dibatalkan.");
+  const edit = { ...before, beforeFit: null };
+  await db.update(videoProjects).set({ edit }).where(eq(videoProjects.id, p.id));
+  return edit;
 }
 
 export async function aiEditTimeline(id: number, patch: EditPatch, instruction: string) {

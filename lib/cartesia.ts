@@ -64,4 +64,67 @@ export async function synthesize(key: string, text: string, voiceId: string, opt
   return Buffer.from(await res.arrayBuffer());
 }
 
-export const maskKey = (k: string) => (k.length > 12 ? `${k.slice(0, 8)}…${k.slice(-4)}` : "••••");
+export type WordTime = { word: string; start: number; end: number };
+
+/**
+ * Speak a whole script with word-level timestamps (SSE endpoint) → WAV bytes + when each word is spoken.
+ * Used for the one-take voice-over, so subtitles and karaoke follow the real speech instead of an estimate.
+ */
+export async function synthesizeTimed(key: string, text: string, voiceId: string, opts: { language?: string; speed?: number } = {}): Promise<{ wav: Buffer; words: WordTime[] }> {
+  const RATE = 44100;
+  const res = await fetch(`${API}/tts/sse`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Cartesia-Version": VERSION, "content-type": "application/json" },
+    body: JSON.stringify({
+      model_id: CARTESIA_MODEL,
+      transcript: text,
+      voice: { mode: "id", id: voiceId },
+      language: opts.language ?? "id",
+      output_format: { container: "raw", encoding: "pcm_s16le", sample_rate: RATE },
+      add_timestamps: true,
+      ...(opts.speed && opts.speed !== 1 ? { generation_config: { speed: Math.min(1.5, Math.max(0.6, opts.speed)) } } : {}),
+    }),
+    signal: AbortSignal.timeout(180_000),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    if (res.status === 401 || res.status === 403) throw new Error("API key Cartesia ditolak. Cek lagi key-nya di Pengaturan AI.");
+    if (res.status === 402 || /credit|quota|insufficient/i.test(t)) throw new Error("Kredit Cartesia habis.");
+    throw new Error(`Cartesia ${res.status}: ${t.slice(0, 160)}`);
+  }
+  const chunks: Buffer[] = [];
+  const words: WordTime[] = [];
+  for (const line of (await res.text()).split(/\r?\n/)) {
+    if (!line.startsWith("data:")) continue;
+    let ev: { type?: string; data?: string; word_timestamps?: { words: string[]; start: number[]; end: number[] }; title?: string; message?: string; error?: string };
+    try {
+      ev = JSON.parse(line.slice(5).trim());
+    } catch {
+      continue;
+    }
+    if (ev.type === "chunk" && ev.data) chunks.push(Buffer.from(ev.data, "base64"));
+    else if (ev.type === "timestamps" && ev.word_timestamps) {
+      const w = ev.word_timestamps;
+      w.words.forEach((word, i) => words.push({ word, start: w.start[i], end: w.end[i] }));
+    } else if (ev.type === "error") throw new Error(`Cartesia: ${ev.title ?? ""} ${ev.message ?? ev.error ?? ""}`.trim());
+  }
+  const pcm = Buffer.concat(chunks);
+  if (!pcm.length) throw new Error("Cartesia tidak mengirim audio.");
+  // 44-byte WAV header for 16-bit mono PCM
+  const h = Buffer.alloc(44);
+  h.write("RIFF", 0);
+  h.writeUInt32LE(36 + pcm.length, 4);
+  h.write("WAVEfmt ", 8);
+  h.writeUInt32LE(16, 16);
+  h.writeUInt16LE(1, 20);
+  h.writeUInt16LE(1, 22);
+  h.writeUInt32LE(RATE, 24);
+  h.writeUInt32LE(RATE * 2, 28);
+  h.writeUInt16LE(2, 32);
+  h.writeUInt16LE(16, 34);
+  h.write("data", 36);
+  h.writeUInt32LE(pcm.length, 40);
+  return { wav: Buffer.concat([h, pcm]), words };
+}
+
+export const maskKey =(k: string) => (k.length > 12 ? `${k.slice(0, 8)}…${k.slice(-4)}` : "••••");

@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import ffmpegPath from "ffmpeg-static";
 import type { VideoProject } from "@/lib/db/schema";
 import {
-  ACCENTS, ANIM_DUR, autoCaptions, CAPTION_ANIMS, clamp, cutsOf, DEFAULT_CAPTION_STYLE, DEFAULT_FX, DEFAULT_SAFE, FX, needsNormalize, normalizeEdit, OVERLAY_KINDS, round2, TRANSITIONS, uid,
+  ACCENTS, ANIM_DUR, autoCaptions, captionsFromWords, CAPTION_ANIMS, clamp, cutsOf, DEFAULT_CAPTION_STYLE, DEFAULT_FX, DEFAULT_SAFE, FX, needsNormalize, normalizeEdit, OVERLAY_KINDS, round2, TRANSITIONS, uid,
   type CaptionAnim, type EditOverlay, type EditVoice, type ProjectEdit,
 } from "@/lib/edit";
 import { probeMedia, resolveMedia, writeMedia } from "@/lib/media";
@@ -79,6 +79,7 @@ export async function prepareEdit(p: VideoProject): Promise<ProjectEdit> {
     voices,
     voiceVolume: old?.voiceVolume ?? 1,
     bgm: old?.bgm ?? null,
+    sfx: old?.sfx ?? [],
   };
 }
 
@@ -109,6 +110,8 @@ export async function exportEdit(p: VideoProject, e: ProjectEdit, overlays: Capt
   let n = 1;
   const voiceIn = e.voices.map((v) => (args.push("-i", resolveMedia(v.src)), n++));
   const bgmIn = e.bgm ? (args.push("-stream_loop", "-1", "-ss", String(e.bgm.offset), "-i", resolveMedia(e.bgm.src)), n++) : -1;
+  const sfx = (e.sfx ?? []).filter((x) => x.start < D);
+  const sfxIn = sfx.map((x) => (args.push("-i", resolveMedia(x.src)), n++));
   const dir = `${p.folder}/edit`;
   const animOf = (o: CaptionOverlay) => o.anim ?? e.captionStyle.anim ?? "none";
   const pngIn: number[] = [];
@@ -156,13 +159,23 @@ export async function exportEdit(p: VideoProject, e: ProjectEdit, overlays: Capt
   e.voices.forEach((x, i) => {
     const ms = Math.max(0, Math.round(x.start * 1000));
     f.push(`[${voiceIn[i]}:a]atempo=${clamp(x.speed, 0.5, 2)},adelay=delays=${ms}:all=1,volume=${round2(clamp(x.volume, 0, 2) * clamp(e.voiceVolume, 0, 2))}[vo${i}]`);
-    mix.push(`[vo${i}]`);
   });
+  // all voices as one stream; with music, a copy of it drives the ducking (music dips while someone talks)
+  const duck = !!e.bgm && e.voices.length > 0 && e.voiceVolume > 0;
+  if (e.voices.length) {
+    f.push(`${e.voices.map((_, i) => `[vo${i}]`).join("")}amix=inputs=${e.voices.length}:duration=longest:dropout_transition=0:normalize=0${duck ? ",asplit=2[voices][vkey]" : "[voices]"}`);
+    mix.push("[voices]");
+  }
   if (e.bgm) {
     const fade = e.bgm.fade && D > 3 ? `,afade=t=in:d=0.5,afade=t=out:st=${(D - 2).toFixed(2)}:d=2` : "";
-    f.push(`[${bgmIn}:a]atrim=0:${D},asetpts=PTS-STARTPTS,volume=${clamp(e.bgm.volume, 0, 2)}${fade}[bgm]`);
+    f.push(`[${bgmIn}:a]atrim=0:${D},asetpts=PTS-STARTPTS,volume=${clamp(e.bgm.volume, 0, 2)}${fade}${duck ? "[bgmraw]" : "[bgm]"}`);
+    if (duck) f.push("[bgmraw][vkey]sidechaincompress=threshold=0.02:ratio=6:attack=30:release=350:makeup=1[bgm]");
     mix.push("[bgm]");
   }
+  sfx.forEach((x, i) => {
+    f.push(`[${sfxIn[i]}:a]adelay=delays=${Math.max(0, Math.round(x.start * 1000))}:all=1,volume=${clamp(x.volume, 0, 2)}[sfx${i}]`);
+    mix.push(`[sfx${i}]`);
+  });
   f.push(`${mix.join("")}amix=inputs=${mix.length}:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95,loudnorm=I=-15:TP=-1.5:LRA=11,aresample=48000[aout]`);
 
   const out = `${p.folder}/final.mp4`;
@@ -311,4 +324,113 @@ Output ONLY JSON with the same shape: {"captions":[...],"captionStyle":{...},"ov
   if (ans.bgm && e.bgm)
     next.bgm = { ...e.bgm, volume: round2(clamp(Number(ans.bgm.volume ?? e.bgm.volume), 0, 2)), offset: round2(clamp(Number(ans.bgm.offset ?? e.bgm.offset), 0, Math.max(0, e.bgm.dur - 1))), fade: ans.bgm.fade ?? e.bgm.fade };
   return { edit: next, note: String(ans.note ?? "Timeline diperbarui.").slice(0, 200) };
+}
+
+// ---------------------------------------------------------------- one-take voice-over & fitting clips to the voice
+
+/** The spoken script for the whole video: Gemini writes it once, sized to the video at ~2.6 words per second. */
+export async function writeFullScript(p: VideoProject, e: ProjectEdit, wish = "") {
+  const { askGemini, extractJson } = await import("@/lib/platforms/gemini");
+  const { geminiAccount } = await import("@/lib/prompt-writer");
+  const g = await geminiAccount();
+  const words = Math.round(e.duration * 2.6);
+  const scenes = e.clips.map((c, i) => ({ label: c.label, start: c.start, dur: c.dur, line: voiceLine(p.scenes[i]?.motionPrompt ?? "") }));
+  const prompt = `Write ONE continuous Indonesian voice-over for a ${Math.round(e.duration)}-second vertical TikTok affiliate video, read by one person from the first second to the end without pauses.
+Product: ${p.product.name}. Price: ${p.product.price || "-"}. Details: ${(p.product.details || "-").slice(0, 600)}
+The video shows these scenes in order (follow them so the words match what is on screen): ${JSON.stringify(scenes)}
+Rules (from 30 best-selling Indonesian affiliate videos):
+- About ${words} words (brisk natural pace, ~2.6 words per second). Casual everyday Indonesian, light Jakarta slang, like talking to a friend.
+- First sentence = hook: a price anchor ("looknya kayak jutaan, padahal cuma ..."), a "stop doing X" line, a demo challenge ("kalian bisa gini ga?") or "lagi booming". Only quote prices that are in the product data.
+- Middle: concrete benefits you can see in the scenes.
+- End with a spoken call to action: "cek keranjang kuning" (or "link di kiri bawah"), with light urgency only if the data supports it. No invented discounts, stock limits, medical or absolute claims. Never use absolute words like "dijamin", "100%", "pasti", "paling" and never say "kehabisan"/"stok terbatas"/"sebelum habis" unless the product data says stock is limited; neutral urgency like "mumpung masih promo" only if a promo is in the data, otherwise just "cek keranjang kuning ya".
+- Write numbers the way they are spoken ("85 ribu", "4 koma 8").
+${wish ? `Extra wishes: "${wish.replace(/"/g, "'").slice(0, 300)}"` : ""}
+Output ONLY JSON: {"script":"..."}`;
+  const ans = extractJson<{ script?: string }>(await askGemini(g.sessionKey, prompt));
+  const script = String(ans?.script ?? "").replace(/\s+/g, " ").trim();
+  if (script.split(" ").length < 5) throw new Error("Naskah dari Gemini kosong. Coba lagi.");
+  return script;
+}
+
+/**
+ * Replace the per-scene voice lines with ONE take spoken over the whole video (Cartesia, word timestamps), starting
+ * at 0.1 s like best sellers, sped up (max 1.2×) only if it would run past the end. Subtitles follow the real words.
+ */
+export async function fullVoiceOver(p: VideoProject, e: ProjectEdit, script: string, words = 2) {
+  const { getSettings } = await import("@/lib/settings");
+  const { projectVoice, spoken } = await import("@/lib/voice");
+  const { synthesizeTimed } = await import("@/lib/cartesia");
+  const defaults = getSettings().voice ?? { provider: "flow" };
+  const pv = projectVoice(p.options, defaults);
+  if (!defaults.cartesiaKey || !pv.voiceId) throw new Error("Pilih suara Cartesia dulu (Pengaturan AI → Suara).");
+  const { wav, words: timed } = await synthesizeTimed(defaults.cartesiaKey, spoken(script), pv.voiceId, { speed: pv.speed });
+  const src = await writeMedia(`${p.folder}/suara/vo-utuh-${Date.now().toString(36)}.wav`, wav);
+  const dur = (await probeMedia(src)).seconds;
+  const at = 0.1;
+  const room = e.duration - at - 0.3;
+  const speed = round2(dur > room ? Math.min(1.2, dur / room) : 1);
+  const voice: EditVoice = { id: uid(), src, start: at, dur: round2(dur), speed, volume: 1, text: script };
+  const captions = timed.length ? captionsFromWords(timed, at, speed, words) : autoCaptions([{ start: at, dur: dur / speed, text: script }], words);
+  const next: ProjectEdit = { ...e, voices: [voice], captions, clipVolume: Math.min(e.clipVolume, 0.25), voiceVolume: 1 };
+  return { edit: next, spokenSec: round2(dur / speed), timed: timed.length > 0 };
+}
+
+/**
+ * "Pas-kan klip ke suara": with one long voice the video ends 0.6 s after it; with per-scene voices every clip is
+ * cut to its own voice (+0.35 s, min 1.5 s) and everything after it moves up. The state before is kept to undo.
+ */
+export async function fitClipsToVoice(p: VideoProject, e: ProjectEdit): Promise<ProjectEdit> {
+  if (!e.voices.length) throw new Error("Belum ada voice-over untuk dijadikan patokan.");
+  const before = { ...e, beforeFit: undefined };
+  const voiceEnd = (v: EditVoice) => v.start + v.dur / v.speed;
+  if (e.voices.length === 1 && e.voices[0].dur / e.voices[0].speed > e.clips[0].dur) {
+    const D = round2(Math.min(e.duration, voiceEnd(e.voices[0]) + 0.6));
+    return {
+      ...e,
+      duration: D,
+      clips: e.clips.filter((c) => c.start < D).map((c) => ({ ...c, dur: round2(Math.min(c.dur, D - c.start)) })),
+      captions: e.captions.filter((c) => c.start < D).map((c) => ({ ...c, end: Math.min(c.end, D) })),
+      overlays: e.overlays.filter((o) => o.start < D).map((o) => ({ ...o, end: Math.min(o.end, D) })),
+      sfx: e.sfx.filter((x) => x.start < D),
+      beforeFit: before,
+    };
+  }
+  if (!ffmpegPath) throw new Error("ffmpeg tidak tersedia di perangkat ini.");
+  // new length of each clip = until its last voice ends (+0.35 s)
+  const keep = e.clips.map((c) => {
+    const ends = e.voices.filter((v) => v.start >= c.start - 0.05 && v.start < c.start + c.dur).map((v) => voiceEnd(v) - c.start);
+    return round2(ends.length ? Math.min(c.dur, Math.max(1.5, Math.max(...ends) + 0.35)) : c.dur);
+  });
+  const dir = `${p.folder}/edit`;
+  const parts: string[] = [];
+  for (const [i, c] of e.clips.entries()) {
+    const rel = `${dir}/fit-${i + 1}.mp4`;
+    await run(ffmpegPath, ["-y", "-i", resolveMedia(c.src), "-t", String(keep[i]), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", resolveMedia(rel)], { windowsHide: true });
+    parts.push(resolveMedia(rel));
+  }
+  const base = `${dir}/base-fit.mp4`;
+  await concat(parts, resolveMedia(base), !e.baseAudio);
+  let t = 0;
+  const clips = e.clips.map((c, i) => {
+    const out = { ...c, start: round2(t), dur: keep[i] };
+    t += keep[i];
+    return out;
+  });
+  // old timeline time → new: same offset inside its clip, clamped to the shortened clip
+  const map = (time: number) => {
+    const i = Math.max(0, e.clips.findLastIndex((c) => time >= c.start - 0.001));
+    return round2(clips[i].start + Math.min(time - e.clips[i].start, keep[i]));
+  };
+  const D = round2(t);
+  return {
+    ...e,
+    base,
+    duration: D,
+    clips,
+    voices: e.voices.map((v) => ({ ...v, start: map(v.start) })),
+    captions: e.captions.map((c) => ({ ...c, start: map(c.start), end: Math.max(map(c.start) + 0.2, map(c.end)) })).filter((c) => c.start < D),
+    overlays: e.overlays.map((o) => ({ ...o, start: map(o.start), end: Math.max(map(o.start) + 0.3, map(o.end)) })),
+    sfx: e.sfx.map((x) => ({ ...x, start: map(x.start) })),
+    beforeFit: before,
+  };
 }

@@ -8,7 +8,7 @@ import {
 import { toast } from "sonner";
 import type { VideoProject } from "@/lib/db/schema";
 import {
-  ACCENTS, applyTemplate, RESEARCH_TEMPLATES, autoCaptions, blitCaption, CAPTION_ANIMS, CAPTION_PRESETS, clamp, drawCaption, fxAt, layersOf, normalizeEdit, OVERLAY_KINDS, round2,
+  ACCENTS, applyTemplate, beatTimes, RESEARCH_TEMPLATES, autoCaptions, blitCaption, CAPTION_ANIMS, CAPTION_PRESETS, clamp, drawCaption, fxAt, layersOf, normalizeEdit, OVERLAY_KINDS, round2,
   SAFE_PRESETS, styleOf, TRANSITIONS, uid,
   type Box, type CaptionAnim, type CaptionPos, type CaptionStyle, type EditCaption, type EditFx, type EditOverlay, type EditTemplate, type Layer,
   type OverlayKind, type ProjectEdit, type SafeArea,
@@ -18,9 +18,10 @@ import { voiceLine } from "@/lib/voice";
 import {
   aiDirector, aiEditTimeline, deleteEditTemplate, exportTimeline, listEditTemplates, openEditor, openProjectFolder, saveEdit, saveEditTemplate, saveProject, uploadMusic,
 } from "../project-actions";
+import { AudioTools } from "./audio-panel";
 
 type Project = Omit<VideoProject, "updatedAt"> & { updatedAt: number };
-type Sel = { kind: "caption" | "voice" | "overlay"; id: string } | null;
+type Sel = { kind: "caption" | "voice" | "overlay" | "sfx"; id: string } | null;
 type Tab = "teks" | "stiker" | "efek" | "audio" | "ai" | "posting";
 type Hit = { id: string; kind: "caption" | "overlay"; box: Box };
 
@@ -43,6 +44,7 @@ const patchOf = (e: ProjectEdit) => ({
   fx: e.fx,
   voices: e.voices.map(({ id, start, speed, volume }) => ({ id, start, speed, volume })),
   bgm: e.bgm,
+  sfx: e.sfx,
 });
 
 /**
@@ -161,6 +163,7 @@ export function TimelineEditor({ p }: { p: Project }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const voiceEls = useRef(new Map<string, HTMLAudioElement>());
   const bgmEl = useRef<HTMLAudioElement>(null);
+  const sfxEls = useRef(new Map<string, HTMLAudioElement>());
   const playhead = useRef<HTMLDivElement>(null);
   const timeLabel = useRef<HTMLSpanElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -248,12 +251,16 @@ export function TimelineEditor({ p }: { p: Project }) {
       const sc = scroller.current;
       if (on && sc && (t * pps > sc.scrollLeft + sc.clientWidth - 60 || t * pps < sc.scrollLeft)) sc.scrollLeft = t * pps - 40;
 
+      // the base video can be longer than the edit (clips fitted to the voice): stop at the edit's end
+      if (on && t >= e.duration - 0.03) v.pause();
       gains.set(v, e.clipVolume);
+      let talking = false;
       for (const x of e.voices) {
         const el = voiceEls.current.get(x.id);
         if (!el) continue;
         const local = (t - x.start) * x.speed;
         const live = local >= 0 && local < x.dur;
+        if (live) talking = true;
         el.playbackRate = x.speed;
         gains.set(el, x.volume * e.voiceVolume);
         sync(el, on && live, local);
@@ -262,8 +269,16 @@ export function TimelineEditor({ p }: { p: Project }) {
       if (b && bgmEl.current) {
         let g = b.volume;
         if (b.fade) g *= Math.min(1, t / 0.5, Math.max(0, (e.duration - t) / 2));
+        if (talking && e.voiceVolume > 0) g *= 0.4; // preview of the export's ducking
         gains.set(bgmEl.current, g);
         sync(bgmEl.current, on, (t + b.offset) % b.dur);
+      }
+      for (const x of e.sfx ?? []) {
+        const el = sfxEls.current.get(x.id);
+        if (!el) continue;
+        const local = t - x.start;
+        gains.set(el, x.volume);
+        sync(el, on && local >= 0 && local < x.dur, local);
       }
     };
     raf = requestAnimationFrame(tick);
@@ -294,6 +309,7 @@ export function TimelineEditor({ p }: { p: Project }) {
   const removeSel = () => {
     if (sel?.kind === "caption") set((e) => ({ ...e, captions: e.captions.filter((c) => c.id !== sel.id) }));
     else if (sel?.kind === "overlay") set((e) => ({ ...e, overlays: e.overlays.filter((o) => o.id !== sel.id) }));
+    else if (sel?.kind === "sfx") set((e) => ({ ...e, sfx: e.sfx.filter((x) => x.id !== sel.id) }));
     else return;
     setSel(null);
   };
@@ -565,6 +581,9 @@ export function TimelineEditor({ p }: { p: Project }) {
               <audio key={v.id} preload="auto" src={mediaUrl(v.src)} ref={(el) => void (el ? voiceEls.current.set(v.id, el) : voiceEls.current.delete(v.id))} />
             ))}
             {edit.bgm && <audio key={edit.bgm.src} ref={bgmEl} preload="auto" src={mediaUrl(edit.bgm.src)} />}
+            {edit.sfx.map((x) => (
+              <audio key={x.id} preload="auto" src={mediaUrl(x.src)} ref={(el) => void (el ? sfxEls.current.set(x.id, el) : sfxEls.current.delete(x.id))} />
+            ))}
           </div>
           <div className="flex items-center gap-1">
             <button type="button" className="grid size-7 place-items-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90" onClick={toggle} aria-label={playing ? "Jeda" : "Putar"}>
@@ -617,6 +636,7 @@ export function TimelineEditor({ p }: { p: Project }) {
                     <Slider label="Kecepatan" value={selVoice.speed} min={0.5} max={2} step={0.05} unit="×" onChange={(v, r) => set((e) => ({ ...e, voices: e.voices.map((x) => (x.id === selVoice.id ? { ...x, speed: v } : x)) }), r)} />
                   </div>
                 )}
+                <AudioTools projectId={p.id} edit={edit} patch={() => patchOf(get()!)} now={now} apply={(e, mode) => (mode === "reset" ? reset(e) : set(e))} />
                 <div className="space-y-3 rounded-lg border bg-background p-3">
                   <div className="flex items-center gap-2">
                     <Music className="size-4 text-muted-foreground" />
@@ -684,7 +704,7 @@ export function TimelineEditor({ p }: { p: Project }) {
           <span className="mx-1 h-5 w-px bg-border" />
           <button type="button" className={secondary} onClick={addCaption}><Plus className="size-3.5" /> Caption</button>
           <button type="button" className={icon} onClick={splitSel} title="Potong caption di playhead (S)"><Scissors className="size-4" /></button>
-          <button type="button" className={icon} onClick={removeSel} disabled={sel?.kind !== "caption" && sel?.kind !== "overlay"} title="Hapus (Del)"><Trash2 className="size-4" /></button>
+          <button type="button" className={icon} onClick={removeSel} disabled={sel?.kind !== "caption" && sel?.kind !== "overlay" && sel?.kind !== "sfx"} title="Hapus (Del)"><Trash2 className="size-4" /></button>
           <span className="ml-2 hidden text-[10px] text-muted-foreground xl:inline">Spasi putar · S potong · Del hapus · ←/→ geser</span>
           <div className="ml-auto flex items-center gap-2">
             <input type="range" min={0} max={200} value={zoom} onChange={(e) => setZoom(Number(e.target.value) < 15 ? 0 : Number(e.target.value))} aria-label="Zoom timeline" className="w-24 accent-primary" />
@@ -701,6 +721,7 @@ export function TimelineEditor({ p }: { p: Project }) {
             <TrackHead label="Teks" />
             <TrackHead label="Stiker" />
             <TrackHead label="Suara" muted={edit.voiceVolume === 0} onMute={edit.voices.length ? () => set((e) => ({ ...e, voiceVolume: e.voiceVolume ? 0 : 1 })) : undefined} />
+            <TrackHead label="SFX" muted={edit.sfx.length > 0 && edit.sfx.every((x) => x.volume === 0)} onMute={edit.sfx.length ? () => set((e) => ({ ...e, sfx: e.sfx.map((x) => ({ ...x, volume: e.sfx.every((y) => y.volume === 0) ? 0.6 : 0 })) })) : undefined} />
             <TrackHead label="Musik" muted={!!edit.bgm && edit.bgm.volume === 0} onMute={edit.bgm ? () => set((e) => ({ ...e, bgm: e.bgm && { ...e.bgm, volume: e.bgm.volume ? 0 : 0.2 } })) : undefined} />
           </div>
           {/* lanes */}
@@ -820,8 +841,29 @@ export function TimelineEditor({ p }: { p: Project }) {
                   <span className="absolute inset-y-0 left-2 flex items-center text-[10px] text-muted-foreground">Suara menyatu dengan klip (Bawaan Flow / tanpa suara)</span>
                 )}
               </Lane>
-              {/* music */}
+              {/* sound effects */}
               <Lane>
+                {edit.sfx.map((x) => (
+                  <Block
+                    key={x.id}
+                    left={x.start * pps}
+                    width={Math.max(x.dur, 0.3) * pps}
+                    selected={sel?.id === x.id}
+                    tone="bg-orange-500/20 border-orange-500/50 text-orange-950 dark:text-orange-100"
+                    onSelect={() => (setSel({ kind: "sfx", id: x.id }), setTab("audio"))}
+                    onMove={(ev) => {
+                      const { start } = x;
+                      drag(ev, (d) => set((e) => ({ ...e, sfx: e.sfx.map((y) => (y.id === x.id ? { ...y, start: snap(clamp(start + d, 0, D - 0.05)) } : y)) }), false));
+                    }}
+                    label={x.name}
+                  />
+                ))}
+              </Lane>
+              {/* music (with beat ticks when the tempo is known) */}
+              <Lane>
+                {beatTimes(edit.bgm, D).map((b) => (
+                  <span key={b} className="pointer-events-none absolute bottom-0 h-1.5 w-px bg-violet-500/70" style={{ left: b * pps }} />
+                ))}
                 {edit.bgm ? (
                   <div className="absolute top-1 bottom-1 left-0 flex items-center gap-1.5 overflow-hidden rounded-md border border-violet-500/50 bg-violet-500/20 px-2 text-[10px] text-violet-950 dark:text-violet-100" style={{ width: D * pps - 2 }} onPointerDown={(ev) => (ev.stopPropagation(), setTab("audio"))}>
                     <Music className="size-3 shrink-0" /> <span className="truncate">{edit.bgm.name} · {Math.round(edit.bgm.volume * 100)}%</span>

@@ -65,7 +65,7 @@ STORY
 - Scenes flow as one story: hook in the first scene, proof/benefit in the middle, a call to action at the end. Consecutive scenes keep the same location, lighting and hands so the joined video looks like one person filmed it.
 - The product is clearly visible from the very first frame of the first scene (true for all 30 best-selling videos we studied).
 ${silent ? "" : `- Hook (first voice line) uses one proven pattern from best-selling Indonesian affiliate videos: price anchor ("looknya kayak jutaan, padahal cuma ..."), a "stop doing X" line ("di rumah jangan pakai daster terus"), a demo challenge ("kalian bisa gini ga?"), or "lagi rame/booming". Only quote a price that is in the product data.
-- Last voice line = spoken CTA: "cek keranjang kuning" (or "link di kiri bawah") plus light urgency ("mumpung masih promo", "sebelum kehabisan") only if it fits the product data; never invent discounts, stock limits or fake claims.`}
+- Last voice line = spoken CTA: "cek keranjang kuning" (or "link di kiri bawah") plus light urgency ("mumpung masih promo", "sebelum kehabisan") only if it fits the product data; never invent discounts, stock limits or fake claims. Never use absolute words like "dijamin", "100%", "pasti", "paling" and never say "kehabisan"/"stok terbatas"/"sebelum habis" unless the product data says stock is limited; neutral urgency like "mumpung masih promo" only if a promo is in the data, otherwise just "cek keranjang kuning ya".`}
 
 ${target}
 Output ONLY the JSON, no explanation: [{"label":"...","imagePrompt":"...","motionPrompt":"..."}]`;

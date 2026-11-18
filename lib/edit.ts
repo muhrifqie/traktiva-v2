@@ -18,7 +18,9 @@ export type CaptionPos = { x: number; y: number; size: number };
 export type EditCaption = { id: string; start: number; end: number; text: string; pos?: CaptionPos | null }; // pos: own position/size
 export type EditVoice = { id: string; src: string; start: number; dur: number; speed: number; volume: number; text?: string | null };
 export type EditClip = { src: string; start: number; dur: number; label: string };
-export type EditBgm = { src: string; name: string; dur: number; volume: number; offset: number; fade: boolean };
+export type EditBgm = { src: string; name: string; dur: number; volume: number; offset: number; fade: boolean; bpm?: number | null; beat?: number | null }; // beat: first beat (s) in the music file
+/** One sound effect on the SFX track. auto = placed by "SFX otomatis" (replaced when re-run). */
+export type EditSfx = { id: string; src: string; name: string; start: number; dur: number; volume: number; auto?: boolean };
 export type SafeArea = { top: number; bottom: number; left: number; right: number }; // margins, 0-1 of height/width
 export type OverlayKind = "judul" | "harga" | "cta" | "info";
 /** Free text / sticker on its own track (hook title, price badge, call to action). */
@@ -43,6 +45,8 @@ export type ProjectEdit = {
   voices: EditVoice[];
   voiceVolume: number;
   bgm: EditBgm | null;
+  sfx: EditSfx[];
+  beforeFit?: Omit<ProjectEdit, "beforeFit"> | null; // state before "Pas-kan klip ke suara" (to undo it)
   exportedAt?: number | null;
 };
 
@@ -98,8 +102,9 @@ export const normalizeEdit = (e: ProjectEdit): ProjectEdit => ({
   safe: e.safe ?? DEFAULT_SAFE,
   overlays: e.overlays ?? [],
   fx: { ...DEFAULT_FX, ...e.fx },
+  sfx: e.sfx ?? [],
 });
-export const needsNormalize = (e: ProjectEdit) => !e.safe || !e.overlays || !e.fx || e.captionStyle.karaoke == null;
+export const needsNormalize = (e: ProjectEdit) => !e.safe || !e.overlays || !e.fx || !e.sfx || e.captionStyle.karaoke == null;
 
 /** Style one caption is drawn with: the shared style, or its own position/size. */
 export const styleOf = (s: CaptionStyle, c?: EditCaption | null): CaptionStyle => (c?.pos ? { ...s, ...c.pos } : s);
@@ -412,3 +417,60 @@ export function applyTemplate(e: ProjectEdit, t: EditTemplate): ProjectEdit {
     overlays: t.overlays.map(({ from, to, ...o }) => ({ ...o, id: uid(), start: round2(from * D), end: round2(Math.max(from * D + 0.3, to * D)) })),
   };
 }
+
+// ---- one-take voice-over, sound effects, beats ----
+
+/** Subtitles from real word timings (Cartesia timestamps): chunks of ≤n words, shifted by the voice start and speed. */
+export function captionsFromWords(words: { word: string; start: number; end: number }[], at: number, speed: number, n = 2): EditCaption[] {
+  const out: EditCaption[] = [];
+  for (let i = 0; i < words.length; i += n) {
+    const g = words.slice(i, i + n);
+    const next = words[i + n];
+    const start = at + g[0].start / speed;
+    // hold the text until the next chunk starts (no flicker in short pauses), at most +0.6 s after the last word
+    const end = at + Math.min(next ? next.start : Infinity, g[g.length - 1].end + 0.6) / speed;
+    out.push({ id: uid(), start: round2(start), end: round2(Math.max(start + 0.2, end)), text: g.map((w) => w.word).join(" ") });
+  }
+  return out;
+}
+
+/** Built-in sound effects (synthesised once into MEDIA_DIR/pustaka/sfx by lib/audio-library.ts). */
+export const SFX_DIR = "pustaka/sfx";
+export const BUILTIN_SFX = [
+  { id: "whoosh", name: "Whoosh", dur: 0.5 },
+  { id: "pop", name: "Pop", dur: 0.18 },
+  { id: "ding", name: "Ding", dur: 1 },
+  { id: "click", name: "Klik", dur: 0.06 },
+  { id: "rise", name: "Riser", dur: 1.2 },
+  { id: "boom", name: "Boom", dur: 0.8 },
+] as const;
+export const sfxSrc = (id: string) => `${SFX_DIR}/${id}.wav`;
+
+/** "SFX otomatis": whoosh just before every cut, pop when a sticker appears, ding on a price badge. */
+export function autoSfx(e: ProjectEdit): EditSfx[] {
+  const mk = (id: (typeof BUILTIN_SFX)[number]["id"], start: number, volume: number): EditSfx => {
+    const b = BUILTIN_SFX.find((x) => x.id === id)!;
+    return { id: uid(), src: sfxSrc(id), name: b.name, start: round2(clamp(start, 0, e.duration - 0.05)), dur: b.dur, volume, auto: true };
+  };
+  const out = [
+    ...e.clips.slice(1).map((c) => mk("whoosh", c.start - 0.2, 0.5)),
+    ...e.overlays.map((o) => mk(o.kind === "harga" ? "ding" : "pop", o.start, o.kind === "harga" ? 0.45 : 0.55)),
+  ];
+  return [...e.sfx.filter((x) => !x.auto), ...out].sort((a, b) => a.start - b.start);
+}
+
+/** Beat times on the video timeline for the chosen music (empty when its tempo is unknown). */
+export function beatTimes(bgm: EditBgm | null, duration: number) {
+  if (!bgm?.bpm || bgm.beat == null) return [];
+  const p = 60 / bgm.bpm;
+  let t = (((bgm.beat - bgm.offset) % p) + p) % p;
+  const out: number[] = [];
+  for (; t < duration; t += p) out.push(round2(t));
+  return out;
+}
+
+/** Move a time to the nearest beat when it is within `tol` seconds. */
+export const snapToBeat = (t: number, beats: number[], tol = 0.2) => {
+  const near = beats.reduce((m, b) => (Math.abs(b - t) < Math.abs(m - t) ? b : m), Infinity);
+  return Math.abs(near - t) <= tol ? near : t;
+};
