@@ -55,8 +55,43 @@ async function loadIdentity(dir: string): Promise<Identity> {
   }
 }
 
-// ponytail: in-process lock (one Next server per app); move to the jobs table if a second worker process appears
+// In-process lock (fast path) + a cross-process lock file: the dev server, Electron and dev scripts can all open
+// profiles, and two Camoufox instances on one profile end in Firefox's "already running, not responding" dialog.
 const busy = new Set<string>();
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "EPERM"; // exists but not ours
+  }
+};
+
+/** Take <profile>/traktiva.lock (our PID). Waits while another live process holds it; stale locks are removed. */
+async function lockProfile(dir: string, waitMs = 90_000) {
+  const file = path.join(dir, "traktiva.lock");
+  await fs.mkdir(dir, { recursive: true });
+  const until = Date.now() + waitMs;
+  for (;;) {
+    try {
+      await fs.writeFile(file, String(process.pid), { flag: "wx" });
+      return async () => {
+        if ((await fs.readFile(file, "utf8").catch(() => "")) === String(process.pid)) await fs.rm(file, { force: true });
+      };
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+      const pid = Number(await fs.readFile(file, "utf8").catch(() => "0"));
+      if (!pid || pid === process.pid || !alive(pid)) {
+        // left behind by a crashed/killed process (or by us in a previous dev reload)
+        await fs.rm(file, { force: true });
+        await fs.rm(path.join(dir, "browser", "parent.lock"), { force: true }).catch(() => {});
+        continue;
+      }
+      if (Date.now() > until) throw new Error("Akun ini sedang dipakai proses lain (aplikasi atau script). Tunggu sebentar lalu coba lagi.");
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+}
 
 /**
  * Launch the account's persistent Camoufox profile. Caller must close the context (use withProfile when possible).
@@ -66,7 +101,9 @@ export async function launchProfile(key: string, { headless = false }: { headles
   const dir = profileDir(key);
   if (busy.has(key)) throw new Error("Akun ini sedang dipakai proses lain. Tunggu sebentar.");
   busy.add(key);
+  let unlock: (() => Promise<void>) | null = null;
   try {
+    unlock = await lockProfile(dir);
     const id = await loadIdentity(dir);
     const ctx = (await Camoufox({
       user_data_dir: path.join(dir, "browser"),
@@ -81,10 +118,15 @@ export async function launchProfile(key: string, { headless = false }: { headles
       // generator for Firefox/Windows, so the "custom fingerprint" leak warning does not apply.
       i_know_what_im_doing: true,
     } as Parameters<typeof Camoufox>[0] & { user_data_dir: string })) as BrowserContext;
-    ctx.on("close", () => busy.delete(key));
+    const release = unlock;
+    ctx.on("close", () => {
+      busy.delete(key);
+      void release?.();
+    });
     return ctx;
   } catch (e) {
     busy.delete(key);
+    await unlock?.();
     throw e;
   }
 }

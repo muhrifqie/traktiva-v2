@@ -88,8 +88,18 @@ const fixLogoWording = (t: string) =>
 
 export async function writeScenes(p: VideoProject, only?: number): Promise<WrittenScene[]> {
   const g = await geminiAccount();
-  const answer = await askGemini(g.sessionKey, brief(p, only));
-  const list = extractJson<WrittenScene[]>(answer);
+  const parse = (t: string) => {
+    try {
+      return extractJson<WrittenScene[]>(t);
+    } catch {
+      return null;
+    }
+  };
+  // Gemini's web app sometimes refuses with a canned line ("I encountered an error…"); the reference caption
+  // (hashtags, emoji, urgency words) makes that likelier, so the one retry goes without it
+  let list = parse(await askGemini(g.sessionKey, brief(p, only)));
+  if (!list) list = parse(await askGemini(g.sessionKey, brief({ ...p, options: { ...p.options, refCaption: "" } }, only)));
+  if (!list) throw new Error("Gemini sedang menolak permintaan ini (jawabannya bukan storyboard). Coba lagi sebentar lagi.");
   const want = only != null ? 1 : p.scenes.length;
   if (!Array.isArray(list) || list.length < want) throw new Error("Jawaban Gemini tidak lengkap. Coba lagi.");
   const clean = (list: WrittenScene[]) =>
