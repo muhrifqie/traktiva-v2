@@ -61,9 +61,11 @@ export function ListMeta({ country, children, onRefresh, pending }: { country?: 
 }
 
 /** One ranked product: rank · picture · title + stats · actions. */
-export function ProductRow({ rank, image, title, onOpen, children, actions }: { rank: number; image: string; title: string; onOpen?: () => void; children: React.ReactNode; actions: React.ReactNode }) {
+export function ProductRow({
+  rank, image, title, onOpen, children, actions, intent,
+}: { rank: number; image: string; title: string; onOpen?: () => void; children: React.ReactNode; actions: React.ReactNode; intent?: React.HTMLAttributes<HTMLDivElement> }) {
   return (
-    <div className="flex items-center gap-3 border-b px-3 py-2 last:border-b-0">
+    <div className="flex items-center gap-3 border-b px-3 py-2 last:border-b-0" {...intent}>
       <span className="w-7 shrink-0 text-center text-xs font-semibold text-muted-foreground tabular-nums">{rank}</span>
       <button type="button" onClick={onOpen} disabled={!onOpen} className="shrink-0" aria-label="Lihat detail">
         <RowImg src={image} />

@@ -7,6 +7,7 @@ import { openLightbox } from "@/components/media-lightbox";
 import { SaveProductButton } from "@/components/save-product-button";
 import type { KaloTopProduct, KaloTopVideo } from "@/lib/kalodata";
 import { kaloTopProducts, kaloTopVideos, kaloVideoUrl, type KaloHit } from "./actions";
+import { intentProps } from "./detail-cache";
 import { EmptyBox, ListBox, ListMeta, LoadMore, pillBtn, ProductRow } from "./riset-ui";
 
 export type TopsMode = "produk" | "video";
@@ -83,6 +84,7 @@ export function MarketTops({ mode, country, savedKeys, onDetail }: { mode: TopsM
               image={kaloProductImg(r.id)}
               title={r.product_title}
               onOpen={() => onDetail({ id: r.id, name: r.product_title, gmv30: 0 })}
+              intent={intentProps(r.id, country)}
               actions={
                 <>
                   <button type="button" onClick={() => onDetail({ id: r.id, name: r.product_title, gmv30: 0 })} className={pillBtn}><TrendingUp className="size-3.5" /> Detail</button>

@@ -11,11 +11,12 @@ import { SaveProductButton } from "@/components/save-product-button";
 import { countryOf } from "@/lib/countries";
 import { MarketTops } from "./market-tops";
 import { savedFilter } from "../riset/saved-list";
+import { getDetail, intentProps } from "./detail-cache";
 import { EmptyBox, iconBtn, ListBox, ListMeta, pillBtn, ProductRow, RisetToolbar } from "./riset-ui";
 import type { KaloProductInfo } from "@/lib/kalodata";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  addKaloSession, checkKaloSessions, deleteKaloSession, createVideoFromKalo, kaloDetail, kaloToShowcase, kaloVideoUrl, searchKalo, signupKaloSession, type KaloDetail, type KaloHit,
+  addKaloSession, checkKaloSessions, deleteKaloSession, createVideoFromKalo, kaloToShowcase, kaloVideoUrl, searchKalo, signupKaloSession, type KaloDetail, type KaloHit,
 } from "./actions";
 
 export type TikTokTab = "produk" | "video" | "cari" | "tersimpan";
@@ -175,6 +176,7 @@ export function KaloStudio({
                   image={kaloProductImg(r.id)}
                   title={r.name}
                   onOpen={() => setDetail(r)}
+                  intent={intentProps(r.id, cc)}
                   actions={
                     <>
                       <button type="button" onClick={() => setDetail(r)} className={pillBtn}><TrendingUp className="size-3.5" /> Detail</button>
@@ -291,7 +293,7 @@ function DetailDialog({ hit, country, savedKeys, onClose }: { hit: KaloHit | nul
     if (!hit) return;
     let alive = true;
     setTimeout(() => alive && (setPhoto(0), setPlaying(null)), 0);
-    kaloDetail(hit.id, country).then(
+    getDetail(hit.id, country).then(
       (data) => alive && setState({ id: hit.id, data }),
       (e) => alive && setState({ id: hit.id, error: errMsg(e) }),
     );
