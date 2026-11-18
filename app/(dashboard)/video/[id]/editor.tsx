@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  CaseUpper, Copy, Download, Frame, FolderOpen, Loader2, Music, Pause, Play, Plus, Redo2, Scissors, Sparkles, Trash2, Type, Undo2, Upload, Volume2, VolumeX, Wand2,
+  Copy, Download, Frame, FolderOpen, Loader2, Music, Pause, Play, Plus, Redo2, Scissors, Sparkles, Trash2, Type, Undo2, Upload, Volume2, VolumeX, Wand2,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { VideoProject } from "@/lib/db/schema";
@@ -19,13 +19,13 @@ type Project = Omit<VideoProject, "updatedAt"> & { updatedAt: number };
 type Sel = { kind: "caption" | "voice"; id: string } | null;
 type Tab = "teks" | "audio" | "ai" | "posting";
 
-const btn = "flex h-8 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium disabled:opacity-50";
+const btn = "flex h-7 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium disabled:opacity-50";
 const primary = `${btn} bg-primary text-primary-foreground hover:bg-primary/90`;
 const secondary = `${btn} border bg-background hover:bg-accent`;
-const icon = "grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40";
-const field = "w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none focus:border-ring disabled:opacity-60";
-const LANE = 44;
-const HEAD = 132;
+const icon = "grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40";
+const field = "w-full rounded-md border bg-background px-2 py-1 text-xs outline-none focus:border-ring disabled:opacity-60";
+const LANE = 34;
+const HEAD = 92;
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
 const patchOf = (e: ProjectEdit) => ({
@@ -74,13 +74,14 @@ function useHistory(initial: ProjectEdit | null) {
       o.apply(v);
     },
     commit() {
-      if (base.current && base.current !== ref.current) {
-        past.current = [...past.current.slice(-80), base.current];
+      const changed = !!base.current && base.current !== ref.current;
+      if (changed) {
+        past.current = [...past.current.slice(-80), base.current!];
         future.current = [];
       }
       base.current = null;
       setCounts({ undo: past.current.length, redo: future.current.length });
-      setVersion((n) => n + 1);
+      if (changed) setVersion((n) => n + 1); // a click without a drag is not an edit
     },
     reset(v: ProjectEdit) {
       past.current = [];
@@ -464,11 +465,11 @@ export function TimelineEditor({ p }: { p: Project }) {
   const ticks = pps > 60 ? 0.5 : pps > 25 ? 1 : 2;
 
   return (
-    <div className="space-y-4">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,340px)_1fr]">
-        {/* preview */}
-        <div className="space-y-2">
-          <div className="relative overflow-hidden rounded-xl border bg-black" style={{ aspectRatio: `${edit.width}/${edit.height}` }}>
+    <div className="space-y-3">
+      <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)]">
+        {/* preview: height-driven so preview + panel + timeline fit one screen */}
+        <div className="mx-auto space-y-1.5">
+          <div className="relative h-[min(50vh,560px)] min-h-72 overflow-hidden rounded-xl border bg-black" style={{ aspectRatio: `${edit.width}/${edit.height}` }}>
             <video
               ref={video}
               src={mediaUrl(edit.base)}
@@ -506,27 +507,28 @@ export function TimelineEditor({ p }: { p: Project }) {
             {edit.bgm && <audio key={edit.bgm.src} ref={bgmEl} preload="auto" src={mediaUrl(edit.bgm.src)} />}
           </div>
           <div className="flex items-center gap-1">
-            <button type="button" className={`${primary} w-20`} onClick={toggle}>
-              {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5" />} {playing ? "Jeda" : "Putar"}
+            <button type="button" className="grid size-7 place-items-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90" onClick={toggle} aria-label={playing ? "Jeda" : "Putar"}>
+              {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
             </button>
-            <span ref={timeLabel} className="ml-2 font-mono text-[11px] tabular-nums text-muted-foreground">0:00.0 / {fmt(D)}</span>
-            <button type="button" className={`${secondary} ml-auto ${showSafe ? "border-primary bg-primary/10" : ""}`} onClick={() => setShowSafe((v) => !v)} title="Tampilkan area yang tertutup tombol & teks aplikasi">
-              <Frame className="size-3.5" /> Safe area
+            <span ref={timeLabel} className="ml-1 font-mono text-[11px] tabular-nums text-muted-foreground">0:00.0 / {fmt(D)}</span>
+            <button type="button" className={`${icon} ml-auto ${showSafe ? "bg-primary/10 text-primary" : ""}`} onClick={() => setShowSafe((v) => !v)} title="Safe area: area yang tertutup tombol & teks aplikasi">
+              <Frame className="size-3.5" />
             </button>
           </div>
         </div>
 
         {/* inspector */}
-        <div className="flex min-h-0 flex-col rounded-xl border bg-card">
-          <div className="flex items-center gap-1 border-b p-1.5">
+        <div className="relative min-h-80">
+        <div className="flex flex-col rounded-xl border bg-card lg:absolute lg:inset-0">
+          <div className="flex items-center gap-0.5 border-b p-1">
             {([["teks", "Teks", Type], ["audio", "Audio", Volume2], ["ai", "AI", Sparkles], ["posting", "Posting", Upload]] as const).map(([id, label, I]) => (
-              <button key={id} type="button" onClick={() => setTab(id)} className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium ${tab === id ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+              <button key={id} type="button" onClick={() => setTab(id)} className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium ${tab === id ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                 <I className="size-3.5" /> {label}
               </button>
             ))}
-            <span className="ml-auto whitespace-nowrap pr-2 text-[11px] text-muted-foreground">{version > exportedV ? "● Belum diekspor" : "Sudah diekspor"}</span>
+            <span className={`ml-auto whitespace-nowrap pr-2 text-[11px] ${version > exportedV ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>{version > exportedV ? "● Belum diekspor" : "✓ Diekspor"}</span>
           </div>
-          <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
             {tab === "teks" && (
               <TextPanel
                 style={edit.captionStyle}
@@ -545,11 +547,11 @@ export function TimelineEditor({ p }: { p: Project }) {
               />
             )}
             {tab === "audio" && (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <Slider label="Suara klip asli" value={edit.clipVolume} onChange={(v, r) => set((e) => ({ ...e, clipVolume: v }), r)} />
                 {edit.voices.length > 0 && <Slider label="Voice-over (semua)" value={edit.voiceVolume} onChange={(v, r) => set((e) => ({ ...e, voiceVolume: v }), r)} />}
                 {selVoice && (
-                  <div className="space-y-3 rounded-lg border bg-background p-3">
+                  <div className="space-y-2 rounded-lg border bg-background p-2.5">
                     <p className="text-xs font-medium">Voice-over terpilih <span className="font-normal text-muted-foreground">· “{selVoice.text}”</span></p>
                     <Slider label="Volume" value={selVoice.volume} onChange={(v, r) => set((e) => ({ ...e, voices: e.voices.map((x) => (x.id === selVoice.id ? { ...x, volume: v } : x)) }), r)} />
                     <Slider label="Kecepatan" value={selVoice.speed} min={0.5} max={2} step={0.05} unit="×" onChange={(v, r) => set((e) => ({ ...e, voices: e.voices.map((x) => (x.id === selVoice.id ? { ...x, speed: v } : x)) }), r)} />
@@ -583,11 +585,12 @@ export function TimelineEditor({ p }: { p: Project }) {
             {tab === "posting" && <PostingPanel p={p} />}
           </div>
         </div>
+        </div>
       </div>
 
       {/* timeline */}
       <div className="rounded-xl border bg-card">
-        <div className="flex flex-wrap items-center gap-1 border-b px-2 py-1.5">
+        <div className="flex flex-wrap items-center gap-0.5 border-b px-1.5 py-1">
           <button type="button" className={icon} onClick={toggle} aria-label={playing ? "Jeda" : "Putar"}>{playing ? <Pause className="size-4" /> : <Play className="size-4" />}</button>
           <button type="button" className={icon} onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"><Undo2 className="size-4" /></button>
           <button type="button" className={icon} onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)"><Redo2 className="size-4" /></button>
@@ -595,7 +598,7 @@ export function TimelineEditor({ p }: { p: Project }) {
           <button type="button" className={secondary} onClick={addCaption}><Plus className="size-3.5" /> Caption</button>
           <button type="button" className={icon} onClick={splitSel} title="Potong caption di playhead (S)"><Scissors className="size-4" /></button>
           <button type="button" className={icon} onClick={removeSel} disabled={sel?.kind !== "caption"} title="Hapus (Del)"><Trash2 className="size-4" /></button>
-          <span className="ml-3 hidden text-[11px] text-muted-foreground md:inline">Spasi putar · S potong · Del hapus · ←/→ geser</span>
+          <span className="ml-2 hidden text-[10px] text-muted-foreground xl:inline">Spasi putar · S potong · Del hapus · ←/→ geser</span>
           <div className="ml-auto flex items-center gap-2">
             <input type="range" min={0} max={200} value={zoom} onChange={(e) => setZoom(Number(e.target.value) < 15 ? 0 : Number(e.target.value))} aria-label="Zoom timeline" className="w-24 accent-primary" />
             <button type="button" className={primary} disabled={!!busy} onClick={doExport}>
@@ -606,10 +609,10 @@ export function TimelineEditor({ p }: { p: Project }) {
         <div className="flex">
           {/* track headers */}
           <div className="shrink-0 border-r text-[11px]" style={{ width: HEAD }}>
-            <div className="h-6 border-b" />
+            <div className="h-5 border-b" />
             <TrackHead label="Video" />
-            <TrackHead label="Caption" />
-            <TrackHead label="Voice-over" muted={edit.voiceVolume === 0} onMute={edit.voices.length ? () => set((e) => ({ ...e, voiceVolume: e.voiceVolume ? 0 : 1 })) : undefined} />
+            <TrackHead label="Teks" />
+            <TrackHead label="Suara" muted={edit.voiceVolume === 0} onMute={edit.voices.length ? () => set((e) => ({ ...e, voiceVolume: e.voiceVolume ? 0 : 1 })) : undefined} />
             <TrackHead label="Musik" muted={!!edit.bgm && edit.bgm.volume === 0} onMute={edit.bgm ? () => set((e) => ({ ...e, bgm: e.bgm && { ...e.bgm, volume: e.bgm.volume ? 0 : 0.2 } })) : undefined} />
           </div>
           {/* lanes */}
@@ -617,7 +620,7 @@ export function TimelineEditor({ p }: { p: Project }) {
             <div className="relative" style={{ width: totalW }}>
               {/* ruler: click/drag to seek */}
               <div
-                className="relative h-6 cursor-pointer border-b bg-muted/40"
+                className="relative h-5 cursor-pointer border-b bg-muted/40"
                 onPointerDown={(ev) => {
                   ev.stopPropagation();
                   const left = (ev.currentTarget as HTMLElement).getBoundingClientRect().left;
@@ -630,7 +633,7 @@ export function TimelineEditor({ p }: { p: Project }) {
                 }}
               >
                 {Array.from({ length: Math.floor(D / ticks) + 1 }, (_, i) => i * ticks).map((t) => (
-                  <span key={t} className="absolute top-0 h-full border-l border-border/70 pl-1 text-[9px] leading-6 text-muted-foreground" style={{ left: t * pps }}>
+                  <span key={t} className="absolute top-0 h-full border-l border-border/70 pl-1 text-[9px] leading-5 text-muted-foreground" style={{ left: t * pps }}>
                     {Number.isInteger(t) ? `${t}s` : ""}
                   </span>
                 ))}
@@ -638,7 +641,7 @@ export function TimelineEditor({ p }: { p: Project }) {
               {/* video */}
               <Lane>
                 {edit.clips.map((c, i) => (
-                  <div key={i} className="absolute top-1.5 bottom-1.5 overflow-hidden rounded-md border border-sky-500/40 bg-sky-500/15 px-2 text-[10px] leading-[30px] text-sky-900 dark:text-sky-100" style={{ left: c.start * pps, width: c.dur * pps - 2 }} onPointerDown={(ev) => (ev.stopPropagation(), seek(c.start))}>
+                  <div key={i} className="absolute top-1 bottom-1 overflow-hidden rounded-md border border-sky-500/40 bg-sky-500/15 px-2 text-[10px] leading-[24px] text-sky-900 dark:text-sky-100" style={{ left: c.start * pps, width: c.dur * pps - 2 }} onPointerDown={(ev) => (ev.stopPropagation(), seek(c.start))}>
                     <span className="truncate">{i + 1}. {c.label}</span>
                   </div>
                 ))}
@@ -697,11 +700,11 @@ export function TimelineEditor({ p }: { p: Project }) {
               {/* music */}
               <Lane>
                 {edit.bgm ? (
-                  <div className="absolute top-1.5 bottom-1.5 left-0 flex items-center gap-1.5 overflow-hidden rounded-md border border-violet-500/50 bg-violet-500/20 px-2 text-[10px] text-violet-950 dark:text-violet-100" style={{ width: D * pps - 2 }} onPointerDown={(ev) => (ev.stopPropagation(), setTab("audio"))}>
+                  <div className="absolute top-1 bottom-1 left-0 flex items-center gap-1.5 overflow-hidden rounded-md border border-violet-500/50 bg-violet-500/20 px-2 text-[10px] text-violet-950 dark:text-violet-100" style={{ width: D * pps - 2 }} onPointerDown={(ev) => (ev.stopPropagation(), setTab("audio"))}>
                     <Music className="size-3 shrink-0" /> <span className="truncate">{edit.bgm.name} · {Math.round(edit.bgm.volume * 100)}%</span>
                   </div>
                 ) : (
-                  <label className="absolute top-1.5 bottom-1.5 left-1 flex cursor-pointer items-center gap-1 rounded-md border border-dashed px-2 text-[10px] text-muted-foreground hover:bg-accent" onPointerDown={(ev) => ev.stopPropagation()}>
+                  <label className="absolute top-1 bottom-1 left-1 flex cursor-pointer items-center gap-1 rounded-md border border-dashed px-2 text-[10px] text-muted-foreground hover:bg-accent" onPointerDown={(ev) => ev.stopPropagation()}>
                     <Plus className="size-3" /> Tambah musik
                     <input type="file" accept="audio/*" hidden onChange={(e) => (void addMusic(e.target.files?.[0]), (e.target.value = ""))} />
                   </label>
@@ -733,7 +736,7 @@ function Lane({ children }: { children: React.ReactNode }) {
 
 function TrackHead({ label, muted, onMute }: { label: string; muted?: boolean; onMute?: () => void }) {
   return (
-    <div className="flex items-center gap-1 border-b px-2.5 font-medium last:border-b-0" style={{ height: LANE }}>
+    <div className="flex items-center gap-1 border-b px-2 font-medium last:border-b-0" style={{ height: LANE }}>
       <span className="flex-1">{label}</span>
       {onMute && (
         <button type="button" onClick={onMute} className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={muted ? "Bunyikan" : "Bisukan"}>
@@ -752,7 +755,7 @@ function Block({
 }) {
   return (
     <div
-      className={`group absolute top-1.5 bottom-1.5 cursor-grab touch-none overflow-hidden rounded-md border text-[10px] leading-[30px] select-none active:cursor-grabbing ${tone} ${selected ? "ring-2 ring-primary" : ""}`}
+      className={`group absolute top-1 bottom-1 cursor-grab touch-none overflow-hidden rounded-md border text-[10px] leading-[24px] select-none active:cursor-grabbing ${tone} ${selected ? "ring-2 ring-primary" : ""}`}
       style={{ left, width: Math.max(6, width - 2) }}
       onPointerDown={(ev) => {
         onSelect();
@@ -776,8 +779,8 @@ function Slider({
 }: { label: string; value: number; onChange: (v: number, record: boolean) => void; min?: number; max?: number; step?: number; unit?: "%" | "×" | "s" }) {
   const shown = unit === "%" ? `${Math.round(value * 100)}%` : `${value}${unit}`;
   return (
-    <label className="block space-y-1">
-      <span className="flex justify-between text-xs"><span className="font-medium">{label}</span><span className="font-mono tabular-nums text-muted-foreground">{shown}</span></span>
+    <label className="grid grid-cols-[minmax(64px,auto)_1fr_38px] items-center gap-2 text-xs">
+      <span className="truncate text-muted-foreground">{label}</span>
       <input
         type="range"
         min={min}
@@ -786,11 +789,15 @@ function Slider({
         value={value}
         onChange={(e) => onChange(round2(Number(e.target.value)), false)}
         onPointerUp={(e) => onChange(round2(Number((e.target as HTMLInputElement).value)), true)}
-        className="w-full accent-primary"
+        className="h-4 w-full accent-primary"
       />
+      <span className="text-right font-mono text-[11px] tabular-nums">{shown}</span>
     </label>
   );
 }
+
+const chip = (on: boolean) =>
+  `h-6 rounded-full border px-2.5 text-[11px] ${on ? "border-primary bg-primary/10 font-medium text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`;
 
 function TextPanel({
   style, onStyle, onPos, onAnim, safe, onSafe, selected, onCaption, onAdd, onRemove, onSplit, onRegen, count,
@@ -799,95 +806,103 @@ function TextPanel({
   onAnim: (a: CaptionAnim) => void; safe: SafeArea; onSafe: (s: Partial<SafeArea>, record?: boolean) => void; selected?: EditCaption;
   onCaption: (p: Partial<EditCaption>, record?: boolean) => void; onAdd: () => void; onRemove: () => void; onSplit: () => void; onRegen: () => void; count: number;
 }) {
+  const [sub, setSub] = useState<"gaya" | "posisi" | "safe">("gaya");
   const own = !!selected?.pos;
   const pos = styleOf(style, selected);
   const safePreset = SAFE_PRESETS.find((x) => (Object.keys(x.safe) as (keyof SafeArea)[]).every((k) => Math.abs(x.safe[k] - safe[k]) < 0.001))?.id;
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <p className="text-xs font-medium">Gaya caption <span className="font-normal text-muted-foreground">· berlaku untuk semua ({count})</span></p>
-        <div className="grid grid-cols-4 gap-1.5">
-          {CAPTION_PRESETS.map((x) => (
-            <button key={x.id} type="button" onClick={() => onStyle({ preset: x.id })} className={`rounded-lg border p-1 ${style.preset === x.id ? "border-primary ring-1 ring-primary" : "hover:bg-accent"}`}>
-              <PresetSwatch style={{ ...style, preset: x.id }} />
-              <span className="mt-1 block text-[10px]">{x.label}</span>
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="mr-1 text-xs font-medium">Animasi masuk</span>
-          {CAPTION_ANIMS.map((x) => (
-            <button key={x.id} type="button" onClick={() => onAnim(x.id)} className={`h-7 rounded-full border px-2.5 text-[11px] ${style.anim === x.id ? "border-primary bg-primary/10 font-medium" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}>
-              {x.label}
-            </button>
-          ))}
-        </div>
-        <button type="button" className={`${secondary} ${style.upper ? "border-primary bg-primary/10" : ""}`} onClick={() => onStyle({ upper: !style.upper })}>
-          <CaseUpper className="size-3.5" /> HURUF BESAR
-        </button>
-      </div>
-
-      <div className="space-y-2 border-t pt-3">
-        <p className="text-xs font-medium">
-          Posisi & ukuran <span className="font-normal text-muted-foreground">· {own ? "khusus caption ini" : "semua caption"} — bisa juga diseret di video</span>
-        </p>
-        <Slider label="Ukuran" value={pos.size} min={0.03} max={0.12} step={0.002} onChange={(v, r) => onPos({ size: v }, r)} />
-        <Slider label="Posisi horizontal" value={pos.x} min={0.05} max={0.95} step={0.01} onChange={(v, r) => onPos({ x: v }, r)} />
-        <Slider label="Posisi vertikal" value={pos.y} min={0.05} max={0.95} step={0.01} onChange={(v, r) => onPos({ y: v }, r)} />
-        <div className="flex flex-wrap gap-1.5">
-          <button type="button" className={secondary} onClick={() => onPos({ x: 0.5 })}>Tengahkan</button>
-          <button type="button" className={secondary} onClick={() => onPos({ y: 0.2 })}>Atas</button>
-          <button type="button" className={secondary} onClick={() => onPos({ y: 0.5 })}>Tengah</button>
-          <button type="button" className={secondary} onClick={() => onPos({ y: 0.72 })}>Bawah</button>
-        </div>
-      </div>
-
-      <div className="space-y-2 border-t pt-3">
-        <p className="text-xs font-medium">Safe area <span className="font-normal text-muted-foreground">· teks tidak akan keluar dari kotak ini</span></p>
-        <div className="flex flex-wrap gap-1.5">
-          {SAFE_PRESETS.map((x) => (
-            <button key={x.id} type="button" onClick={() => onSafe(x.safe)} className={`h-7 rounded-full border px-2.5 text-[11px] ${safePreset === x.id ? "border-primary bg-primary/10 font-medium" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}>
-              {x.label}
-            </button>
-          ))}
-        </div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-          <Slider label="Atas" value={safe.top} min={0} max={0.35} step={0.01} onChange={(v, r) => onSafe({ top: v }, r)} />
-          <Slider label="Bawah" value={safe.bottom} min={0} max={0.35} step={0.01} onChange={(v, r) => onSafe({ bottom: v }, r)} />
-          <Slider label="Kiri" value={safe.left} min={0} max={0.35} step={0.01} onChange={(v, r) => onSafe({ left: v }, r)} />
-          <Slider label="Kanan" value={safe.right} min={0} max={0.35} step={0.01} onChange={(v, r) => onSafe({ right: v }, r)} />
-        </div>
-      </div>
-
-      <div className="space-y-2 border-t pt-3">
-        {selected ? (
-          <>
-            <div className="flex items-center gap-2">
-              <p className="flex-1 text-xs font-medium">Caption terpilih</p>
-              <button type="button" className={icon} onClick={onSplit} title="Potong di playhead"><Scissors className="size-3.5" /></button>
-              <button type="button" className={icon} onClick={onRemove} title="Hapus"><Trash2 className="size-3.5" /></button>
+    <div className="space-y-3">
+      {/* selected caption (or how to pick one) */}
+      {selected ? (
+        <div className="space-y-1.5 rounded-lg border bg-background p-2">
+          <div className="flex items-center gap-1">
+            <textarea className={`${field} resize-none`} rows={2} value={selected.text} maxLength={200} onChange={(e) => onCaption({ text: e.target.value }, false)} onBlur={(e) => onCaption({ text: e.target.value }, true)} />
+            <div className="flex flex-col">
+              <button type="button" className={icon} onClick={onSplit} title="Potong di playhead (S)"><Scissors className="size-3.5" /></button>
+              <button type="button" className={icon} onClick={onRemove} title="Hapus (Del)"><Trash2 className="size-3.5" /></button>
             </div>
-            <textarea className={field} rows={2} value={selected.text} maxLength={200} onChange={(e) => onCaption({ text: e.target.value }, false)} onBlur={(e) => onCaption({ text: e.target.value }, true)} />
-            <div className="grid grid-cols-2 gap-2">
-              <label className="space-y-1 text-[11px] text-muted-foreground">Mulai (dtk)
-                <input type="number" step={0.1} min={0} className={field} value={selected.start} onChange={(e) => onCaption({ start: round2(Number(e.target.value)) })} />
-              </label>
-              <label className="space-y-1 text-[11px] text-muted-foreground">Selesai (dtk)
-                <input type="number" step={0.1} min={0} className={field} value={selected.end} onChange={(e) => onCaption({ end: round2(Number(e.target.value)) })} />
-              </label>
-            </div>
-            <label className="flex items-center gap-2 text-xs">
+          </div>
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <input type="number" step={0.1} min={0} className={`${field.replace("w-full", "w-16")}`} value={selected.start} onChange={(e) => onCaption({ start: round2(Number(e.target.value)) })} aria-label="Mulai (detik)" />
+            <span>→</span>
+            <input type="number" step={0.1} min={0} className={`${field.replace("w-full", "w-16")}`} value={selected.end} onChange={(e) => onCaption({ end: round2(Number(e.target.value)) })} aria-label="Selesai (detik)" />
+            <span>dtk</span>
+            <label className="ml-auto flex items-center gap-1.5" title="Posisi & ukuran caption ini tidak ikut caption lain (mis. judul hook di atas)">
               <input type="checkbox" checked={own} onChange={(e) => onCaption({ pos: e.target.checked ? { x: style.x, y: style.y, size: style.size } : null })} />
-              Posisi & ukuran sendiri <span className="text-muted-foreground">(mis. judul hook di atas)</span>
+              Posisi sendiri
             </label>
-          </>
-        ) : (
-          <p className="text-[11px] text-muted-foreground">Klik caption di timeline atau di video untuk mengedit. Seret untuk memindah, tarik ujungnya untuk memanjangkan.</p>
-        )}
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className={secondary} onClick={onAdd}><Plus className="size-3.5" /> Caption di playhead</button>
-          <button type="button" className={secondary} onClick={onRegen}><Wand2 className="size-3.5" /> Buat ulang dari naskah</button>
+          </div>
         </div>
+      ) : (
+        <p className="text-[11px] text-muted-foreground">Klik caption di timeline atau di video untuk mengedit teksnya. {count} caption.</p>
+      )}
+
+      <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+        {([["gaya", "Gaya"], ["posisi", own ? "Posisi (caption ini)" : "Posisi"], ["safe", "Safe area"]] as const).map(([id, label]) => (
+          <button key={id} type="button" onClick={() => setSub(id)} className={`h-6 flex-1 rounded-md text-[11px] font-medium ${sub === id ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {sub === "gaya" && (
+        <div className="space-y-2.5">
+          <div className="grid grid-cols-4 gap-1">
+            {CAPTION_PRESETS.map((x) => (
+              <button key={x.id} type="button" title={x.label} onClick={() => onStyle({ preset: x.id })} className={`rounded-md border p-0.5 ${style.preset === x.id ? "border-primary ring-1 ring-primary" : "hover:bg-accent"}`}>
+                <PresetSwatch style={{ ...style, preset: x.id }} />
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="w-14 text-xs text-muted-foreground">Animasi</span>
+            {CAPTION_ANIMS.map((x) => (
+              <button key={x.id} type="button" onClick={() => onAnim(x.id)} className={chip(style.anim === x.id)}>{x.label}</button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="w-14 text-xs text-muted-foreground">Huruf</span>
+            <button type="button" className={chip(!style.upper)} onClick={() => onStyle({ upper: false })}>Aa</button>
+            <button type="button" className={chip(style.upper)} onClick={() => onStyle({ upper: true })}>AA</button>
+          </div>
+        </div>
+      )}
+
+      {sub === "posisi" && (
+        <div className="space-y-2">
+          <Slider label="Ukuran" value={pos.size} min={0.03} max={0.12} step={0.002} onChange={(v, r) => onPos({ size: v }, r)} />
+          <Slider label="Horizontal" value={pos.x} min={0.05} max={0.95} step={0.01} onChange={(v, r) => onPos({ x: v }, r)} />
+          <Slider label="Vertikal" value={pos.y} min={0.05} max={0.95} step={0.01} onChange={(v, r) => onPos({ y: v }, r)} />
+          <div className="flex flex-wrap gap-1">
+            <button type="button" className={chip(false)} onClick={() => onPos({ x: 0.5 })}>↔ Tengahkan</button>
+            <button type="button" className={chip(false)} onClick={() => onPos({ y: 0.2 })}>Atas</button>
+            <button type="button" className={chip(false)} onClick={() => onPos({ y: 0.5 })}>Tengah</button>
+            <button type="button" className={chip(false)} onClick={() => onPos({ y: 0.72 })}>Bawah</button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">Bisa juga diseret langsung di video; titik di sudut untuk ukuran.</p>
+        </div>
+      )}
+
+      {sub === "safe" && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-1">
+            {SAFE_PRESETS.map((x) => (
+              <button key={x.id} type="button" onClick={() => onSafe(x.safe)} className={chip(safePreset === x.id)}>{x.label}</button>
+            ))}
+          </div>
+          <div className="grid gap-x-4 gap-y-2 xl:grid-cols-2">
+            <Slider label="Atas" value={safe.top} min={0} max={0.35} step={0.01} onChange={(v, r) => onSafe({ top: v }, r)} />
+            <Slider label="Bawah" value={safe.bottom} min={0} max={0.35} step={0.01} onChange={(v, r) => onSafe({ bottom: v }, r)} />
+            <Slider label="Kiri" value={safe.left} min={0} max={0.35} step={0.01} onChange={(v, r) => onSafe({ left: v }, r)} />
+            <Slider label="Kanan" value={safe.right} min={0} max={0.35} step={0.01} onChange={(v, r) => onSafe({ right: v }, r)} />
+          </div>
+          <p className="text-[11px] text-muted-foreground">Teks tidak akan keluar dari kotak putus-putus di video.</p>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-1 border-t pt-2.5">
+        <button type="button" className={secondary} onClick={onAdd}><Plus className="size-3.5" /> Caption</button>
+        <button type="button" className={secondary} onClick={onRegen}><Wand2 className="size-3.5" /> Buat ulang dari naskah</button>
       </div>
     </div>
   );
@@ -917,7 +932,7 @@ function PresetSwatch({ style }: { style: CaptionStyle }) {
     ctx.clearRect(0, 0, c.width, c.height);
     drawCaption(ctx, c.width, c.height, "Aa Promo", { ...style, x: 0.5, y: 0.5, size: 0.17 }, { top: 0, bottom: 0, left: 0, right: 0 });
   }, [style]);
-  return <canvas ref={ref} width={160} height={70} className="h-9 w-full rounded bg-[linear-gradient(135deg,#5b6b7a,#2a3440)]" />;
+  return <canvas ref={ref} width={160} height={70} className="h-8 w-full rounded bg-[linear-gradient(135deg,#5b6b7a,#2a3440)]" />;
 }
 
 const AI_CHIPS = [
