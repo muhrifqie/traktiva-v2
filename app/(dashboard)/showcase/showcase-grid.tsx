@@ -2,13 +2,15 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CircleAlert, CircleCheck, Clapperboard, ExternalLink, Link2, Loader2, Package, Plus, RefreshCw, Search, Store, Trash2 } from "lucide-react";
+import { Check, CircleAlert, CircleCheck, Clapperboard, ExternalLink, Link2, Loader2, Package, Plus, RefreshCw, Search, Store, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { mediaUrl } from "@/lib/media-url";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import { confirmDialog } from "@/components/confirm-dialog";
 import { addShowcaseProducts, createProjectFromProduct, removeShowcaseProducts, setShowcaseAutoSync, syncShowcase } from "./actions";
+import { ShowcaseDetail } from "./product-detail";
+import { BatchDialog, type BatchDefaults } from "./batch-dialog";
 
 type Product = {
   id: number;
@@ -24,7 +26,7 @@ type Product = {
   cover: string | null;
   labels: string[];
 };
-type Concept = { id: string; title: string; bestFor: string };
+type Concept = { id: string; title: string; bestFor: string; auto: boolean };
 
 const productUrl = (pid: string) => `https://www.tiktok.com/view/product/${pid}`;
 const compact = new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 1 });
@@ -54,9 +56,15 @@ export function SyncButton({ accountId }: { accountId: number }) {
   );
 }
 
-export function ShowcaseGrid({ accountId, products, concepts, neverSynced }: { accountId: number; products: Product[]; concepts: Concept[]; neverSynced: boolean }) {
+export function ShowcaseGrid({
+  accountId, products, concepts, neverSynced, batch,
+}: { accountId: number; products: Product[]; concepts: Concept[]; neverSynced: boolean; batch: BatchDefaults }) {
   const [q, setQ] = usePersistentState("showcase:q", "");
   const [making, setMaking] = useState<Product | null>(null);
+  const [detail, setDetail] = useState<Product | null>(null);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const toggle = (id: number) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   const k = q.trim().toLowerCase();
   const shown = k ? products.filter((p) => `${p.title} ${p.shopName ?? ""} ${p.productId}`.toLowerCase().includes(k)) : products;
 
@@ -82,15 +90,54 @@ export function ShowcaseGrid({ accountId, products, concepts, neverSynced }: { a
         </label>
       )}
 
+      <div className={`sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-xs backdrop-blur ${selected.length ? "border-primary/40 bg-primary/10" : "bg-card/80"}`}>
+        {selected.length ? (
+          <>
+            <span className="font-medium">{selected.length} produk dipilih</span>
+            <button type="button" onClick={() => setSelected([...new Set([...selected, ...shown.map((p) => p.id)])])} className="rounded-md px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground">Pilih semua yang tampil</button>
+            <button type="button" onClick={() => setSelected([])} className="flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-3" /> Batal pilih</button>
+            <button type="button" onClick={() => setBatchOpen(true)} className="ml-auto flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">
+              <Clapperboard className="size-3.5" /> Buat {selected.length} video otomatis
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="text-muted-foreground">Centang beberapa produk untuk dibuatkan video sekaligus (1 pekerja = 1 video jadi).</span>
+            <button type="button" onClick={() => setSelected(shown.map((p) => p.id))} className="ml-auto rounded-md px-2 py-1 font-medium hover:bg-accent">Pilih semua</button>
+          </>
+        )}
+      </div>
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
         {shown.map((p) => (
-          <article key={p.id} className="group flex flex-col overflow-hidden rounded-xl border bg-card transition-colors hover:border-ring/40">
-            <div className="relative aspect-square overflow-hidden bg-muted">
+          <article key={p.id} className={`group flex flex-col overflow-hidden rounded-xl border bg-card transition-colors ${selected.includes(p.id) ? "border-primary ring-1 ring-primary" : "hover:border-ring/40"}`}>
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label={`Lihat detail ${p.title}`}
+              onClick={() => setDetail(p)}
+              onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), setDetail(p))}
+              className="relative aspect-square cursor-pointer overflow-hidden bg-muted"
+            >
               {p.cover ? (
                 <img src={mediaUrl(p.cover)} alt="" loading="lazy" className="size-full object-cover transition-transform duration-500 group-hover:scale-105" />
               ) : (
                 <Package className="absolute inset-0 m-auto size-6 text-muted-foreground" />
               )}
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={selected.includes(p.id)}
+                aria-label={`Pilih ${p.title}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggle(p.id);
+                }}
+                onKeyDown={(e) => e.stopPropagation()}
+                className={`absolute bottom-2 left-2 grid size-6 place-items-center rounded-md border-2 transition-colors ${selected.includes(p.id) ? "border-primary bg-primary text-primary-foreground" : "border-white/80 bg-black/45 text-transparent opacity-80 hover:opacity-100"}`}
+              >
+                <Check className="size-3.5" />
+              </button>
               {p.commission && (
                 <span className="absolute top-2 right-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-semibold text-[#4ade80] backdrop-blur">Komisi {p.commission}</span>
               )}
@@ -103,7 +150,7 @@ export function ShowcaseGrid({ accountId, products, concepts, neverSynced }: { a
               </div>
             </div>
             <div className="flex flex-1 flex-col gap-1 p-2.5">
-              <p className="line-clamp-2 text-xs leading-snug font-medium" title={p.title}>{p.title}</p>
+              <button type="button" onClick={() => setDetail(p)} className="line-clamp-2 text-left text-xs leading-snug font-medium hover:underline" title={p.title}>{p.title}</button>
               <p className="truncate text-[11px] text-muted-foreground">{p.shopName ?? "—"}</p>
               <p className="flex items-baseline gap-1.5">
                 <span className="text-[13px] font-semibold">{p.price}</span>
@@ -147,7 +194,16 @@ export function ShowcaseGrid({ accountId, products, concepts, neverSynced }: { a
         ))}
       </div>
 
+      <ShowcaseDetail
+        product={detail}
+        onClose={() => setDetail(null)}
+        onMakeVideo={(p) => {
+          setDetail(null);
+          setMaking(p);
+        }}
+      />
       <ConceptPicker product={making} concepts={concepts} onClose={() => setMaking(null)} />
+      <BatchDialog open={batchOpen} productIds={selected} concepts={concepts} defaults={batch} onClose={() => setBatchOpen(false)} onStarted={() => setSelected([])} />
     </div>
   );
 }

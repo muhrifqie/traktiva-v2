@@ -156,6 +156,8 @@ export type TikTokProfile = {
   videoCount: number;
   videos: TikTokVideo[];
   playlists: { id: string; name: string; videoCount: number; cover: string | null }[];
+  /** cover image bytes per video id, fetched inside the session (TikTok's signed cover links only work there and expire) */
+  coverData: Map<string, { data: Buffer; type: string }>;
 };
 
 const num = (v: unknown) => (typeof v === "number" ? v : Number(v) || 0);
@@ -210,13 +212,34 @@ export async function syncProfile(sessionKey: string, username: string, { maxVid
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw TikTok payloads
     let playlists: any[] = [];
 
+    // covers: keep the images the page itself loads (signed CDN links only answer this session)
+    const coverData = new Map<string, { data: Buffer; type: string }>();
+    // same image is served with different size/format suffixes ("<id>~tplv-…"): match on the image id
+    const coverKey = (u: string) => (u.split("?")[0].split("/").pop() ?? "").split("~")[0];
+    const wanted = new Map<string, string>(); // cover link without query → video id
+    page.on("response", async (res) => {
+      const key = coverKey(res.url());
+      const vid = wanted.get(key);
+      if (vid && !coverData.has(vid) && res.ok()) {
+        const type = res.headers()["content-type"] ?? "";
+        if (/^image\//.test(type)) {
+          const data = await res.body().catch(() => null);
+          if (data?.length) coverData.set(vid, { data, type });
+        }
+      }
+    });
+
     page.on("response", async (res) => {
       const url = res.url();
       if (!/\/api\/(post\/item_list|user\/playlist)\//.test(url)) return;
       const j = await res.json().catch(() => null);
       if (!j) return;
       if (url.includes("/post/item_list/")) {
-        for (const it of j.itemList ?? []) videos.set(String(it.id), mapVideo(it));
+        for (const it of j.itemList ?? []) {
+          const v = mapVideo(it);
+          videos.set(v.id, v);
+          if (v.cover) wanted.set(coverKey(v.cover), v.id);
+        }
         hasMore = !!j.hasMore;
         pages++;
       } else {
@@ -236,6 +259,32 @@ export async function syncProfile(sessionKey: string, username: string, { maxVid
       await withTimeout(page.evaluate((dy) => window.scrollBy(0, dy), 1800 + Math.random() * 900), 5000).catch(() => {});
       for (let w = 0; w < 10 && pages === before; w++) await sleep(400 + Math.random() * 300);
       if (pages === before) break; // nothing new loaded
+    }
+
+    // still missing: fetch through the same logged-in session
+    for (const v of videos.values()) {
+      if (coverData.has(v.id) || !v.cover) continue;
+      const res = await ctx.request.get(v.cover, { headers: { referer: "https://www.tiktok.com/" }, timeout: 15_000 }).catch(() => null);
+      const type = res?.headers()["content-type"] ?? "";
+      if (res?.ok() && /^image\//.test(type)) coverData.set(v.id, { data: await res.body(), type });
+    }
+    // last resort that always works: screenshot each cover as the page shows it (grid item → /video/<id>)
+    if ([...videos.keys()].some((id) => !coverData.has(id))) {
+      await withTimeout(page.evaluate(() => window.scrollTo(0, 0)), 5000).catch(() => {});
+      const items = page.locator('[data-e2e="user-post-item"]');
+      const n = await items.count().catch(() => 0);
+      for (let i = 0; i < n; i++) {
+        const item = items.nth(i);
+        const href = (await item.locator('a[href*="/video/"], a[href*="/photo/"]').first().getAttribute("href").catch(() => null)) ?? "";
+        const id = href.match(/\/(?:video|photo)\/(\d+)/)?.[1];
+        if (!id || coverData.has(id)) continue;
+        const img = item.locator("img").first();
+        if (!(await img.count())) continue;
+        await img.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
+        await img.evaluate((el) => new Promise<void>((r) => ((el as HTMLImageElement).complete ? r() : ((el as HTMLImageElement).onload = () => r(), setTimeout(r, 4000))))).catch(() => {});
+        const shot = await img.screenshot({ type: "jpeg", quality: 90, timeout: 8000 }).catch(() => null);
+        if (shot?.length) coverData.set(id, { data: shot, type: "image/jpeg" });
+      }
     }
 
     const u = info.user;
@@ -260,6 +309,7 @@ export async function syncProfile(sessionKey: string, username: string, { maxVid
         videoCount: num(p.videoCount ?? p.itemCount),
         cover: p.cover ?? null,
       })),
+      coverData,
     };
   });
 }

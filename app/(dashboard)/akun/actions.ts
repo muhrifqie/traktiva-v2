@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { accountPosts, accounts, accountStats } from "@/lib/db/schema";
 import { deleteProfile, isProfileKey } from "@/lib/browser/camoufox";
 import * as tiktok from "@/lib/platforms/tiktok";
+import { writeMedia } from "@/lib/media";
 
 // Accounts are only created by a real platform login (username/uid read from the session), never typed in by hand.
 
@@ -142,10 +143,17 @@ export async function syncTikTokAccount(id: number) {
     capturedAt: now,
   });
 
+  // covers are stored locally: TikTok's signed cover links stop working outside the session and expire
+  const existing = new Map((await db.select({ id: accountPosts.externalId, cover: accountPosts.coverUrl }).from(accountPosts).where(eq(accountPosts.accountId, a.id))).map((r) => [r.id, r.cover]));
+  const coverDir = `Profil/${p.username.replace(/[^\w.-]/g, "_")}`;
   for (const v of p.videos) {
+    const got = p.coverData.get(v.id);
+    const ext = got?.type.includes("png") ? ".png" : got?.type.includes("webp") ? ".webp" : ".jpg";
+    const local = got ? await writeMedia(`${coverDir}/${v.id}${ext}`, got.data).catch(() => null) : null;
+    const prev = existing.get(v.id);
     const row = {
       caption: v.caption,
-      coverUrl: v.cover,
+      coverUrl: local ?? (prev && !/^https?:/.test(prev) ? prev : v.cover), // keep an earlier local copy over a dead link
       views: v.views,
       likes: v.likes,
       comments: v.comments,

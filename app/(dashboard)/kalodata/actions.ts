@@ -177,7 +177,7 @@ export async function createVideoFromKalo(productId: string, country: string = "
   const product = { name, details: facts, price, photos: [] as string[] };
   const [{ id: projectId }] = await db
     .insert(videoProjects)
-    .values({ presetId: preset.id, title: "", step: 4, product, options: { ...defaultOptions(preset) }, scenes: [], folder: "" })
+    .values({ presetId: preset.id, title: "", step: 4, product, options: { ...defaultOptions(preset), productId: id }, scenes: [], folder: "" })
     .returning({ id: videoProjects.id });
   const folder = await createProjectFolder(projectId, `kalo-${id}`);
 

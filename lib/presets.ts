@@ -3,6 +3,8 @@
 // Flow models follow English best; users can edit every scene before rendering. Gemini-written
 // storyboards replace these templates later; the shapes stay the same.
 
+import { voiceLine as voiceLineOf, withoutVoice } from "@/lib/voice";
+
 export type Product = { name: string; details: string; price: string; photos: string[] /* MEDIA_DIR-relative */ };
 export type Field =
   | { key: string; label: string; type: "select"; options: { value: string; label: string }[]; default: string }
@@ -203,4 +205,111 @@ export const defaultOptions = (p: Preset): Options => Object.fromEntries(p.field
 export function draftCaption(p: Product) {
   const tag = p.name.toLowerCase().replace(/[^a-z0-9]+/g, "");
   return `${p.name} lagi rame banget! ${p.details ? `${p.details}. ` : ""}${p.price ? `Cuma ${p.price}. ` : ""}Cek keranjang kuning sebelum kehabisan 🛒\n\n#${tag || "racuntiktok"} #racuntiktok #tiktokshop #fyp`;
+}
+
+// ---------- one video = one continuous clip, up to 4 different videos per product ----------
+
+/** Total video lengths offered (Omni makes 3–15 s in one take). */
+export const VIDEO_SECS = [6, 8, 10, 12, 15] as const;
+export const DEFAULT_VIDEO_SEC = 10;
+/** How many different videos one product can get in one go. */
+export const MAX_VIDEOS = 4;
+const WORDS_PER_SEC = 2.4; // relaxed Indonesian voice-over pace
+
+/** Project in "videos" mode: every scene is its own finished video (no joining, no timeline). */
+export const isVideosMode = (options: Options) => options.mode === "videos";
+/** Finished video file of scene `i` in "videos" mode (MEDIA_DIR-relative). */
+export const videoFile = (folder: string, i: number) => `${folder}/video-${i + 1}.mp4`;
+export const videoCount = (options: Options) => Math.min(MAX_VIDEOS, Math.max(1, Number(options.videos) || 1));
+
+type Facts = { name: string; short: string; price: string; rating: string | null; sold: string | null };
+
+/** Spoken-friendly product facts out of the name/details fields (filled from the showcase/Kalodata). */
+function factsOf(p: Product): Facts {
+  const short = p.name.replace(/[([{][^)\]}]*[)\]}]/g, " ").replace(/[-_/|]+/g, " ").replace(/\s+/g, " ").trim().split(" ").slice(0, 4).join(" ");
+  return {
+    name: p.name,
+    short: short || p.name,
+    price: p.price,
+    rating: p.details.match(/rating\s*(\d+(?:[.,]\d+)?)/i)?.[1] ?? null,
+    sold: p.details.match(/terjual\s+(lebih dari\s+[^,]+?|[\d.,]+\s*\w*)\s+dalam/i)?.[1] ?? null,
+  };
+}
+
+/**
+ * The 4 takes on one product: same product, different camera angle, camera movement, starting frame and
+ * talking points. Variant 1 keeps the concept as designed.
+ */
+type Variant = {
+  label: string;
+  camera: string; // added to the start-frame image prompt
+  move: string; // camera movement for the whole take
+  start: number; // which concept scene gives the start frame (beats rotate from there)
+  script: ((f: Facts) => string[]) | null; // null = the concept's own lines
+};
+const VARIANTS: Variant[] = [
+  { label: "Unboxing", camera: "", move: "", start: 0, script: null },
+  {
+    label: "Masalah → solusi",
+    camera: "shot from a top-down angle directly above (flat-lay view)",
+    move: "Smooth overhead camera with a very slow rotation.",
+    start: 1,
+    script: (f) => [`Susah cari yang pas dan nyaman?`, `${f.short} ini jawabannya.`, `Langsung cek keranjang kuning!`],
+  },
+  {
+    label: "Harga & promo",
+    camera: "shot from a 45-degree side angle, product closer to the lens",
+    move: "Handheld push-in toward the product, energetic but steady.",
+    start: 2,
+    script: (f) => [
+      f.price ? `Cuma ${f.price} aja!` : `Harganya bikin kaget!`,
+      f.sold ? `Udah ${f.sold} terjual.` : `Lagi banyak yang beli.`,
+      `Mumpung promo, checkout sekarang!`,
+    ],
+  },
+  {
+    label: "Detail & kualitas",
+    camera: "eye-level macro close-up with shallow depth of field",
+    move: "Slow orbit around the product, revealing texture and details.",
+    start: 0,
+    script: (f) => [f.rating ? `Rating ${f.rating}, pantes laris.` : `Kualitasnya beneran oke.`, `Lihat detailnya, rapi banget.`, `Wajib masuk keranjang!`],
+  },
+];
+
+/**
+ * One continuous shot of `sec` seconds made from a concept's scenes: the chosen scene's image is the start
+ * frame, the scenes from there on become timed beats of the same take (natural order kept), and the spoken lines
+ * become one script that fits the length (middle lines dropped first).
+ */
+function oneShot(scenes: SceneDraft[], sec: number, o: Options, v: Variant, f: Facts, label: string): SceneDraft {
+  // start at the variant's scene and keep the concept's order from there (never wrap: "use" before "unbox" reads wrong)
+  const order = scenes.slice(Math.min(v.start, scenes.length - 1));
+  const step = sec / Math.max(1, order.length);
+  const t = (x: number) => (Math.round(x * 10) / 10).toString();
+  const beats = order.map((s, i) => `${t(i * step)}–${t((i + 1) * step)}s: ${withoutVoice(s.motionPrompt).replace(/\s*Silent\.?$/i, "")}`);
+
+  const conceptLines = order.map((s) => voiceLineOf(s.motionPrompt)).filter((l): l is string => !!l);
+  const speaks = conceptLines.length > 0 && o.voice !== "none";
+  // long marketplace titles are unnatural to say out loud: speak the short name
+  let lines = speaks ? (v.script ? v.script(f) : conceptLines).map((l) => l.split(f.name).join(f.short)) : [];
+  const budget = Math.max(4, Math.floor((sec - 1) * WORDS_PER_SEC));
+  const words = (ls: string[]) => ls.join(" ").split(/\s+/).length;
+  while (lines.length > 2 && words(lines) > budget) lines = [...lines.slice(0, 1), ...lines.slice(2)];
+  if (lines.length === 2 && words(lines) > budget) lines = [lines[0]];
+  const audio = lines.length ? `${voiceLine(o, lines.join(" "))} The line is spread naturally over the whole clip.` : "No dialogue, no voice-over.";
+
+  const image = order[0]?.imagePrompt ?? "";
+  return {
+    label,
+    imagePrompt: v.camera ? image.replace(/, vertical 9:16/, `, ${v.camera}, vertical 9:16`) : image,
+    motionPrompt: `One continuous ${sec}-second take, no cuts, the same place and product throughout. ${v.move} ${beats.join(" ")} ${audio}`.replace(/\s{2,}/g, " ").trim(),
+  };
+}
+
+/** `count` (1–4) finished videos for one product, each a single take of `sec` seconds with its own angle and talking points. */
+export function buildVideos(scenes: SceneDraft[], sec: number, o: Options, product: Product, count: number): SceneDraft[] {
+  if (!scenes.length) return [];
+  const f = factsOf(product);
+  const n = Math.min(MAX_VIDEOS, Math.max(1, count));
+  return VARIANTS.slice(0, n).map((v, i) => oneShot(scenes, sec, o, v, f, n === 1 ? "Video" : `Video ${i + 1} · ${v.label}`));
 }

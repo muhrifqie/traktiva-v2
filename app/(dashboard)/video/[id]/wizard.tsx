@@ -4,18 +4,20 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, CircleAlert, Maximize2, Clapperboard, Clock, FolderOpen, ImagePlus, Images, Library, Loader2, PenLine, Plus, Sparkles, Trash2, Upload, Wand2, X,
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, CircleAlert, Maximize2, Clapperboard, Clock, Download, FolderOpen, Send, ImagePlus, Images, Library, Loader2, PenLine, Plus, Sparkles, Store, Trash2, Upload, Wand2, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { confirmDialog } from "@/components/confirm-dialog";
 import type { VideoProject } from "@/lib/db/schema";
 import { mediaUrl } from "@/lib/media-url";
-import { isSilent, presetById, projectName } from "@/lib/presets";
+import { isSilent, isVideosMode, MAX_VIDEOS, presetById, projectName, VIDEO_SECS, videoFile } from "@/lib/presets";
 import {
   addScene, aiWriteScenes, buildStoryboard, deleteProject, generateImages, moveScene, openProjectFolder, pickFromLibrary, removePhoto, removeScene,
-  renameProject, renderProject, saveProject, uploadPhotos, uploadSceneImage,
+  pickShowcaseProduct, renameProject, renderProject, saveProject, uploadPhotos, uploadSceneImage,
 } from "../project-actions";
 import { LibraryPicker } from "@/components/library-picker";
+import { PostDialog, type PostVideo } from "@/components/post-dialog";
+import { ShowcasePicker } from "@/components/showcase-picker";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import { TimelineEditor } from "./editor";
 import { openLightbox, type LightboxItem } from "@/components/media-lightbox";
@@ -23,9 +25,11 @@ import { voiceLine } from "@/lib/voice";
 import { SceneVoiceLine, usePlayer, VoicePanel, type ProjectVoiceState, type VoiceOption } from "./voice-panel";
 
 type Project = Omit<VideoProject, "updatedAt"> & { updatedAt: number };
+/** Scene errors can be long (debug screenshot path, retry notes): keep the overlay readable, full text on hover. */
+const shortError = (e: string) => e.replace(/\s*\(screenshot: [^)]*\)/g, "").replace(/\s*\(sudah dicoba \d+×\)/, "").replace(/\[browser\]\s*/g, "");
 
 const STEPS = ["Konsep", "Produk", "Gaya", "Storyboard", "Render", "Hasil"];
-const CLIP_SECS = [4, 6, 8, 10];
+const CLIP_SECS = [4, 6, 8, 10]; // Racikan Sendiri: per scene
 
 const input = "w-full rounded-lg border bg-background px-3 py-2 text-[13px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:opacity-60";
 const btn = "flex h-9 items-center justify-center gap-1.5 rounded-lg px-3.5 text-[13px] font-medium disabled:opacity-60";
@@ -35,8 +39,8 @@ const seg = (on: boolean) =>
   `flex h-8 items-center justify-center rounded-md px-3 text-xs font-medium transition-colors ${on ? "bg-background text-foreground shadow-xs ring-1 ring-border" : "text-muted-foreground hover:text-foreground"}`;
 
 export function Wizard({
-  project: p, hasGoogle, voice, voices, hasCartesia,
-}: { project: Project; hasGoogle: boolean; voice: ProjectVoiceState; voices: VoiceOption[]; hasCartesia: boolean }) {
+  project: p, hasGoogle, voice, voices, hasCartesia, maxVideos,
+}: { project: Project; hasGoogle: boolean; voice: ProjectVoiceState; voices: VoiceOption[]; hasCartesia: boolean; maxVideos: number }) {
   const voiceLabel = voice.choice === "cartesia" ? `Cartesia · ${voice.voiceName ?? "suara pilihan"}` : voice.choice === "off" ? "tanpa suara" : "Bawaan Flow";
   const router = useRouter();
   const preset = presetById(p.presetId)!;
@@ -142,7 +146,7 @@ export function Wizard({
       <section className="flex-1">
         {step === 1 && <StepConcept preset={preset} p={p} onNext={() => go(2)} />}
         {step === 2 && <StepProduct p={p} busy={busy} act={act} onNext={() => go(3)} />}
-        {step === 3 && <StepStyle p={p} busy={busy} act={act} onDone={() => setStep(4)} />}
+        {step === 3 && <StepStyle p={p} busy={busy} act={act} onDone={() => setStep(4)} maxVideos={maxVideos} />}
         {step === 4 && <StepStoryboard key={p.updatedAt} p={p} busy={busy || running} act={act} ready={scenesReady} onNext={() => go(5)} voice={voice} voices={voices} hasCartesia={hasCartesia} />}
         {step === 5 && <StepRender p={p} busy={busy || running} act={act} ready={scenesReady} onBack={() => go(4)} voiceLabel={voiceLabel} />}
         {step === 6 && <StepResult p={p} />}
@@ -313,19 +317,33 @@ function StepProduct({ p, busy, act, onNext }: { p: Project; busy: boolean; act:
             )}
           </div>
           <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={(e) => upload(e.target.files)} />
-          {p.product.photos.length < 3 && (
-            <button type="button" disabled={busy} onClick={() => setPicking(true)} className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border text-xs font-medium hover:bg-accent disabled:opacity-60">
-              <Library className="size-3.5" /> Ambil dari Pustaka (tanpa unggah ulang)
-            </button>
-          )}
-          <LibraryPicker open={picking} onClose={() => setPicking(false)} title="Pilih foto produk" onPick={(rel) => act(() => pickFromLibrary(p.id, rel, { kind: "photo" }), "Foto ditambahkan")} />
+          <button type="button" disabled={busy} onClick={() => setPicking(true)} className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border text-xs font-medium hover:bg-accent disabled:opacity-60">
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Store className="size-3.5" />} Ambil dari Etalase (nama, harga &amp; foto otomatis)
+          </button>
+          <ShowcasePicker
+            open={picking}
+            onClose={() => setPicking(false)}
+            onPick={(it, chosen) =>
+              act(async () => {
+                const t = toast.loading("Mengambil data & foto produk...");
+                try {
+                  const r = await pickShowcaseProduct(p.id, it.id, chosen);
+                  setDraft({ name: r.name, details: r.details, price: r.price }); // the form holds its own draft
+                  toast.success(`Produk dipasang · ${r.photos} foto dipakai`, { id: t });
+                } catch (e) {
+                  toast.dismiss(t);
+                  throw e;
+                }
+              })
+            }
+          />
         </div>
       </div>
     </Card>
   );
 }
 
-function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: Act; onDone: () => void }) {
+function StepStyle({ p, busy, act, onDone, maxVideos }: { p: Project; busy: boolean; act: Act; onDone: () => void; maxVideos: number }) {
   const preset = presetById(p.presetId)!;
   const [options, setOptions] = useState(p.options);
   const [clipSec, setClipSec] = useState(p.clipSec);
@@ -369,12 +387,40 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
             )}
           </label>
         ))}
-        <div className="space-y-1.5">
-          <span className="text-xs font-medium">Durasi per klip</span>
-          <div className="flex w-fit rounded-lg bg-muted p-0.5" role="radiogroup" aria-label="Durasi per klip">
-            {CLIP_SECS.map((s) => <button key={s} type="button" onClick={() => setClipSec(s)} className={seg(clipSec === s)}>{s} dtk</button>)}
+        {presetById(p.presetId)?.custom ? (
+          <div className="space-y-1.5">
+            <span className="text-xs font-medium">Durasi per klip</span>
+            <div className="flex w-fit rounded-lg bg-muted p-0.5" role="radiogroup" aria-label="Durasi per klip">
+              {CLIP_SECS.map((s) => <button key={s} type="button" onClick={() => setClipSec(s)} className={seg(clipSec === s)}>{s} dtk</button>)}
+            </div>
           </div>
-        </div>
+        ) : (
+          <>
+          <div className="space-y-1.5">
+            <span className="text-xs font-medium">Jumlah video</span>
+            <div className="flex w-fit rounded-lg bg-muted p-0.5" role="radiogroup" aria-label="Jumlah video">
+              {/* only as many as this PC can make at once */}
+              {Array.from({ length: Math.min(MAX_VIDEOS, maxVideos) }, (_, i) => i + 1).map((n) => (
+                <button key={n} type="button" role="radio" aria-checked={Math.min(Number(options.videos) || 1, maxVideos) === n} onClick={() => setOptions({ ...options, videos: String(n) })} className={seg(Math.min(Number(options.videos) || 1, maxVideos) === n)}>
+                  {n} video
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {Math.min(Number(options.videos) || 1, maxVideos) > 1
+                ? "Produk sama, tiap video beda angle kamera & pembahasan: 1 Unboxing · 2 Masalah → solusi · 3 Harga & promo · 4 Detail & kualitas."
+                : "Satu video. Pilih lebih dari 1 untuk variasi angle & pembahasan."}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-xs font-medium">Durasi video</span>
+            <div className="flex w-fit rounded-lg bg-muted p-0.5" role="radiogroup" aria-label="Durasi video">
+              {VIDEO_SECS.map((s) => <button key={s} type="button" onClick={() => setClipSec(s)} className={seg(clipSec === s)}>{s} dtk</button>)}
+            </div>
+            <p className="text-[11px] text-muted-foreground">Panjang tiap video jadi: 1 gambar awal + 1 klip utuh tanpa potongan.</p>
+          </div>
+          </>
+        )}
       </div>
     </Card>
   );
@@ -499,7 +545,7 @@ function SceneMedia({ scene, kind, running, scenes }: { scene?: Scene; kind: "im
         </div>
       )}
       {!live && scene?.error && (kind === "image" || !scene.clip) && (
-        <p className="absolute inset-x-0 bottom-0 bg-destructive/90 p-1.5 text-[10px] leading-tight text-white">{scene.error}</p>
+        <p title={scene.error} className="absolute inset-x-0 bottom-0 line-clamp-4 bg-destructive/90 p-1.5 text-[10px] leading-tight text-white">{shortError(scene.error)}</p>
       )}
     </div>
   );
@@ -699,7 +745,7 @@ function StepRender({ p, busy, act, ready, onBack, voiceLabel }: { p: Project; b
   return (
     <Card
       title="Render"
-      desc={`${p.scenes.length} klip × ${p.clipSec} dtk ≈ ${p.scenes.length * p.clipSec} dtk${isSilent(p.presetId, p.options) ? ", tanpa suara (sinkronkan ke beat di CapCut)" : `, suara: ${voiceLabel}`}. Klip yang sudah jadi tidak dibuat ulang.`}
+      desc={`${p.scenes.length === 1 ? `1 klip utuh · video ${p.clipSec} dtk` : `${p.scenes.length} klip × ${p.clipSec} dtk ≈ ${p.scenes.length * p.clipSec} dtk`}${isSilent(p.presetId, p.options) ? ", tanpa suara (sinkronkan ke beat di CapCut)" : `, suara: ${voiceLabel}`}. Klip yang sudah jadi tidak dibuat ulang.`}
       footer={
         <>
           <button type="button" className={secondary} onClick={onBack}><ArrowLeft className="size-4" /> Storyboard</button>
@@ -725,8 +771,54 @@ function StepRender({ p, busy, act, ready, onBack, voiceLabel }: { p: Project; b
 }
 
 function StepResult({ p }: { p: Project }) {
+  if (isVideosMode(p.options)) return <VideosResult p={p} />;
   if (!p.finalPath) {
     return <Card title="Hasil" desc="Video belum dirender."><p className="text-xs text-muted-foreground">Selesaikan langkah Render dulu.</p></Card>;
   }
   return <TimelineEditor p={p} />;
+}
+
+/** "videos" mode result: every variant is its own finished video (same product, different angle & talk). */
+function VideosResult({ p }: { p: Project }) {
+  const [posting, setPosting] = useState<PostVideo[] | null>(null);
+  const done = p.scenes.map((s, i) => ({ s, i, file: videoFile(p.folder, i) })).filter((x) => x.s.clip);
+  if (!done.length) {
+    return <Card title="Hasil" desc="Video belum dirender."><p className="text-xs text-muted-foreground">Selesaikan langkah Render dulu.</p></Card>;
+  }
+  const items: LightboxItem[] = done.map((x) => ({ src: x.file, kind: "video", label: x.s.label }));
+  const toPost = (x: (typeof done)[number]): PostVideo => ({ video: x.file, label: x.s.label, projectId: p.id, caption: p.caption ?? "", productId: p.options.productId ?? null });
+  return (
+    <Card
+      title={`Hasil · ${done.length} video`}
+      footer={
+        <button type="button" onClick={() => setPosting(done.map(toPost))} className={primary}>
+          <Send className="size-4" /> Posting {done.length > 1 ? `semua (${done.length})` : "ke TikTok"}
+        </button>
+      }
+      desc={`${p.clipSec} dtk per video. Produk sama, beda angle & pembahasan: siap diunggah terpisah.${done.length < p.scenes.length ? ` ${p.scenes.length - done.length} video belum jadi, render lagi untuk melanjutkan.` : ""}`}
+    >
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        {done.map((x, k) => (
+          <div key={x.file} className="space-y-1.5">
+            <div className="group relative aspect-[9/16] overflow-hidden rounded-xl border bg-black">
+              <video src={`${mediaUrl(x.file)}#t=0.5`} controls preload="metadata" className="size-full object-contain" />
+              <button type="button" onClick={() => openLightbox(items, k)} aria-label="Lihat besar" className="absolute top-1.5 right-1.5 grid size-7 place-items-center rounded-md bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                <Maximize2 className="size-3.5" />
+              </button>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <p className="min-w-0 flex-1 truncate text-xs font-medium" title={x.s.label}>{x.s.label}</p>
+              <button type="button" onClick={() => setPosting([toPost(x)])} aria-label="Posting video ini" title="Posting ke TikTok" className="grid size-7 place-items-center rounded-md border hover:bg-accent">
+                <Send className="size-3.5" />
+              </button>
+              <a href={`${mediaUrl(x.file)}?download`} download className="flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] font-medium hover:bg-accent">
+                <Download className="size-3.5" /> Unduh
+              </a>
+            </div>
+          </div>
+        ))}
+      </div>
+      <PostDialog videos={posting} onClose={() => setPosting(null)} />
+    </Card>
+  );
 }

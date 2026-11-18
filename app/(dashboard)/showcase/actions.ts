@@ -9,7 +9,8 @@ import { db } from "@/lib/db";
 import { showcaseProducts, videoProjects } from "@/lib/db/schema";
 import { createProjectFolder, resolveMedia, writeMedia } from "@/lib/media";
 import { addToShowcase, fetchMarketRanking, removeFromShowcase } from "@/lib/platforms/tiktok-shop";
-import { SYNC_CHOICES, updateSettings } from "@/lib/settings";
+import { FLOW_ENGINES, MAX_VIDEO_WORKERS, maxVideosPerProduct, SYNC_CHOICES, updateSettings } from "@/lib/settings";
+import { startVideoBatch } from "@/lib/batch";
 import { getTiktokAccount, mirrorShowcase, setShopCache, startShowcaseAutoSync, syncAccountShowcase } from "@/lib/showcase";
 import { defaultOptions, presetById } from "@/lib/presets";
 
@@ -73,7 +74,7 @@ export async function createProjectFromProduct(showcaseId: number, presetId: str
     .insert(videoProjects)
     .values({
       presetId, title: "", step: 2, product: { name, details: p.labels.join(", "), price: p.price, photos: [] },
-      options: defaultOptions(preset), scenes: [], folder: "",
+      options: { ...defaultOptions(preset), productId: p.productId }, scenes: [], folder: "",
     })
     .returning({ id: videoProjects.id });
   const folder = await createProjectFolder(id, preset.id);
@@ -84,4 +85,26 @@ export async function createProjectFromProduct(showcaseId: number, presetId: str
   }
   await db.update(videoProjects).set({ folder, product: { name, details: p.labels.join(", "), price: p.price, photos } }).where(eq(videoProjects.id, id));
   redirect(`/video/${id}`);
+}
+
+const BatchInput = z.object({
+  showcaseIds: z.array(Id).min(1).max(50),
+  presetId: z.string().min(1).max(40),
+  workers: z.number().int().min(1).max(MAX_VIDEO_WORKERS),
+  engine: z.enum(FLOW_ENGINES),
+  sec: z.number().int().min(3).max(15),
+  videos: z.number().int().min(1).max(4),
+});
+
+/**
+ * Etalase batch: one finished video per selected product, `workers` videos at a time (the rest queue).
+ * Projects appear in Proyek Video immediately; the choice is remembered as the next default.
+ */
+export async function startBatchVideos(input: z.input<typeof BatchInput>) {
+  const b = BatchInput.parse(input);
+  const r = await startVideoBatch({ showcaseIds: [...new Set(b.showcaseIds)], presetId: b.presetId, workers: b.workers, engine: b.engine, sec: b.sec, videos: Math.min(b.videos, maxVideosPerProduct()) });
+  updateSettings({ videoWorkers: b.workers, flowEngine: b.engine });
+  revalidatePath("/proyek");
+  revalidatePath("/video");
+  return { count: r.projectIds.length };
 }

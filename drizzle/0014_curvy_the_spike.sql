@@ -1,0 +1,20 @@
+CREATE TABLE `posts` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`account_id` integer NOT NULL,
+	`project_id` integer,
+	`video` text NOT NULL,
+	`label` text,
+	`caption` text DEFAULT '' NOT NULL,
+	`product_id` text,
+	`product_title` text,
+	`scheduled_at` integer NOT NULL,
+	`status` text DEFAULT 'queued' NOT NULL,
+	`progress` text,
+	`error` text,
+	`attempts` integer DEFAULT 0 NOT NULL,
+	`url` text,
+	`posted_at` integer,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`updated_at` integer DEFAULT (unixepoch()) NOT NULL,
+	FOREIGN KEY (`account_id`) REFERENCES `accounts`(`id`) ON UPDATE no action ON DELETE cascade
+);

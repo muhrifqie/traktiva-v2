@@ -1,15 +1,25 @@
 import "server-only";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { videoProjects } from "@/lib/db/schema";
-import { parallelLimit } from "@/lib/settings";
+import { googleAccounts, videoProjects } from "@/lib/db/schema";
+import { parallelLimit, setActiveFlowAccounts } from "@/lib/settings";
 
-// Generation slots shared by every project image and clip; the limit follows the speed setting live.
+// Generation slots shared by every project image and clip; the limit is automatic (device + accounts).
 const g = globalThis as unknown as { __flowSlots?: { active: number; waiting: (() => void)[] } };
 const slots = (g.__flowSlots ??= { active: 0, waiting: [] });
 
+const ac = globalThis as unknown as { __flowAccountsAt?: number };
+/** Re-count active Flow accounts at most every 30 s (the automatic limit depends on it). */
+async function refreshAccounts() {
+  if (Date.now() - (ac.__flowAccountsAt ?? 0) < 30_000) return;
+  ac.__flowAccountsAt = Date.now();
+  const rows = await db.select({ id: googleAccounts.id }).from(googleAccounts).where(eq(googleAccounts.status, "active")).catch(() => null);
+  if (rows) setActiveFlowAccounts(rows.length);
+}
+
 /** Run fn when a generation slot is free (FIFO). */
 export async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
+  await refreshAccounts();
   if (slots.active >= parallelLimit()) await new Promise<void>((r) => slots.waiting.push(r));
   else slots.active++;
   try {

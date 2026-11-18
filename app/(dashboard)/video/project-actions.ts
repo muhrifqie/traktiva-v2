@@ -1,22 +1,23 @@
 "use server";
 
 import { spawn } from "node:child_process";
-import { desc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { googleAccounts, videoProjects, type ProjectScene } from "@/lib/db/schema";
+import { accounts, googleAccounts, showcaseProducts, videoProjects, type ProjectScene } from "@/lib/db/schema";
 import fs from "node:fs/promises";
 import { createProjectFolder, probeMedia, removeMedia, resolveMedia, writeMedia } from "@/lib/media";
+import { saveShowcasePhotos, showcaseMaterial } from "@/lib/showcase-material";
 import { aiAdjustEdit, exportEdit, prepareEdit } from "@/lib/editor";
 import { clamp, round2, type ProjectEdit } from "@/lib/edit";
-import { defaultOptions, draftCaption, presetById, projectName } from "@/lib/presets";
+import { buildVideos, defaultOptions, draftCaption, presetById, projectName, videoCount } from "@/lib/presets";
 import { addToLibrary, copyIntoProject, listGenerated, listUploads } from "@/lib/library";
 import { queueImages, queueRender } from "@/lib/projects";
 import { writeScenes } from "@/lib/prompt-writer";
 import { synthesize } from "@/lib/cartesia";
-import { getSettings } from "@/lib/settings";
+import { getSettings, maxVideosPerProduct } from "@/lib/settings";
 import { spoken } from "@/lib/voice";
 
 const Id = z.number().int().positive();
@@ -48,7 +49,7 @@ const Patch = z.object({
   title: z.string().trim().min(1).max(120).optional(),
   product: z.object({ name: z.string().max(200), details: z.string().max(1000), price: z.string().max(60) }).optional(),
   options: z.record(z.string(), z.string().max(300)).optional(),
-  clipSec: z.number().int().min(4).max(10).optional(),
+  clipSec: z.number().int().min(3).max(15).optional(),
   scenes: z.array(z.object({ label: z.string().max(60), imagePrompt: z.string().max(2000), motionPrompt: z.string().max(2000) })).max(MAX_SCENES).optional(),
   caption: z.string().max(2200).optional(),
 });
@@ -85,10 +86,14 @@ export async function buildStoryboard(id: number) {
   const preset = presetById(p.presetId);
   if (!preset) throw new Error("Konsep tidak dikenal.");
   if (!p.product.name.trim()) throw new Error("Isi nama produk dulu.");
-  const scenes = preset.scenes(p.product, p.options).map((s) => ({ ...s, image: null, clip: null, error: null }));
+  // ready-made concepts: 1–4 finished videos, each ONE continuous clip of clipSec seconds (1 image + 1 clip)
+  // with its own angle and talking points; Racikan Sendiri keeps its scenes as written
+  const drafts = preset.scenes(p.product, p.options);
+  const options = preset.custom ? p.options : { ...p.options, mode: "videos" };
+  const scenes = (preset.custom ? drafts : buildVideos(drafts, p.clipSec, p.options, p.product, Math.min(videoCount(p.options), maxVideosPerProduct()))).map((s) => ({ ...s, image: null, clip: null, error: null }));
   await db
     .update(videoProjects)
-    .set({ scenes, caption: p.caption || draftCaption(p.product), step: 4, updatedAt: new Date() })
+    .set({ scenes, options, finalPath: null, caption: p.caption || draftCaption(p.product), step: 4, updatedAt: new Date() })
     .where(eq(videoProjects.id, p.id));
 }
 
@@ -416,4 +421,73 @@ export async function exportTimeline(id: number, patch: EditPatch, overlays: z.i
   const finalPath = await exportEdit(p, edit, Overlay.parse(overlays));
   await db.update(videoProjects).set({ edit: { ...edit, exportedAt: Date.now() }, finalPath, updatedAt: new Date() }).where(eq(videoProjects.id, p.id));
   revalidatePath(`/video/${p.id}`);
+}
+
+// ---------- product from the TikTok showcase (etalase) ----------
+
+export type ShowcasePick = {
+  id: number;
+  title: string;
+  price: string;
+  originalPrice: string | null;
+  commission: string | null;
+  stock: number | null;
+  inStock: boolean;
+  shopName: string | null;
+  cover: string | null;
+  labels: string[];
+  account: string;
+};
+
+/** Every product in the synced showcases of the TikTok accounts (hidden ones left out). */
+export async function listShowcaseForPick(): Promise<ShowcasePick[]> {
+  const rows = await db
+    .select({ s: showcaseProducts, account: accounts.username })
+    .from(showcaseProducts)
+    .innerJoin(accounts, eq(accounts.id, showcaseProducts.accountId))
+    .where(eq(showcaseProducts.hidden, false))
+    .orderBy(asc(accounts.username), asc(showcaseProducts.position));
+  return rows.map(({ s, account }) => ({
+    id: s.id,
+    title: s.title,
+    price: s.price,
+    originalPrice: s.originalPrice,
+    commission: s.commission,
+    stock: s.stock,
+    inStock: s.inStock,
+    shopName: s.shopName,
+    cover: s.cover,
+    labels: s.labels,
+    account,
+  }));
+}
+
+
+/** Photos a showcase product offers, so the user can choose which ones the AI uses as reference. */
+export async function showcaseGallery(showcaseId: number) {
+  const m = await showcaseMaterial(showcaseId);
+  return { gallery: m.gallery, fromKalodata: m.fromKalodata };
+}
+
+/**
+ * Use a showcase product as the project's product: name, price, short details and the chosen photos
+ * (1–3 from showcaseGallery; the first 3 when none are given). Replaces earlier product photos.
+ */
+export async function pickShowcaseProduct(id: number, showcaseId: number, chosen?: string[]) {
+  const p = await get(id);
+  notRunning(p);
+  const { row, gallery, facts, fromKalodata } = await showcaseMaterial(showcaseId);
+  // only photos that really belong to this product (never arbitrary URLs/paths from the client)
+  const pick = (chosen?.length ? chosen.filter((c) => gallery.includes(c)) : gallery).slice(0, 3);
+  if (chosen?.length && !pick.length) throw new Error("Foto yang dipilih tidak ditemukan lagi. Buka produknya ulang.");
+
+  const photos = await saveShowcasePhotos(p.folder, pick);
+  if (!photos.length) throw new Error("Foto produk gagal diambil. Coba lagi atau unggah foto sendiri.");
+
+  for (const old of p.product.photos) await removeMedia(old).catch(() => {});
+  const name = row.title.length > 120 ? `${row.title.slice(0, 117)}...` : row.title;
+  const product = { ...p.product, name, price: row.price, details: facts.join(", ").slice(0, 1000), photos };
+  // productId: the TikTok Shop product, so posting can attach it to the yellow basket automatically
+  await db.update(videoProjects).set({ product, options: { ...p.options, productId: row.productId }, updatedAt: new Date() }).where(eq(videoProjects.id, p.id));
+  return { photos: photos.length, fromKalodata, name: product.name, price: product.price, details: product.details };
 }

@@ -1,70 +1,30 @@
 import "server-only";
-import fs from "node:fs";
-import path from "node:path";
-import { spawn } from "node:child_process";
 import { captchaBrowsersFor, parallelLimit } from "@/lib/settings";
+import { eq } from "drizzle-orm";
+import { startEngine, restartEngine, type Flow2ApiConfig } from "@/lib/engine/flow2api-engine";
+import { db } from "@/lib/db";
+import { googleAccounts } from "@/lib/db/schema";
+import { refreshGoogleSession } from "@/lib/platforms/google";
 
-// Client for a local flow2api instance (https://github.com/TheSmallHanCat/flow2api, MIT):
+// Client for the local video engine (flow2api, https://github.com/TheSmallHanCat/flow2api, MIT):
 // admin API to register Google/Flow sessions, OpenAI-compatible API to generate.
-// Users never configure it: Traktiva reads flow2api's own config and starts it when needed.
+// Installing, starting and stopping the engine lives in lib/engine/flow2api-engine.ts.
 
-export type Flow2ApiConfig = { baseUrl: string; apiKey: string; adminUser: string; adminPass: string };
+export { loadFlow2ApiConfig, type Flow2ApiConfig } from "@/lib/engine/flow2api-engine";
 
-// ponytail: dev install path; the packaged app will ship flow2api (or its TS port) as a sidecar and set FLOW2API_DIR
-const FLOW2API_DIR = process.env.FLOW2API_DIR || "C:\\BOT\\flow2api";
-
-/** Read connection details from env (overrides) or flow2api's config/setting.toml. */
-export function loadFlow2ApiConfig(): Flow2ApiConfig | null {
-  let toml = "";
-  try {
-    toml = fs.readFileSync(path.join(FLOW2API_DIR, "config", "setting.toml"), "utf8");
-  } catch {}
-  const val = (key: string) => toml.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]*)"`, "m"))?.[1];
-  const port = toml.match(/^\s*port\s*=\s*(\d+)/m)?.[1] ?? "8000";
-  const host = val("host") === "0.0.0.0" || !val("host") ? "127.0.0.1" : val("host");
-  const cfg = {
-    baseUrl: (process.env.FLOW2API_URL || `http://${host}:${port}`).replace(/\/+$/, ""),
-    apiKey: process.env.FLOW2API_API_KEY || val("api_key") || "",
-    adminUser: process.env.FLOW2API_ADMIN_USER || val("admin_username") || "",
-    adminPass: process.env.FLOW2API_ADMIN_PASS || val("admin_password") || "",
-  };
-  return cfg.apiKey && cfg.adminUser && cfg.adminPass ? cfg : null;
-}
-
-const healthy = (cfg: Flow2ApiConfig) =>
-  fetch(`${cfg.baseUrl}/health`, { signal: AbortSignal.timeout(3000) }).then((r) => r.ok, () => false);
-
-// One start attempt at a time across concurrent callers.
-const gs = globalThis as unknown as { __flowStart?: Promise<void> | null; __flowCapacity?: { want: number; done: Promise<void> } };
-
-/** Start flow2api from its install folder if it isn't answering yet (detached, logs to flow2api.log). */
-async function ensureRunning(cfg: Flow2ApiConfig) {
-  if (await healthy(cfg)) return;
-  gs.__flowStart ??= (async () => {
-    const python = path.join(FLOW2API_DIR, ".venv", "Scripts", "python.exe");
-    if (!fs.existsSync(python)) throw new Error("Mesin video belum terpasang di perangkat ini.");
-    const log = fs.openSync(path.join(FLOW2API_DIR, "flow2api.log"), "a");
-    const child = spawn(python, ["main.py"], {
-      cwd: FLOW2API_DIR,
-      detached: true,
-      windowsHide: true,
-      stdio: ["ignore", log, log],
-      env: { ...process.env, PYTHONIOENCODING: "utf-8" },
-    });
-    child.unref();
-    for (let i = 0; i < 60; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
-      if (await healthy(cfg)) return;
-    }
-    throw new Error("Mesin video tidak bisa dinyalakan. Coba lagi sebentar.");
-  })().finally(() => (gs.__flowStart = null));
-  await gs.__flowStart;
-}
+// Capacity sizing runs once per wanted value across concurrent callers; engine settings and the
+// account check run at most every REVIVE_MS.
+const gs = globalThis as unknown as {
+  __flowCapacity?: { want: number; done: Promise<void> };
+  __flowRevive?: { at: number; run: Promise<void> | null };
+  __flowResynced?: Map<number, number>; // flow2api token id → last automatic re-sync
+};
+const RESYNC_EVERY_MS = 10 * 60_000;
+const REVIVE_MS = 20_000;
+const NO_TOKEN = /没有可用的Token|所有Token都处于禁用|No available token/i;
 
 export async function requireFlow2Api() {
-  const cfg = loadFlow2ApiConfig();
-  if (!cfg) throw new Error("Mesin video belum terpasang di perangkat ini.");
-  await ensureRunning(cfg);
+  const cfg = await startEngine();
   const want = captchaBrowsersFor(parallelLimit());
   if (gs.__flowCapacity?.want !== want) {
     gs.__flowCapacity = {
@@ -75,7 +35,71 @@ export async function requireFlow2Api() {
     };
   }
   await gs.__flowCapacity?.done;
+  await reviveAccounts(cfg).catch(() => {});
   return cfg;
+}
+
+/**
+ * flow2api switches an account off after a few errors in a row, and it counts its own captcha-queue
+ * timeouts as account errors: one burst of parallel jobs on a cold engine disables a healthy account
+ * and every later job fails with "no token available". Traktiva owns the engine, so it (1) raises that
+ * threshold and (2) switches back on accounts that were disabled without a real reason (not banned for
+ * 429, not expired). Real session problems are detected by Traktiva's own sync instead.
+ */
+async function reviveAccounts(cfg: Flow2ApiConfig, force = false) {
+  const st = (gs.__flowRevive ??= { at: 0, run: null });
+  if (st.run) return st.run;
+  if (!force && Date.now() - st.at < REVIVE_MS) return;
+  st.run = (async () => {
+    const conf = await admin(cfg, "/api/admin/config");
+    if (Number(conf.error_ban_threshold) < 10) {
+      await admin(cfg, "/api/admin/config", { method: "POST", body: JSON.stringify({ error_ban_threshold: 10 }) });
+    }
+    const j = await admin(cfg, "/api/tokens");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- flow2api JSON
+    const tokens: any[] = Array.isArray(j) ? j : j?.tokens ?? [];
+    const resynced = (gs.__flowResynced ??= new Map());
+    for (const t of tokens) {
+      if (t.is_active || t.ban_reason) continue;
+      const expired = !!t.at_expired || (t.at_expires && Date.parse(t.at_expires) < Date.now());
+      if (!expired) {
+        await admin(cfg, `/api/tokens/${t.id}/enable`, { method: "POST" }).catch(() => {});
+        continue;
+      }
+      // Access token expired and flow2api couldn't renew it from the cookies it holds ("请重新同步 Google
+      // Cookies"): the account's own browser profile still has a live Google login, so take fresh cookies
+      // from there, hand them to flow2api (which mints a new access token) and switch the account back on.
+      const id = Number(t.id);
+      if (Date.now() - (resynced.get(id) ?? 0) < RESYNC_EVERY_MS) continue;
+      resynced.set(id, Date.now());
+      await resyncFromProfile(cfg, id).catch((e) => console.error(`[flow2api] re-sync token ${id} failed:`, e));
+    }
+  })().finally(() => {
+    st.at = Date.now();
+    st.run = null;
+  });
+  return st.run;
+}
+
+/** Fresh cookies from the Google account's profile → flow2api (new access token) → account on again. */
+async function resyncFromProfile(cfg: Flow2ApiConfig, tokenId: number) {
+  const a = await db.select().from(googleAccounts).where(eq(googleAccounts.flowTokenId, tokenId)).get();
+  if (!a) return;
+  const s = await refreshGoogleSession(a.sessionKey);
+  if (!s) {
+    await db.update(googleAccounts).set({ status: "need_login", lastError: "Sesi Google habis, login ulang.", lastSyncAt: new Date() }).where(eq(googleAccounts.id, a.id));
+    return;
+  }
+  await pushSession(cfg, tokenId, s.st, s.cookies, `Traktiva ${a.email}`);
+  const credits = await admin(cfg, `/api/tokens/${tokenId}/refresh-credits`, { method: "POST" }).then((j) => (j.credits != null ? Number(j.credits) : null), () => null);
+  await db.update(googleAccounts).set({ credits, status: "active", lastError: null, lastSyncAt: new Date() }).where(eq(googleAccounts.id, a.id));
+}
+
+/** Update an existing flow2api token with a fresh cookie set (flow2api turns it into a new access token) and enable it. */
+async function pushSession(cfg: Flow2ApiConfig, tokenId: number, st: string, cookies: BrowserCookie[], remark: string) {
+  const body = JSON.stringify({ st, google_cookies: JSON.stringify(cookies), remark, video_enabled: true, image_enabled: true });
+  await admin(cfg, `/api/tokens/${tokenId}`, { method: "PUT", body });
+  await admin(cfg, `/api/tokens/${tokenId}/enable`, { method: "POST" }); // PUT renews the token but leaves a disabled one disabled
 }
 
 /** Browser-captcha mode solves one captcha at a time per browser; size flow2api's pool to the speed setting (kept in its DB). */
@@ -143,7 +167,7 @@ export async function upsertFlowSession(input: { tokenId?: number | null; st: st
   const cfg = await requireFlow2Api();
   const body = JSON.stringify({ st: input.st, google_cookies: JSON.stringify(input.cookies), remark: input.remark, video_enabled: true, image_enabled: true });
   if (input.tokenId) {
-    await admin(cfg, `/api/tokens/${input.tokenId}`, { method: "PUT", body });
+    await pushSession(cfg, input.tokenId, input.st, input.cookies, input.remark);
     const credits = await refreshFlowCredits(input.tokenId).catch(() => null);
     return { id: input.tokenId, email: null as string | null, credits };
   }
@@ -157,6 +181,40 @@ export async function refreshFlowCredits(tokenId: number) {
   return j.credits != null ? Number(j.credits) : null;
 }
 
+// ---------- credits stay current after generating ----------
+
+const CREDIT_SYNC_MS = 20_000;
+const cs = globalThis as unknown as { __creditSync?: { last: number; timer: ReturnType<typeof setTimeout> | null; running: boolean } };
+
+/**
+ * After a successful image/clip: re-read every Flow account's credits from flow2api and store them, so
+ * Pengaturan AI and the status bar show what is left. Throttled (≤ 1 run per 20 s, plus one trailing run
+ * so the last generation of a batch is always counted). Cheap API call, no browser involved.
+ */
+export function syncFlowCreditsSoon() {
+  const st = (cs.__creditSync ??= { last: 0, timer: null, running: false });
+  if (st.timer) return; // a run is already scheduled
+  const wait = Math.max(0, st.last + CREDIT_SYNC_MS - Date.now());
+  st.timer = setTimeout(() => {
+    st.timer = null;
+    if (st.running) return syncFlowCreditsSoon();
+    st.running = true;
+    st.last = Date.now();
+    void syncAllCredits()
+      .catch((e) => console.error("[flow2api] credit sync failed:", e))
+      .finally(() => (st.running = false));
+  }, wait);
+}
+
+async function syncAllCredits() {
+  const rows = await db.select().from(googleAccounts).where(eq(googleAccounts.status, "active"));
+  for (const a of rows) {
+    if (!a.flowTokenId) continue;
+    const credits = await refreshFlowCredits(a.flowTokenId).catch(() => null);
+    if (credits != null) await db.update(googleAccounts).set({ credits, lastSyncAt: new Date() }).where(eq(googleAccounts.id, a.id));
+  }
+}
+
 export async function deleteFlowSession(tokenId: number) {
   const cfg = await requireFlow2Api();
   await admin(cfg, `/api/tokens/${tokenId}`, { method: "DELETE" });
@@ -168,6 +226,7 @@ function humanize(line: string) {
   // order matters: specific, known flow2api messages first (see flow2api src for the raw strings)
   if (/queue wait timeout/i.test(line)) return "Antrean Flow penuh, dicoba lagi otomatis.";
   if (/recaptcha/i.test(line)) return "Captcha Flow gagal (skor rendah), dicoba lagi otomatis.";
+  if (NO_TOKEN.test(line)) return "Tidak ada akun Flow yang aktif saat ini (dinonaktifkan atau cooldown).";
   if (/没有可用的token|无可用|并发已满|concurren|No available (projects|token)/i.test(line)) return "Semua akun Flow sedang sibuk (slot penuh), dicoba lagi otomatis.";
   if (/浏览器启动冷却|没有可用的浏览器|标签页不可用|cooldown/i.test(line)) return "Browser verifikasi Flow belum siap, dicoba lagi otomatis.";
   if (/AT无效|刷新失败|Token validation failed/i.test(line)) return "Token Flow sedang diperbarui, dicoba lagi otomatis.";
@@ -277,7 +336,6 @@ function stage(line: string): { text: string; pct?: number } {
  * flow2api's captcha browser sometimes wedges after running for a long time; every request then fails with
  * "Failed to obtain reCAPTCHA token" until the process restarts. Restart it (once, shared by all concurrent
  * requests) and retry. Requests that were cut off by someone else's restart also retry instead of failing.
- * ponytail: Windows-only restart (finds the PID by port); other OSes just surface the error.
  */
 const rs = globalThis as unknown as { __flowRestart?: { gen: number; running: Promise<void> | null } };
 rs.__flowRestart ??= { gen: 0, running: null };
@@ -288,7 +346,7 @@ async function withCaptchaRetry<T>(fn: () => Promise<T>, onProgress?: Progress) 
   try {
     return await fn();
   } catch (e) {
-    if (process.platform !== "win32" || !(e instanceof Error)) throw e;
+    if (!(e instanceof Error)) throw e;
     const raw = `${e.message} ${String(e.cause ?? "")}`;
     if (state.gen !== gen || state.running) {
       // another request restarted flow2api while we were waiting; just wait for it and go again
@@ -297,6 +355,11 @@ async function withCaptchaRetry<T>(fn: () => Promise<T>, onProgress?: Progress) 
       // flow2api was busy, not broken: wait a little and try again (no restart, it would kill other jobs)
       onProgress?.("Antrean Flow penuh, mencoba lagi...");
       await new Promise((r) => setTimeout(r, 5000));
+    } else if (NO_TOKEN.test(raw)) {
+      // usually an account flow2api switched off after captcha hiccups: switch it back on and go again
+      onProgress?.("Mengaktifkan ulang akun Flow...");
+      const cfg = await requireFlow2Api();
+      await reviveAccounts(cfg, true);
     } else if (/obtain reCAPTCHA token/i.test(raw)) {
       onProgress?.("Captcha macet, menyalakan ulang mesin video...");
       await restartFlow2Api();
@@ -309,20 +372,9 @@ export function restartFlow2Api() {
   const state = rs.__flowRestart!;
   state.running ??= (async () => {
     state.gen++;
-    const cfg = loadFlow2ApiConfig();
-    if (!cfg) return;
-    const port = new URL(cfg.baseUrl).port || "80";
-    const { execFileSync } = await import("node:child_process");
-    const netstat = execFileSync("netstat", ["-ano", "-p", "TCP"], { encoding: "utf8", windowsHide: true });
-    const pid = netstat.split("\n").map((l) => l.trim().split(/\s+/)).find((c) => c[1]?.endsWith(`:${port}`) && c[3] === "LISTENING")?.[4];
-    if (pid && pid !== "0") {
-      try {
-        execFileSync("taskkill", ["/PID", pid, "/T", "/F"], { windowsHide: true, stdio: "ignore" });
-      } catch {}
-    }
-    for (let i = 0; i < 10 && (await healthy(cfg)); i++) await new Promise((r) => setTimeout(r, 500));
     g.__flowAdmin = undefined; // admin sessions die with the process
-    await ensureRunning(cfg);
+    gs.__flowCapacity = undefined;
+    await restartEngine();
   })().finally(() => (state.running = null));
   return state.running;
 }

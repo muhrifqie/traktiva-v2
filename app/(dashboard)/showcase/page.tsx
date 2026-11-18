@@ -7,7 +7,8 @@ import { db } from "@/lib/db";
 import { accounts, showcaseProducts } from "@/lib/db/schema";
 import { PRESETS } from "@/lib/presets";
 import type { ShopOverview } from "@/lib/platforms/tiktok-shop";
-import { getSettings, SYNC_CHOICES } from "@/lib/settings";
+import { flowEngine, getSettings, MAX_VIDEO_WORKERS, maxVideosPerProduct, SYNC_CHOICES } from "@/lib/settings";
+import { googleAccounts } from "@/lib/db/schema";
 import { getShopCache } from "@/lib/showcase";
 import { AccountPanel } from "./account-panel";
 import { AddProductsButton, AutoSyncSelect, ShowcaseGrid, SyncButton } from "./showcase-grid";
@@ -31,7 +32,9 @@ export default async function ShowcasePage({ searchParams }: PageProps<"/showcas
   const tab = TABS.find((t) => t.id === sp.tab)?.id ?? "etalase";
   const overview = current ? await getShopCache<ShopOverview>(current.id, "overview") : null;
   const lastSync = rows.reduce<Date | null>((m, r) => (!m || r.syncedAt > m ? r.syncedAt : m), null);
-  const concepts = PRESETS.filter((p) => p.available).map((p) => ({ id: p.id, title: p.title, bestFor: p.bestFor }));
+  const concepts = PRESETS.filter((p) => p.available).map((p) => ({ id: p.id, title: p.title, bestFor: p.bestFor, auto: !p.custom }));
+  const googleActive = (await db.select({ id: googleAccounts.id }).from(googleAccounts).where(eq(googleAccounts.status, "active"))).length;
+  const batch = { accounts: googleActive, workers: getSettings().videoWorkers ?? 1, engine: flowEngine(), max: MAX_VIDEO_WORKERS, maxVideos: maxVideosPerProduct() };
 
   return (
     <>
@@ -87,6 +90,7 @@ export default async function ShowcasePage({ searchParams }: PageProps<"/showcas
           {tab === "etalase" && <ShowcaseGrid
             accountId={current!.id}
             concepts={concepts}
+            batch={batch}
             products={rows.map((r) => ({
               id: r.id,
               productId: r.productId,

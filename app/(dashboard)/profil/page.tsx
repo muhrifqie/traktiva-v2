@@ -8,6 +8,7 @@ import { PlatformIcon } from "@/components/platform-icon";
 import { db } from "@/lib/db";
 import { accountPosts, accounts, accountStats, type AccountPost } from "@/lib/db/schema";
 import { SyncButton } from "./sync-button";
+import { mediaUrl } from "@/lib/media-url";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,7 @@ function VideoCard({ v, username }: { v: AccountPost; username: string }) {
       <div className="relative aspect-[9/16] overflow-hidden bg-muted">
         {v.coverUrl && (
           // eslint-disable-next-line @next/next/no-img-element -- TikTok CDN covers are signed + expiring; next/image would cache stale links
-          <img src={v.coverUrl} alt="" referrerPolicy="no-referrer" loading="lazy" className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
+          <img src={mediaUrl(v.coverUrl)} alt="" referrerPolicy="no-referrer" loading="lazy" className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
         )}
         <div className="absolute inset-x-0 bottom-0 flex items-center gap-1 bg-gradient-to-t from-black/75 to-transparent px-2 pt-8 pb-1.5 text-xs font-semibold text-white">
           <Play className="size-3.5 fill-white" /> {compact.format(v.views)}
@@ -110,7 +111,7 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
     <>
       <PageHeader slug="profil">
         {canSync ? (
-          <SyncButton accountId={account.id} username={account.username} primary={!latest} />
+          <SyncButton accountId={account.id} username={account.username} primary={!latest} syncedAt={latest ? latest.capturedAt.getTime() : null} auto />
         ) : (
           <Link href="/akun" className="flex h-8 items-center rounded-lg bg-primary px-3 text-[13px] font-medium text-primary-foreground">Login dulu</Link>
         )}

@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import type { AppStatus, Task } from "@/app/api/status/route";
 import { GoogleIcon } from "@/components/brand-icons";
 import { chime, setSoundOn, soundOn } from "@/lib/chime";
+import { camoufoxBusy, camoufoxLabel, camoufoxPct } from "@/lib/browser/progress";
 
 // VS Code-style status bar: engine + accounts on the left, live work in the middle, capacity on the right.
 // Click the task area to open a panel with every running task and its scenes.
@@ -23,6 +24,9 @@ const ENGINE = {
   online: { label: "Mesin video siap", dot: "bg-status-ok" },
   offline: { label: "Mesin video tidur (menyala otomatis saat dipakai)", dot: "bg-muted-foreground" },
   missing: { label: "Mesin video belum terpasang", dot: "bg-destructive" },
+  installing: { label: "Mesin video sedang dipasang", dot: "bg-status-progress animate-pulse" },
+  starting: { label: "Mesin video sedang menyala", dot: "bg-status-progress animate-pulse" },
+  failed: { label: "Mesin video bermasalah (lihat Pengaturan)", dot: "bg-destructive" },
 } as const;
 
 function Item({ children, title, onClick, href, className = "" }: { children: React.ReactNode; title?: string; onClick?: () => void; href?: string; className?: string }) {
@@ -77,16 +81,17 @@ export function StatusBar() {
   }, [router]);
 
   const busy = (s?.tasks.length ?? 0) > 0;
+  const installing = camoufoxBusy(s?.camoufox);
 
   // Poll fast while something runs, slowly otherwise; pause when the window is hidden.
   useEffect(() => {
     const first = setTimeout(load, 0);
-    const t = setInterval(() => document.visibilityState === "visible" && void load(), busy ? 2500 : 15000);
+    const t = setInterval(() => document.visibilityState === "visible" && void load(), busy || installing ? 2500 : 15000);
     return () => {
       clearTimeout(first);
       clearInterval(t);
     };
-  }, [busy, load, kick]);
+  }, [busy, installing, load, kick]);
   useEffect(() => {
     if (!busy) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -121,14 +126,29 @@ export function StatusBar() {
         <Item title={engine.label} href="/pengaturan">
           <span className={`size-2 rounded-full ${engine.dot}`} />
           <Cpu className="size-3" />
-          <span className="hidden sm:inline">{s?.engine === "online" ? "Mesin siap" : s?.engine === "missing" ? "Mesin belum terpasang" : "Mesin standby"}</span>
+          <span className="hidden sm:inline">{s?.engine === "online" ? "Mesin siap" : s?.engine === "missing" ? "Mesin belum terpasang" : s?.engine === "installing" ? "Memasang mesin" : s?.engine === "starting" ? "Mesin menyala..." : s?.engine === "failed" ? "Mesin bermasalah" : "Mesin standby"}</span>
         </Item>
-        <Item title="Akun Google aktif dan total kredit Flow" href="/pengaturan">
+        <Item title="Akun Google Flow aktif dan total kredit Flow" href="/pengaturan">
           <GoogleIcon className="size-3" />
           {s ? `${s.google.active}/${s.google.total}` : "–"}
           <Coins className="ml-1 size-3" />
           {s ? compact.format(s.google.credits) : "–"}
         </Item>
+
+        {installing && s && (
+          <Item href="/pengaturan" title={`Mengunduh browser Camoufox · ${camoufoxLabel(s.camoufox)}`}>
+            <Loader2 className="size-3 animate-spin text-status-progress" />
+            <span className="hidden sm:inline">{s.camoufox.state === "downloading" ? "Mengunduh browser" : "Memasang browser"}</span>
+            {s.camoufox.state === "downloading" && (
+              <>
+                <span className="hidden h-1 w-16 overflow-hidden rounded-full bg-muted md:block">
+                  <span className="block h-full bg-status-progress transition-[width] duration-700" style={{ width: `${camoufoxPct(s.camoufox)}%` }} />
+                </span>
+                <span className="font-mono tabular-nums">{camoufoxPct(s.camoufox)}%</span>
+              </>
+            )}
+          </Item>
+        )}
 
         <Item onClick={() => setOpen((o) => !o)} title="Lihat semua proses" className="min-w-0 flex-1 justify-start">
           {busy ? (
@@ -156,7 +176,7 @@ export function StatusBar() {
         <Item title={sound ? "Suara notifikasi aktif (klik untuk bisukan)" : "Suara notifikasi mati (klik untuk aktifkan)"} onClick={toggleSound}>
           {sound ? <Volume2 className="size-3" /> : <VolumeX className="size-3" />}
         </Item>
-        <Item title="Proses yang boleh jalan bersamaan (atur di Pengaturan AI → Kecepatan)" href="/pengaturan">
+        <Item title="Proses yang jalan bersamaan (otomatis sesuai PC dan jumlah akun Google Flow)" href="/pengaturan">
           <Layers className="size-3" />
           {s ? `${s.slots.active}/${s.slots.max}` : "–"}
           {s && s.slots.waiting > 0 && <span className="opacity-80">+{s.slots.waiting}</span>}

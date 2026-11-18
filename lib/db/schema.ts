@@ -228,3 +228,28 @@ export const savedProducts = sqliteTable(
 );
 
 export type SavedProduct = typeof savedProducts.$inferSelect;
+
+// Posting queue: one row = one finished video to one TikTok account (caption, product link, when).
+// Posted through TikTok Studio in the account's own browser; far-ahead times use TikTok's own scheduler.
+export const POST_STATUS = ["queued", "posting", "scheduled", "posted", "failed", "cancelled"] as const;
+export const posts = sqliteTable("posts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  accountId: integer("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  projectId: integer("project_id"), // source project (optional: the video file is what counts)
+  video: text("video").notNull(), // MEDIA_DIR-relative mp4
+  label: text("label"), // e.g. "Video 2 · Masalah → solusi"
+  caption: text("caption").notNull().default(""),
+  productId: text("product_id"), // TikTok Shop product for the yellow basket (from the account's showcase)
+  productTitle: text("product_title"), // link title shown on the video (TikTok limits it to 30 chars)
+  scheduledAt: integer("scheduled_at", { mode: "timestamp" }).notNull(), // when it should go live
+  status: text("status", { enum: POST_STATUS }).notNull().default("queued"),
+  progress: text("progress"),
+  error: text("error"),
+  attempts: integer("attempts").notNull().default(0),
+  url: text("url"), // TikTok post or Studio link once known
+  postedAt: integer("posted_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+});
+
+export type Post = typeof posts.$inferSelect;

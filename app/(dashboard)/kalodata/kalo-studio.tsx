@@ -173,7 +173,7 @@ export function KaloStudio({
   );
 }
 
-function Sparkline({ points, labels }: { points: number[]; labels?: string[] }) {
+export function Sparkline({ points, labels }: { points: number[]; labels?: string[] }) {
   if (points.length < 2) return null;
   const max = Math.max(...points, 1);
   const d = points.map((v, i) => `${(i / (points.length - 1)) * 100},${30 - (v / max) * 28}`).join(" ");
@@ -194,7 +194,7 @@ function Sparkline({ points, labels }: { points: number[]; labels?: string[] }) 
 }
 
 /** Kalodata image CDN (no auth, cached 7 days). Hidden quietly when a picture doesn't exist. */
-function KaloImg({ src, className, alt = "" }: { src: string; className: string; alt?: string }) {
+export function KaloImg({ src, className, alt = "" }: { src: string; className: string; alt?: string }) {
   const [ok, setOk] = useState(true);
   if (!ok) return <div className={`grid place-items-center bg-muted ${className}`}><ImageIcon className="size-4 text-muted-foreground" /></div>;
   return <img src={src} alt={alt} loading="lazy" referrerPolicy="no-referrer" onError={() => setOk(false)} className={`bg-muted object-cover ${className}`} />;
@@ -211,7 +211,7 @@ const kaloNum = (v?: string | null) => {
   return parseFloat(m[1].replace(/,/g, "")) * ({ b: 1e9, m: 1e6, k: 1e3 }[m[2]?.toLowerCase() as "b" | "m" | "k"] ?? 1);
 };
 
-function InfoChips({ info }: { info: KaloProductInfo }) {
+export function InfoChips({ info }: { info: KaloProductInfo }) {
   const price = info.min_real_price && info.max_real_price && info.min_real_price !== info.max_real_price ? `${info.min_real_price} – ${info.max_real_price}` : info.min_real_price;
   const chips = [
     info.brand_name && { k: "Brand", v: info.brand_name },
@@ -247,13 +247,12 @@ function DetailDialog({ hit, country, savedKeys, onClose }: { hit: KaloHit | nul
         toast.error(errMsg(e));
       }
     });
-  const [playing, setPlaying] = useState<{ id: string; url?: string; error?: string } | null>(null);
 
   // fetch when a product is opened (in an effect, never during render)
   useEffect(() => {
     if (!hit) return;
     let alive = true;
-    setTimeout(() => alive && (setPhoto(0), setPlaying(null)), 0);
+    setTimeout(() => alive && setPhoto(0), 0);
     kaloDetail(hit.id, country).then(
       (data) => alive && setState({ id: hit.id, data }),
       (e) => alive && setState({ id: hit.id, error: errMsg(e) }),
@@ -264,15 +263,7 @@ function DetailDialog({ hit, country, savedKeys, onClose }: { hit: KaloHit | nul
   }, [hit, country]);
 
   const current = state && hit && state.id === hit.id ? state : null;
-  const play = (videoId: string) => {
-    setPlaying({ id: videoId });
-    kaloVideoUrl(videoId, country).then(
-      (url) => setPlaying((p) => (p?.id === videoId ? { id: videoId, url } : p)),
-      (e) => setPlaying((p) => (p?.id === videoId ? { id: videoId, error: errMsg(e) } : p)),
-    );
-  };
   const data = current?.data;
-  const t = data?.total;
   const toShowcase = async () => {
     if (!hit) return;
     setAdding(true);
@@ -346,7 +337,31 @@ function DetailDialog({ hit, country, savedKeys, onClose }: { hit: KaloHit | nul
         ) : !data ? (
           <div className="grid place-items-center py-14"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
         ) : (
-          <div className="max-h-[58vh] space-y-4 overflow-y-auto pr-1">
+          <div className="max-h-[58vh] overflow-y-auto pr-1">
+            <KaloInsights data={data} country={country} />
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Kalodata performance of a product: 30-day totals, daily revenue trend, best-selling videos (playable)
+ * and top creators. Shared by the Riset detail and the TikTok Shop showcase detail.
+ */
+export function KaloInsights({ data, country }: { data: KaloDetail; country: string }) {
+  const [playing, setPlaying] = useState<{ id: string; url?: string; error?: string } | null>(null);
+  const t = data.total;
+  const play = (videoId: string) => {
+    setPlaying({ id: videoId });
+    kaloVideoUrl(videoId, country).then(
+      (url) => setPlaying((p) => (p?.id === videoId ? { id: videoId, url } : p)),
+      (e) => setPlaying((p) => (p?.id === videoId ? { id: videoId, error: errMsg(e) } : p)),
+    );
+  };
+  return (
+    <div className="space-y-4">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {[
                 ["Omzet 30 hari", t?.revenue, true],
@@ -431,9 +446,6 @@ function DetailDialog({ hit, country, savedKeys, onClose }: { hit: KaloHit | nul
               </div>
             )}
           </div>
-        )}
-      </DialogContent>
-    </Dialog>
   );
 }
 

@@ -66,7 +66,7 @@ export function MediaLightbox() {
   return (
     <DialogPrimitive.Root open={!!s} onOpenChange={(o) => !o && close()}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/95 data-open:animate-in data-open:fade-in-0" />
+        <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/[0.97] backdrop-blur-sm data-open:animate-in data-open:fade-in-0" />
         <DialogPrimitive.Popup className="fixed inset-0 z-50 flex flex-col text-white outline-none" aria-label="Pratinjau media">
           {s && item && (
             <>
@@ -102,12 +102,17 @@ export function MediaLightbox() {
                 }}
                 onClick={(e) => e.target === e.currentTarget && zoom === 1 && close()}
               >
-                <div className="absolute inset-0 grid place-items-center p-4" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transition: dragging ? "none" : "transform 120ms" }}>
+                {/* flex (not grid) so the box has a definite height: media then fits it instead of overflowing and getting cropped */}
+                <div
+                  className={`pointer-events-none absolute inset-0 flex items-center justify-center ${image ? "p-4" : "px-16 py-3"}`}
+                  style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transition: dragging ? "none" : "transform 120ms" }}
+                >
                   {image ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={mediaUrl(item.src)} alt={item.label ?? ""} draggable={false} className="max-h-full max-w-full select-none object-contain shadow-2xl" />
+                    <img src={mediaUrl(item.src)} alt={item.label ?? ""} draggable={false} className="pointer-events-auto max-h-full max-w-full select-none object-contain shadow-2xl" />
                   ) : (
-                    <video key={item.src} src={mediaUrl(item.src)} controls autoPlay loop className="max-h-full max-w-full shadow-2xl" />
+                    // full height, width from the video's own ratio (9:16 stays 9:16), controls always inside the frame
+                    <video key={item.src} src={mediaUrl(item.src)} controls autoPlay loop playsInline className="pointer-events-auto h-full max-h-full w-auto max-w-full rounded-lg bg-black object-contain shadow-2xl" />
                   )}
                 </div>
                 {s.items.length > 1 && (

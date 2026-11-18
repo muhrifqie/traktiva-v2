@@ -7,6 +7,7 @@ import { Download, ImageIcon, ImagePlus, Loader2, Search, Sparkles, Trash2, Uplo
 import { toast } from "sonner";
 import { confirmDialog } from "@/components/confirm-dialog";
 import { mediaUrl } from "@/lib/media-url";
+import { openLightbox } from "@/components/media-lightbox";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import { deleteFromLibrary, uploadToLibrary } from "./actions";
 
@@ -98,11 +99,17 @@ export function LibraryGrid({ tab, uploads, generated }: { tab: "uploads" | "ai"
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 2xl:grid-cols-8">
-          {items.map((it) => (
+          {items.map((it, i) => (
             <figure key={it.rel} className="group relative overflow-hidden rounded-xl border bg-card">
-              <a href={mediaUrl(it.rel)} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden bg-muted">
+              {/* in-app viewer (zoom, ←/→ through the shown list), not a new browser window */}
+              <button
+                type="button"
+                onClick={() => openLightbox(items.map((x) => ({ src: x.rel, kind: "image" as const, label: x.source ? `${x.source} · ${x.name}` : x.name })), i)}
+                aria-label={`Lihat ${it.name}`}
+                className="block aspect-square w-full cursor-zoom-in overflow-hidden bg-muted"
+              >
                 <img src={mediaUrl(it.rel)} alt={it.name} loading="lazy" className="size-full object-cover transition-transform duration-300 group-hover:scale-105" />
-              </a>
+              </button>
               <figcaption className="space-y-0.5 p-2">
                 <p className="truncate text-[11px] font-medium">{it.source ?? it.name}</p>
                 <p className="truncate text-[10px] text-muted-foreground">{it.source ? `${it.name} · ` : ""}{it.date}</p>

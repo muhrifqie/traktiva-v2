@@ -1,6 +1,6 @@
 import "server-only";
 import type { BrowserContext, Page } from "playwright-core";
-import { launchProfile, newProfileKey, withProfile } from "@/lib/browser/camoufox";
+import { launchProfile, newProfileKey, profileEngine, withProfile } from "@/lib/browser/camoufox";
 import type { BrowserCookie } from "@/lib/flow2api";
 
 // Google account login on its own Camoufox profile (one browser profile per account). That profile is the
@@ -86,14 +86,13 @@ type LoginState = {
 const g = globalThis as unknown as { __googleLogins?: Map<string, LoginState> };
 const logins = (g.__googleLogins ??= new Map());
 
-/** Visible Camoufox window straight on Google's sign-in page (continues to Flow). Poll with getGoogleLogin(id). */
+/** Visible browser window (Camoufox, or Chrome/Edge fallback) straight on Google's sign-in page (continues to Flow). Poll with getGoogleLogin(id). */
 export async function startGoogleLogin(sessionKey?: string) {
   const key = sessionKey ?? newProfileKey();
   const id = crypto.randomUUID();
   const state: LoginState = { status: "waiting", stage: "google", email: null, sessionKey: key };
-  logins.set(id, state);
-
   const ctx = await launchProfile(key, { headless: false });
+  logins.set(id, state);
   state.ctx = ctx;
   const page = ctx.pages()[0] ?? (await ctx.newPage());
   await page.goto(LOGIN_URL, { waitUntil: "commit", timeout: 60_000 }).catch(() => {});
@@ -140,7 +139,7 @@ export async function startGoogleLogin(sessionKey?: string) {
     }
   })();
 
-  return { loginId: id, sessionKey: key };
+  return { loginId: id, sessionKey: key, engine: await profileEngine(key) };
 }
 
 export function getGoogleLogin(id: string) {

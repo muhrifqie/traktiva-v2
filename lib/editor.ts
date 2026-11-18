@@ -120,7 +120,7 @@ export async function exportEdit(p: VideoProject, e: ProjectEdit, overlays: Capt
     ...args,
     "-filter_complex", f.join(";"),
     "-map", overlays.length ? `[${v}]` : "0:v", "-map", "[aout]", "-t", String(D),
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k",
+    "-c:v", "libx264", "-preset", "medium", "-crf", "16", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", // visually lossless: posts stay sharp
     "-map_metadata", "-1", "-map_chapters", "-1", "-metadata:s:v:0", "handler_name=VideoHandler", "-metadata:s:a:0", "handler_name=SoundHandler",
     "-fflags", "+bitexact", "-flags:v", "+bitexact", "-flags:a", "+bitexact", "-movflags", "+faststart", tmp,
   ], { windowsHide: true, maxBuffer: 32 * 1024 * 1024 }).catch((err) => {
