@@ -46,4 +46,5 @@ next-env.d.ts
 
 # local-only
 /reports
-/.claude
+/.claude/*
+!/.claude/skills/
