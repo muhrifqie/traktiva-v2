@@ -12,7 +12,7 @@ const dir = path.join(process.cwd(), "data", "research", "kalo");
 const meta: { id: string; product: string; views: string; sale: string; revenue: string; description: string }[] = JSON.parse(await fs.readFile(path.join(dir, "meta.json"), "utf8"));
 
 const stderr = async (args: string[]) => (await run(ffmpeg!, args, { maxBuffer: 64 * 1024 * 1024 }).catch((e) => e)).stderr as string;
-const stats = [];
+const stats: Record<string, string | number | null>[] = [];
 for (const m of meta) {
   const f = path.join(dir, `${m.id}.mp4`);
   const info = await stderr(["-hide_banner", "-i", f]);
@@ -44,7 +44,7 @@ for (const m of meta) {
 await fs.writeFile(path.join(dir, "stats.json"), JSON.stringify(stats, null, 2));
 
 const med = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
-const col = (k: keyof (typeof stats)[number]) => stats.map((s) => Number(s[k])).filter(Number.isFinite);
+const col = (k: string) => stats.map((s) => Number(s[k])).filter(Number.isFinite);
 console.log("\nMEDIAN dur", med(col("dur")), "cuts/min", med(col("cutsPerMin")), "avgShot", med(col("avgShot")), "medianShot", med(col("medianShot")),
   "firstCut", med(col("firstCut")), "cutsIn3s", med(col("cutsIn3s")), "silentShare", med(col("silentShare")), "LUFS", med(col("lufs")),
   "res", [...new Set(stats.map((s) => `${s.w}x${s.h}`))].join(","));

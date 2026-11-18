@@ -6,11 +6,11 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { accounts, kaloSessions, videoProjects } from "@/lib/db/schema";
-import { isCountry, type CountryCode } from "@/lib/countries";
+import { isCountry, SHOPEE_MARKETS, type CountryCode } from "@/lib/countries";
 import { getKv, kalo, kaloRange, setKv } from "@/lib/kalo";
 import { createProjectFolder, extractFrames, saveResult } from "@/lib/media";
 import { defaultOptions, presetById } from "@/lib/presets";
-import { KaloClient, KaloError, parseKaloNumber, signupKalodata, type KaloCreator, type KaloHistoryPoint, type KaloProductInfo, type KaloProductTotal, type KaloVideo } from "@/lib/kalodata";
+import { KaloClient, KaloError, parseKaloNumber, signupKalodata, type KaloCreator, type KaloHistoryPoint, type KaloProductInfo, type KaloProductTotal, type KaloShopeeProduct, type KaloTopProduct, type KaloTopVideo, type KaloVideo } from "@/lib/kalodata";
 import { addToShowcase } from "@/lib/platforms/tiktok-shop";
 import { mirrorShowcase } from "@/lib/showcase";
 
@@ -139,6 +139,46 @@ export async function kaloToShowcase(productId: string) {
   await mirrorShowcase(acc.id, showcase.products);
   revalidatePath("/showcase");
   return { ...results[0], account: acc.username };
+}
+
+// ---------------------------------------------------------------- market rankings (no keyword needed)
+
+const asCountry = (c: string): CountryCode => (isCountry(c) ? c : "ID");
+
+/** Best-selling TikTok Shop products of one market, last 30 days. Cached 6 h. */
+export async function kaloTopProducts(country: string, refreshNow = false) {
+  const cc = asCountry(country);
+  const key = `kalo:tops:product:${cc}`;
+  const hit = refreshNow ? null : await getKv<KaloTopProduct[]>(key, 6 * 3600_000);
+  if (hit) return { rows: hit.data, cached: true, at: hit.capturedAt.getTime() };
+  const range = await kaloRange(cc);
+  const rows = await kalo((c) => c.productTops(range, 10), cc);
+  await setKv(key, rows);
+  return { rows, cached: false, at: Date.now() };
+}
+
+/** Best-selling videos of one market (across products), last 30 days. Cached 6 h. */
+export async function kaloTopVideos(country: string, refreshNow = false) {
+  const cc = asCountry(country);
+  const key = `kalo:tops:video:${cc}`;
+  const hit = refreshNow ? null : await getKv<KaloTopVideo[]>(key, 6 * 3600_000);
+  if (hit) return { rows: hit.data, cached: true, at: hit.capturedAt.getTime() };
+  const range = await kaloRange(cc);
+  const rows = await kalo((c) => c.videoTops(range, 10), cc);
+  await setKv(key, rows);
+  return { rows, cached: false, at: Date.now() };
+}
+
+/** Shopee best sellers of the last week (KaloData only covers ID, TH and VN). Cached 6 h. */
+export async function kaloShopeeTops(country: string, keyword = "", refreshNow = false) {
+  const cc = (SHOPEE_MARKETS as readonly string[]).includes(country) ? (country as CountryCode) : "ID";
+  const kw = z.string().trim().max(80).parse(keyword);
+  const key = `kalo:tops:shopee:${cc}:${kw.toLowerCase()}`;
+  const hit = refreshNow ? null : await getKv<KaloShopeeProduct[]>(key, 6 * 3600_000);
+  if (hit) return { rows: hit.data, cached: true, at: hit.capturedAt.getTime(), country: cc };
+  const rows = await kalo((c) => c.shopeeProducts({ keyword: kw, pageSize: 10 }), cc);
+  await setKv(key, rows);
+  return { rows, cached: false, at: Date.now(), country: cc };
 }
 
 /** Playable MP4 of a TikTok video via Kalodata's mirror (link expires; fetched on demand). */

@@ -9,7 +9,8 @@ import { toast } from "sonner";
 import { CountryBadge, CountrySelect } from "@/components/country-select";
 import { SaveProductButton } from "@/components/save-product-button";
 import { usePersistentState } from "@/lib/use-persistent-state";
-import { countryOf } from "@/lib/countries";
+import { countryOf, SHOPEE_MARKETS } from "@/lib/countries";
+import { MarketTops, type TopsMode } from "./market-tops";
 import type { KaloProductInfo } from "@/lib/kalodata";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -43,6 +44,7 @@ export function KaloStudio({
     initialResults ? { cached: true, keywords: lastKeywords, country: lastCountry } : null,
   );
   const [filter, setFilter] = usePersistentState("riset:kalo-filter", "");
+  const [mode, setMode] = usePersistentState<"cari" | TopsMode>("riset:kalo-mode", "cari");
   const [detail, setDetailState] = useState<KaloHit | null>(() => (initialDetailId ? initialResults?.find((r) => r.id === initialDetailId) ?? null : null));
   // the open product lives in the URL (?produk=), so a refresh reopens it
   const setDetail = (h: KaloHit | null) => {
@@ -101,8 +103,31 @@ export function KaloStudio({
   const shown = (results ?? []).filter((r) => !k || r.name.toLowerCase().includes(k));
   const top = results?.[0]?.gmv30 ?? 1;
 
+  const shopeeCountry = (SHOPEE_MARKETS as readonly string[]).includes(country) ? country : "ID";
+  const modes: [typeof mode, string][] = [["cari", "Cari kata kunci"], ["produk", "Top produk"], ["video", "Video terlaris"], ["shopee", "Shopee"]];
   return (
     <div className="flex-1 space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+          {modes.map(([id, label]) => (
+            <button key={id} type="button" onClick={() => setMode(id)} className={`h-8 rounded-md px-3 text-xs font-medium ${mode === id ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {mode !== "cari" && (
+          <CountrySelect
+            value={mode === "shopee" ? shopeeCountry : country}
+            onChange={setCountry}
+            label={mode === "shopee" ? "Pasar Shopee" : "Pasar TikTok Shop"}
+            options={mode === "shopee" ? SHOPEE_MARKETS.map((code) => ({ code })) : undefined}
+          />
+        )}
+      </div>
+      {mode !== "cari" ? (
+        <MarketTops mode={mode} country={mode === "shopee" ? shopeeCountry : country} savedKeys={savedKeys} onDetail={setDetail} />
+      ) : (
+      <>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -166,6 +191,9 @@ export function KaloStudio({
             {shown.length === 0 && <p className="p-8 text-center text-xs text-muted-foreground">Tidak ada hasil.</p>}
           </div>
         </div>
+      )}
+
+      </>
       )}
 
       <DetailDialog hit={detail} country={meta?.country ?? country} savedKeys={savedKeys} onClose={() => setDetail(null)} />
