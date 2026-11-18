@@ -58,11 +58,14 @@ MOTION CONTINUITY (the #1 giveaway of AI video):
 - Hands: anatomically correct, five fingers, a natural grip with believable contact and weight; fingers never pass through the product.
 - Camera: handheld phone with very light natural sway only, or a slow push-in. No spinning, no fast pans, no sudden speed changes.
 - People: prefer hands-only or face partly out of frame; if a face is visible it stays the same person with natural, small expressions.
-- ${silent ? "End with: no speech, no music, soft natural ambient sound only." : 'Voice line in casual everyday Indonesian (light Jakarta slang is fine, like talking to a friend, not a hard sell, max 12 words, must fit inside the clip), written as: Voice says: "..." — lip movement only if a mouth is visible.'}
+- ${silent ? "End with: no speech, no music, soft natural ambient sound only." : `Voice line in casual everyday Indonesian (light Jakarta slang is fine, like talking to a friend), spoken from the very first second at a brisk natural pace of about 2.5 words per second (max ${Math.round(p.clipSec * 2.5)} words, must fit inside the clip), written as: Voice says: "..." — lip movement only if a mouth is visible.`}
 
 STORY
 - Keep the scene "label" short (1–3 words, Indonesian).
-- Scenes flow as one story: hook in the first scene, proof/benefit in the middle, a soft call to action (keranjang kuning) at the end. Consecutive scenes keep the same location, lighting and hands so the joined video looks like one person filmed it.
+- Scenes flow as one story: hook in the first scene, proof/benefit in the middle, a call to action at the end. Consecutive scenes keep the same location, lighting and hands so the joined video looks like one person filmed it.
+- The product is clearly visible from the very first frame of the first scene (true for all 30 best-selling videos we studied).
+${silent ? "" : `- Hook (first voice line) uses one proven pattern from best-selling Indonesian affiliate videos: price anchor ("looknya kayak jutaan, padahal cuma ..."), a "stop doing X" line ("di rumah jangan pakai daster terus"), a demo challenge ("kalian bisa gini ga?"), or "lagi rame/booming". Only quote a price that is in the product data.
+- Last voice line = spoken CTA: "cek keranjang kuning" (or "link di kiri bawah") plus light urgency ("mumpung masih promo", "sebelum kehabisan") only if it fits the product data; never invent discounts, stock limits or fake claims.`}
 
 ${target}
 Output ONLY the JSON, no explanation: [{"label":"...","imagePrompt":"...","motionPrompt":"..."}]`;

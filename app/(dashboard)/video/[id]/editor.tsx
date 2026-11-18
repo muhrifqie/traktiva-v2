@@ -8,7 +8,7 @@ import {
 import { toast } from "sonner";
 import type { VideoProject } from "@/lib/db/schema";
 import {
-  ACCENTS, applyTemplate, autoCaptions, blitCaption, CAPTION_ANIMS, CAPTION_PRESETS, clamp, drawCaption, fxAt, layersOf, normalizeEdit, OVERLAY_KINDS, round2,
+  ACCENTS, applyTemplate, RESEARCH_TEMPLATES, autoCaptions, blitCaption, CAPTION_ANIMS, CAPTION_PRESETS, clamp, drawCaption, fxAt, layersOf, normalizeEdit, OVERLAY_KINDS, round2,
   SAFE_PRESETS, styleOf, TRANSITIONS, uid,
   type Box, type CaptionAnim, type CaptionPos, type CaptionStyle, type EditCaption, type EditFx, type EditOverlay, type EditTemplate, type Layer,
   type OverlayKind, type ProjectEdit, type SafeArea,
@@ -301,10 +301,10 @@ export function TimelineEditor({ p }: { p: Project }) {
     set((e) => ({ ...e, overlays: e.overlays.map((o) => (o.id === id ? { ...o, ...patch } : o)) }), record);
   const addOverlay = (kind: OverlayKind) => {
     const k = OVERLAY_KINDS.find((x) => x.id === kind)!;
-    const start = kind === "cta" ? Math.max(0, D - 2.5) : kind === "judul" ? 0 : now();
+    const start = kind === "cta" ? Math.max(0, D - 2.5) : kind === "judul" || kind === "info" ? 0 : now();
     const price = p.product.price?.trim();
     const o: EditOverlay = {
-      id: uid(), kind, start: round2(start), end: round2(Math.min(D, start + 2.5)), anim: "pop", x: 0.5, y: k.y, size: k.size,
+      id: uid(), kind, start: round2(start), end: kind === "info" ? D : round2(Math.min(D, start + 2.5)), anim: kind === "info" ? "fade" : "pop", x: 0.5, y: k.y, size: k.size,
       text: kind === "harga" && price ? (price.length > 18 ? price.slice(0, 18) : price) : kind === "judul" ? p.product.name.split(/\s+/).slice(0, 3).join(" ") || k.text : k.text,
     };
     set((e) => ({ ...e, overlays: [...e.overlays, o] }));
@@ -321,12 +321,12 @@ export function TimelineEditor({ p }: { p: Project }) {
     const b = { id: uid(), start: t, end: c.end, text: words.slice(cut).join(" ") || c.text };
     set((e) => ({ ...e, captions: [...e.captions.map((x) => (x.id === c.id ? { ...x, end: t, text: words.slice(0, cut).join(" ") || x.text } : x)), b].sort((x, y) => x.start - y.start) }));
   };
-  const regenCaptions = () => {
+  const regenCaptions = (words = 4) => {
     if (!edit) return;
     const segs = edit.voices.length
       ? edit.voices.map((v) => ({ start: v.start, dur: v.dur / v.speed, text: v.text ?? "" }))
       : edit.clips.map((c, i) => ({ start: c.start + 0.3, dur: Math.max(0.5, c.dur - 0.8), text: voiceLine(p.scenes[i]?.motionPrompt ?? "") ?? "" }));
-    const next = autoCaptions(segs);
+    const next = autoCaptions(segs, words);
     if (!next.length) return toast.error("Belum ada naskah suara untuk dijadikan caption.");
     set((e) => ({ ...e, captions: next }));
     toast.success(`${next.length} caption dibuat dari naskah`);
@@ -602,7 +602,7 @@ export function TimelineEditor({ p }: { p: Project }) {
                 onAdd={addCaption}
                 onRemove={removeSel}
                 onSplit={splitSel}
-                onRegen={regenCaptions}
+                onRegen={(n) => regenCaptions(n)}
                 count={edit.captions.length}
               />
             )}
@@ -927,7 +927,7 @@ function TextPanel({
 }: {
   style: CaptionStyle; onStyle: (s: Partial<CaptionStyle>, record?: boolean) => void; onPos: (p: Partial<CaptionPos>, record?: boolean) => void;
   onAnim: (a: CaptionAnim) => void; safe: SafeArea; onSafe: (s: Partial<SafeArea>, record?: boolean) => void; selected?: EditCaption;
-  onCaption: (p: Partial<EditCaption>, record?: boolean) => void; onAdd: () => void; onRemove: () => void; onSplit: () => void; onRegen: () => void; count: number;
+  onCaption: (p: Partial<EditCaption>, record?: boolean) => void; onAdd: () => void; onRemove: () => void; onSplit: () => void; onRegen: (words?: number) => void; count: number;
 }) {
   const [sub, setSub] = useState<"gaya" | "posisi" | "safe">("gaya");
   const own = !!selected?.pos;
@@ -1034,7 +1034,12 @@ function TextPanel({
 
       <div className="flex flex-wrap gap-1 border-t pt-2.5">
         <button type="button" className={secondary} onClick={onAdd}><Plus className="size-3.5" /> Caption</button>
-        <button type="button" className={secondary} onClick={onRegen}><Wand2 className="size-3.5" /> Buat ulang dari naskah</button>
+        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+          <Wand2 className="size-3.5" /> Buat ulang dari naskah:
+          {[1, 2, 4].map((n) => (
+            <button key={n} type="button" className={chip(false)} onClick={() => onRegen(n)} title={n < 4 ? "Subtitle pendek seperti video laris" : "Caption kalimat"}>{n} kata</button>
+          ))}
+        </span>
       </div>
     </div>
   );
@@ -1142,7 +1147,7 @@ function OverlayPanel({
       {selected ? (
         <div className="space-y-2 rounded-lg border bg-background p-2">
           <div className="flex items-center gap-1">
-            <input className={field} value={selected.text} maxLength={60} onChange={(e) => onChange(selected.id, { text: e.target.value }, false)} onBlur={(e) => onChange(selected.id, { text: e.target.value })} />
+            <textarea className={`${field} resize-none`} rows={selected.kind === "info" ? 2 : 1} value={selected.text} maxLength={80} onChange={(e) => onChange(selected.id, { text: e.target.value }, false)} onBlur={(e) => onChange(selected.id, { text: e.target.value })} />
             <button type="button" className={icon} onClick={onRemove} title="Hapus (Del)"><Trash2 className="size-3.5" /></button>
           </div>
           <div className="flex flex-wrap items-center gap-1">
@@ -1210,6 +1215,21 @@ function FxPanel({
           <button type="button" className={chip(fx.kenburns)} onClick={() => onFx({ kenburns: true })}>Ken Burns</button>
         </div>
         <p className="text-[11px] text-muted-foreground">Transisi dipasang di setiap pergantian adegan; durasi video tidak berubah.</p>
+      </div>
+      <div className="space-y-2 border-t pt-2.5">
+        <p className="flex items-center gap-1.5 text-xs font-medium"><Sparkles className="size-3.5" /> Format video laris</p>
+        <p className="text-[11px] text-muted-foreground">Dari analisa 30 video terlaris KaloData. Mengatur caption, stiker, dan efek; bisa di-undo (Ctrl+Z).</p>
+        <div className="grid gap-1">
+          {RESEARCH_TEMPLATES.map((t) => (
+            <div key={t.id} className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[11px]">
+              <span className="min-w-0 flex-1">
+                <b className="font-medium">{t.name}</b>
+                <span className="block text-muted-foreground">{t.note}</span>
+              </span>
+              <button type="button" className={secondary} onClick={() => onApplyTemplate(t)}>Pakai</button>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="space-y-2 border-t pt-2.5">
         <p className="flex items-center gap-1.5 text-xs font-medium"><Bookmark className="size-3.5" /> Gaya brand</p>

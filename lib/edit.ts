@@ -1,7 +1,7 @@
 // Timeline editor model (Studio → Hasil), shared by the browser editor and the ffmpeg export.
 // Times are seconds on the final video's timeline. Volumes are gains (1 = original, max 2).
 
-export type CaptionPreset = "tiktok" | "kotak" | "kuning" | "bersih";
+export type CaptionPreset = "tiktok" | "kotak" | "kuning" | "bersih" | "minimal";
 export type CaptionAnim = "none" | "fade" | "pop" | "naik" | "sapu";
 // x/y: center of the text block as 0-1 of width/height, size: font px / video width
 export type CaptionStyle = {
@@ -20,7 +20,7 @@ export type EditVoice = { id: string; src: string; start: number; dur: number; s
 export type EditClip = { src: string; start: number; dur: number; label: string };
 export type EditBgm = { src: string; name: string; dur: number; volume: number; offset: number; fade: boolean };
 export type SafeArea = { top: number; bottom: number; left: number; right: number }; // margins, 0-1 of height/width
-export type OverlayKind = "judul" | "harga" | "cta";
+export type OverlayKind = "judul" | "harga" | "cta" | "info";
 /** Free text / sticker on its own track (hook title, price badge, call to action). */
 export type EditOverlay = { id: string; kind: OverlayKind; start: number; end: number; text: string; x: number; y: number; size: number; anim: CaptionAnim };
 export type Transition = "none" | "zoom" | "flash" | "gelap";
@@ -52,6 +52,7 @@ export const CAPTION_PRESETS: { id: CaptionPreset; label: string }[] = [
   { id: "kotak", label: "Kotak" },
   { id: "kuning", label: "Kuning" },
   { id: "bersih", label: "Bersih" },
+  { id: "minimal", label: "Minimal" },
 ];
 export const CAPTION_ANIMS: { id: CaptionAnim; label: string }[] = [
   { id: "none", label: "Tanpa" },
@@ -68,6 +69,8 @@ export const OVERLAY_KINDS: { id: OverlayKind; label: string; text: string; y: n
   { id: "judul", label: "Judul hook", text: "Wajib punya!", y: 0.22, size: 0.085 },
   { id: "harga", label: "Harga", text: "Rp99rb", y: 0.42, size: 0.07 },
   { id: "cta", label: "CTA", text: "Cek keranjang kuning 👇", y: 0.62, size: 0.055 },
+  // the quiet two-line text best-selling "aesthetic" videos keep at the top for the whole video
+  { id: "info", label: "Teks info", text: "Sepatu cakep poll\nEmpuk, nyaman di kaki ✨", y: 0.15, size: 0.042 },
 ];
 export const TRANSITIONS: { id: Transition; label: string }[] = [
   { id: "none", label: "Potong" },
@@ -79,7 +82,9 @@ export const DEFAULT_FX: EditFx = { transition: "none", kenburns: false };
 
 // Areas covered by each app's UI (top bar, right-side buttons, bottom caption/description).
 export const SAFE_PRESETS: { id: string; label: string; safe: SafeArea }[] = [
-  { id: "tiktok", label: "TikTok", safe: { top: 0.09, bottom: 0.2, left: 0.05, right: 0.15 } },
+  { id: "tiktok", label: "TikTok", safe: { top: 0.09, bottom: 0.25, left: 0.05, right: 0.15 } },
+  // TikTok Shop videos also show the product anchor above the caption: keep text higher
+  { id: "tiktokshop", label: "TikTok Shop", safe: { top: 0.12, bottom: 0.33, left: 0.06, right: 0.16 } },
   { id: "reels", label: "Reels", safe: { top: 0.1, bottom: 0.22, left: 0.05, right: 0.13 } },
   { id: "shorts", label: "Shorts", safe: { top: 0.08, bottom: 0.18, left: 0.05, right: 0.14 } },
   { id: "bebas", label: "Bebas", safe: { top: 0.03, bottom: 0.03, left: 0.03, right: 0.03 } },
@@ -104,13 +109,13 @@ export const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.ma
 export const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** CapCut-style auto captions: each spoken segment split into chunks of ≤4 words, timed by text length. */
-export function autoCaptions(segments: { start: number; dur: number; text: string }[]): EditCaption[] {
+export function autoCaptions(segments: { start: number; dur: number; text: string }[], maxWords = 4): EditCaption[] {
   const out: EditCaption[] = [];
   for (const seg of segments) {
     const words = seg.text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
     if (!words.length) continue;
     const chunks: string[] = [];
-    for (let i = 0; i < words.length; i += 4) chunks.push(words.slice(i, i + 4).join(" "));
+    for (let i = 0; i < words.length; i += maxWords) chunks.push(words.slice(i, i + maxWords).join(" "));
     const total = chunks.reduce((n, c) => n + c.length, 0);
     let t = seg.start;
     for (const c of chunks) {
@@ -121,6 +126,10 @@ export function autoCaptions(segments: { start: number; dur: number; text: strin
   }
   return out;
 }
+
+/** Split every caption into smaller ones of ≤n words, keeping their timing (1–2 words = the subtitle style of best sellers). */
+export const rechunk = (captions: EditCaption[], n: number) =>
+  autoCaptions(captions.map((c) => ({ start: c.start, dur: c.end - c.start, text: c.text })), n).map((c, i, all) => (i < all.length - 1 && c.end > all[i + 1].start ? { ...c, end: all[i + 1].start } : c));
 
 /** Word start times inside a caption (karaoke), spread by word length. Last entry = caption end. */
 export function wordTimes(c: { start: number; end: number; text: string }) {
@@ -159,13 +168,13 @@ const fit = (c: number, half: number, lo: number, hi: number) => (hi - lo < half
 export function drawCaption(ctx: CanvasRenderingContext2D, W: number, H: number, raw: string, style: CaptionStyle, safe: SafeArea = DEFAULT_SAFE, hl = -1): Box {
   const text = style.upper ? raw.toUpperCase() : raw;
   const px = Math.round(style.size * W);
-  const bold = style.preset === "bersih" ? 600 : 800;
+  const bold = style.preset === "bersih" ? 600 : style.preset === "minimal" ? 700 : 800;
   ctx.font = `${bold} ${px}px ${FONT}`;
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   ctx.lineJoin = "round";
   const sl = safe.left * W, sr = W - safe.right * W, st = safe.top * H, sb = H - safe.bottom * H;
-  const lines = wrap(ctx, text.split(/\s+/).filter(Boolean), Math.max(px * 3, (sr - sl) * 0.96));
+  const lines = text.split("\n").flatMap((par) => wrap(ctx, par.split(/\s+/).filter(Boolean), Math.max(px * 3, (sr - sl) * 0.96)));
   const lh = px * 1.22;
   const space = ctx.measureText(" ").width;
   const widths = lines.map((l) => ctx.measureText(l.join(" ")).width);
@@ -202,6 +211,16 @@ export function drawCaption(ctx: CanvasRenderingContext2D, W: number, H: number,
         }
         ctx.fillStyle = "#111111";
         ctx.fillText(word, x, y + px * 0.03);
+      } else if (style.preset === "minimal") {
+        // small white text, thin outline + soft shadow: what most best-selling affiliate videos use
+        ctx.shadowColor = "rgba(0,0,0,.55)";
+        ctx.shadowBlur = px * 0.18;
+        ctx.lineWidth = px * 0.09;
+        ctx.strokeStyle = "rgba(0,0,0,.85)";
+        ctx.strokeText(word, x, y);
+        ctx.shadowColor = "transparent";
+        ctx.fillStyle = on ? accent : "#ffffff";
+        ctx.fillText(word, x, y);
       } else if (style.preset === "bersih") {
         ctx.shadowColor = "rgba(0,0,0,.75)";
         ctx.shadowBlur = px * 0.25;
@@ -227,6 +246,8 @@ export function drawCaption(ctx: CanvasRenderingContext2D, W: number, H: number,
 
 /** Overlay sticker: hook title (big outlined text), price badge (red pill) or CTA (yellow pill). */
 export function drawOverlay(ctx: CanvasRenderingContext2D, W: number, H: number, o: EditOverlay, safe: SafeArea = DEFAULT_SAFE): Box {
+  if (o.kind === "info")
+    return drawCaption(ctx, W, H, o.text, { ...DEFAULT_CAPTION_STYLE, preset: "minimal", x: o.x, y: o.y, size: o.size }, safe);
   if (o.kind === "judul")
     return drawCaption(ctx, W, H, o.text, { ...DEFAULT_CAPTION_STYLE, preset: "tiktok", upper: true, x: o.x, y: o.y, size: o.size }, safe);
   const px = Math.round(o.size * W);
@@ -332,7 +353,43 @@ export type EditTemplate = {
   safe: SafeArea;
   fx: EditFx;
   overlays: (Omit<EditOverlay, "id" | "start" | "end"> & { from: number; to: number })[];
+  captions?: "keep" | "none" | number; // number = re-split captions into chunks of ≤n words
+  note?: string;
 };
+
+/** Formats measured on 30 best-selling KaloData videos (docs/edit-style-kalodata.md). */
+export const RESEARCH_TEMPLATES: EditTemplate[] = [
+  {
+    id: "riset-review",
+    name: "Review (ngobrol)",
+    note: "18/30 video laris: ngomong dari detik 0, subtitle 1–2 kata kecil, CTA diucapkan, tanpa stiker/efek.",
+    captionStyle: { ...DEFAULT_CAPTION_STYLE, preset: "minimal", upper: true, size: 0.045, y: 0.66, anim: "none", karaoke: true, accent: "#ffe03d" },
+    safe: SAFE_PRESETS[0].safe,
+    fx: DEFAULT_FX,
+    overlays: [],
+    captions: 2,
+  },
+  {
+    id: "riset-estetik",
+    name: "Estetik (musik)",
+    note: "12/30 video laris: 15–20 dtk, musik saja, 2 baris teks kecil di atas sepanjang video.",
+    captionStyle: { ...DEFAULT_CAPTION_STYLE, preset: "minimal", anim: "none" },
+    safe: SAFE_PRESETS[0].safe,
+    fx: DEFAULT_FX,
+    overlays: [{ kind: "info", text: "Cakep poll\nNyaman banget dipakai ✨", x: 0.5, y: 0.15, size: 0.042, anim: "fade", from: 0, to: 1 }],
+    captions: "none",
+  },
+  {
+    id: "riset-demo",
+    name: "Demo cepat (gadget)",
+    note: "Gadget laris: potongan ±3 dtk, demo hasil, subtitle 1 kata kecil di bawah.",
+    captionStyle: { ...DEFAULT_CAPTION_STYLE, preset: "minimal", upper: false, size: 0.04, y: 0.78, anim: "none", karaoke: false },
+    safe: SAFE_PRESETS[0].safe,
+    fx: DEFAULT_FX,
+    overlays: [],
+    captions: 1,
+  },
+];
 export function toTemplate(e: ProjectEdit, name: string): EditTemplate {
   const D = e.duration || 1;
   return {
@@ -348,6 +405,7 @@ export function applyTemplate(e: ProjectEdit, t: EditTemplate): ProjectEdit {
   const D = e.duration;
   return {
     ...e,
+    captions: t.captions === "none" ? [] : typeof t.captions === "number" ? rechunk(e.captions, t.captions) : e.captions,
     captionStyle: { ...DEFAULT_CAPTION_STYLE, ...t.captionStyle },
     safe: t.safe,
     fx: { ...DEFAULT_FX, ...t.fx },

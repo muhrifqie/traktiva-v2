@@ -101,7 +101,7 @@ function fxFilter(e: ProjectEdit) {
   return chain.join(",");
 }
 
-/** Burn captions (PNG overlays drawn by the editor) + mix clip sound, voice-over and music → final.mp4. */
+/** Burn captions (PNG overlays drawn by the editor) + mix clip sound, voice-over and music → final.mp4 at -15 LUFS (best sellers sit around -17..-12). */
 export async function exportEdit(p: VideoProject, e: ProjectEdit, overlays: CaptionOverlay[]) {
   if (!ffmpegPath) throw new Error("ffmpeg tidak tersedia di perangkat ini.");
   const D = e.duration;
@@ -163,7 +163,7 @@ export async function exportEdit(p: VideoProject, e: ProjectEdit, overlays: Capt
     f.push(`[${bgmIn}:a]atrim=0:${D},asetpts=PTS-STARTPTS,volume=${clamp(e.bgm.volume, 0, 2)}${fade}[bgm]`);
     mix.push("[bgm]");
   }
-  f.push(`${mix.join("")}amix=inputs=${mix.length}:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95[aout]`);
+  f.push(`${mix.join("")}amix=inputs=${mix.length}:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95,loudnorm=I=-15:TP=-1.5:LRA=11,aresample=48000[aout]`);
 
   const out = `${p.folder}/final.mp4`;
   const tmp = resolveMedia(`${dir}/export.mp4`);
@@ -184,10 +184,11 @@ export async function exportEdit(p: VideoProject, e: ProjectEdit, overlays: Capt
 /** Last raw Gemini answer (debugging bad JSON). */
 export const answerLog: { last: string } = { last: "" };
 
+// formats measured on 30 best-selling KaloData videos (docs/edit-style-kalodata.md)
 const DIRECTOR_ANGLES = [
-  "Angle: masalah → solusi. Hook menyebut masalah yang dirasakan pembeli, gaya caption tegas.",
-  "Angle: bukti & harga. Hook menonjolkan harga/promo atau rating, badge harga menonjol.",
-  "Angle: hype & tren. Hook penasaran/FOMO ala anak TikTok, animasi dan transisi lebih energik.",
+  `Format: REVIEW (18/30 best sellers). Hook line says a price anchor or a "stop doing X" line. Captions as small subtitles of 1-3 words each (captionStyle.preset "minimal", upper true, size about 0.045, y about 0.66, karaoke true, anim "none"). No stickers except, if it really helps, one small "judul" in the first 2 s. fx.transition "none".`,
+  `Format: ESTETIK (12/30 best sellers, music videos). captions: [] (no subtitles). Exactly one overlay of kind "info": two short lines at the top (y about 0.15, size about 0.042) for the WHOLE video, e.g. "Sepatu cakep poll\\nEmpuk, nyaman di kaki ✨". fx.transition "none", kenburns may be true.`,
+  `Format: DEMO CEPAT (gadget best sellers). Captions of 1 word each, lowercase, small (preset "minimal", size about 0.04, y about 0.78). One bold "judul" overlay only in the first 2 s naming the main benefit. fx.transition "zoom" is fine.`,
 ];
 
 /**
@@ -215,11 +216,9 @@ export async function aiAdjustEdit(p: VideoProject, e: ProjectEdit, instruction:
   };
   const wish = instruction.replace(/"/g, "'").slice(0, 600);
   const task = opts.director
-    ? `Act as the video's director: produce a complete, ready-to-post edit that maximises watch time and clicks to the product.
-- Strong hook in the first 2 seconds: an overlay of kind "judul" (max 4 words) from ~0 to ~2.5s.
-- A price badge (kind "harga", short text like "Rp99rb" from the product price) when the price is known, while the product is described.
-- A CTA (kind "cta", e.g. "Cek keranjang kuning 👇") in the last ~2.5 seconds.
-- Rewrite captions to be punchy (still matching the voice), pick a fitting captionStyle (consider karaoke true), an entrance anim, and fx.
+    ? `Act as the video's director: produce a complete, ready-to-post edit in the style of best-selling Indonesian TikTok affiliate videos.
+- What the data says: the product is shown from second 0, text on screen is small and quiet, 0 of 30 best sellers used price badges or CTA stickers, 0 used flashy transitions; the CTA ("cek keranjang kuning") is SPOKEN, so only add "harga"/"cta" stickers if the user asks for them.
+- Rewrite captions to be punchy (still matching the voice timing).
 - ${DIRECTOR_ANGLES[(opts.angle ?? 0) % DIRECTOR_ANGLES.length]}
 Extra wishes from the user (Indonesian, may be empty): "${wish}"`
     : `Instruction from the user (Indonesian): "${wish}"
@@ -232,8 +231,8 @@ ${task}
 
 Rules:
 - Captions are on-screen text in casual Indonesian, max ~5 words each, must not overlap, must stay inside 0..durationSec, and should match when the voice speaks.
-- captionStyle.preset is one of tiktok|kotak|kuning|bersih; captionStyle.anim is the entrance animation, one of none|pop|fade|naik|sapu; captionStyle.karaoke true = the spoken word lights up in captionStyle.accent (one of ${ACCENTS.join(", ")}); captionStyle.x / captionStyle.y are the horizontal / vertical center (0-1; text is kept inside the safe area "safe" automatically); captionStyle.size is font size / video width (0.04-0.09); captionStyle.upper true = UPPERCASE.
-- overlays are stickers on their own track: kind is one of judul|harga|cta; x/y center 0-1; size 0.04-0.1; anim like captions. Keep them from covering the captions (different y).
+- captionStyle.preset is one of tiktok|kotak|kuning|bersih|minimal (minimal = small white text, what most best sellers use); captionStyle.anim is the entrance animation, one of none|pop|fade|naik|sapu; captionStyle.karaoke true = the spoken word lights up in captionStyle.accent (one of ${ACCENTS.join(", ")}); captionStyle.x / captionStyle.y are the horizontal / vertical center (0-1; text is kept inside the safe area "safe" automatically); captionStyle.size is font size / video width (0.04-0.09); captionStyle.upper true = UPPERCASE.
+- overlays are stickers on their own track: kind is one of judul|harga|cta|info (info = small 2-line text at the top for the whole video, use \\n for the line break); x/y center 0-1; size 0.04-0.1; anim like captions. Keep them from covering the captions (different y).
 - fx.transition at each clip cut is one of ${TRANSITIONS.map((t) => t.id).join("|")}; fx.kenburns true = slow zoom on every clip.
 - You may move voices (start), change their volume (0-2) or speed (0.8-1.4). Keep voices from overlapping each other.
 - Background music (bgm) usually sits at 0.1-0.25 under a voice-over. clipVolume is the original clip sound.
@@ -268,7 +267,7 @@ Output ONLY JSON with the same shape: {"captions":[...],"captionStyle":{...},"ov
     const s = ans.captionStyle;
     const cs = e.captionStyle;
     next.captionStyle = {
-      preset: ["tiktok", "kotak", "kuning", "bersih"].includes(String(s.preset)) ? (s.preset as ProjectEdit["captionStyle"]["preset"]) : cs.preset,
+      preset: ["tiktok", "kotak", "kuning", "bersih", "minimal"].includes(String(s.preset)) ? (s.preset as ProjectEdit["captionStyle"]["preset"]) : cs.preset,
       x: s.x != null ? round2(clamp(Number(s.x), 0.1, 0.9)) : cs.x,
       y: s.y != null ? round2(clamp(Number(s.y), 0.1, 0.9)) : cs.y,
       anim: isAnim(s.anim) ? s.anim : cs.anim,

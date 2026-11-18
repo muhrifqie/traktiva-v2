@@ -341,7 +341,7 @@ const EditInput = z.object({
   voiceVolume: Num,
   captions: z.array(z.object({ id: z.string().max(20), start: Num, end: Num, text: z.string().max(200), pos: z.object({ x: Num, y: Num, size: Num }).nullish() })).max(200),
   captionStyle: z.object({
-    preset: z.enum(["tiktok", "kotak", "kuning", "bersih"]),
+    preset: z.enum(["tiktok", "kotak", "kuning", "bersih", "minimal"]),
     x: Num.default(0.5),
     y: Num,
     size: Num,
@@ -352,7 +352,7 @@ const EditInput = z.object({
   }),
   safe: z.object({ top: Num, bottom: Num, left: Num, right: Num }).optional(),
   overlays: z
-    .array(z.object({ id: z.string().max(20), kind: z.enum(["judul", "harga", "cta"]), start: Num, end: Num, text: z.string().max(80), x: Num, y: Num, size: Num, anim: Anim }))
+    .array(z.object({ id: z.string().max(20), kind: z.enum(["judul", "harga", "cta", "info"]), start: Num, end: Num, text: z.string().max(80), x: Num, y: Num, size: Num, anim: Anim }))
     .max(20)
     .optional(),
   fx: z.object({ transition: z.enum(["none", "zoom", "flash", "gelap"]), kenburns: z.boolean() }).optional(),
