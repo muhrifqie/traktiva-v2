@@ -259,12 +259,14 @@ export async function createVideoFromKalo(productId: string, country: string = "
   const scenes = [
     { label: "Hook", imagePrompt: `Close-up of ${prod} held up to the camera, eye-catching first frame, ${look}`, motionPrompt: `Quick push-in on the product. A friendly Indonesian voice says: "Ini dia yang lagi viral, ${short}!"` },
     { label: "Demo", imagePrompt: `Hands showing ${prod} in use, natural home setting, ${look}`, motionPrompt: `Hands demonstrate the product naturally. Voice: "${d.info?.product_rating ? `Rating ${String(d.info.product_rating).replace(".", " koma ")}, ` : ""}udah ${soldSpoken || "ribuan orang"} yang beli bulan ini."` },
-    { label: "Detail", imagePrompt: `Macro detail shot of ${prod} showing texture and quality, ${look}`, motionPrompt: `Slow pan across the product details. Voice: "Lihat detailnya, rapi banget dan nyaman dipakai."` },
-    { label: "Ajakan", imagePrompt: `${prod} placed neatly with a hand pointing to it, clean background, ${look}`, motionPrompt: `Hand points at the product, then a thumbs up. Voice: "${price ? `Cuma ${price}, ` : ""}klik keranjang kuning sebelum kehabisan!"` },
+    { label: "Detail", imagePrompt: `Macro detail shot of ${prod} showing texture and quality, ${look}`, motionPrompt: `Slow pan across the product details. Voice: "Lihat detailnya, rapi banget."` },
+    { label: "Pakai", imagePrompt: `A person using ${prod} in a real everyday moment at home, product clearly visible, ${look}`, motionPrompt: `The person uses the product naturally in one smooth action. Voice: "Dipakai tiap hari juga enak banget."` },
+    // spoken CTA without invented urgency (0/30 best sellers used a CTA sticker; the CTA is said, not shown)
+    { label: "Ajakan", imagePrompt: `${prod} placed neatly with a hand pointing to it, clean background, ${look}`, motionPrompt: `Hand points at the product, then a thumbs up. Voice: "${price ? `Cuma ${price}, ` : ""}cek keranjang kuning ya!"` },
   ].map((s, i) => ({ ...s, image: null, clip: null, styleRef: frames[i] ?? null }));
 
   const tags = (top?.description.match(/#[\p{L}\p{N}_]+/gu) ?? []).slice(0, 6).join(" ");
-  const caption = `${short} lagi rame banget! ${price ? `Cuma ${price}. ` : ""}Cek keranjang kuning sebelum kehabisan 🛒\n\n${tags || "#racuntiktok #tiktokshop #fyp"}`;
+  const caption = `${short} lagi rame banget! ${price ? `Cuma ${price}. ` : ""}Cek keranjang kuning ya 🛒\n\n${tags || "#racuntiktok #tiktokshop #fyp"}`;
   await db
     .update(videoProjects)
     .set({

@@ -22,19 +22,32 @@ export async function getTiktokAccount(accountId: number) {
 export async function mirrorShowcase(accountId: number, products: ShowcaseProduct[]) {
   const now = new Date();
   const existing = new Map((await db.select().from(showcaseProducts).where(eq(showcaseProducts.accountId, accountId))).map((r) => [r.productId, r]));
-  for (const [position, p] of products.entries()) {
-    let cover = existing.get(p.productId)?.cover ?? null;
-    const coverOk = cover && (await fs.stat(resolveMedia(cover)).then(() => true, () => false));
-    if (!coverOk && p.coverUrl) cover = await saveResult(p.coverUrl, `${COVERS}/${p.productId}`, ".jpg").catch(() => null);
-    const row = {
-      title: p.title, price: p.price, originalPrice: p.originalPrice, commission: p.commission, stock: p.stock,
-      inStock: p.inStock, hidden: p.hidden, shopName: p.shopName, cover, labels: p.labels, position, syncedAt: now,
-    };
-    await db
-      .insert(showcaseProducts)
-      .values({ accountId, productId: p.productId, ...row })
-      .onConflictDoUpdate({ target: [showcaseProducts.accountId, showcaseProducts.productId], set: row });
-  }
+  // covers first, 6 downloads at a time (one by one took most of the ~15 s sync)
+  const covers = new Map<string, string | null>();
+  const queue = [...products];
+  await Promise.all(
+    Array.from({ length: 6 }, async () => {
+      for (let p = queue.shift(); p; p = queue.shift()) {
+        let cover = existing.get(p.productId)?.cover ?? null;
+        const coverOk = cover && (await fs.stat(resolveMedia(cover)).then(() => true, () => false));
+        if (!coverOk && p.coverUrl) cover = await saveResult(p.coverUrl, `${COVERS}/${p.productId}`, ".jpg").catch(() => null);
+        covers.set(p.productId, cover);
+      }
+    }),
+  );
+  // all rows in one transaction: one lock instead of 60+ separate writes
+  await db.transaction(async (tx) => {
+    for (const [position, p] of products.entries()) {
+      const row = {
+        title: p.title, price: p.price, originalPrice: p.originalPrice, commission: p.commission, stock: p.stock,
+        inStock: p.inStock, hidden: p.hidden, shopName: p.shopName, cover: covers.get(p.productId) ?? null, labels: p.labels, position, syncedAt: now,
+      };
+      await tx
+        .insert(showcaseProducts)
+        .values({ accountId, productId: p.productId, ...row })
+        .onConflictDoUpdate({ target: [showcaseProducts.accountId, showcaseProducts.productId], set: row });
+    }
+  });
   const keep = products.map((p) => p.productId);
   await db
     .delete(showcaseProducts)

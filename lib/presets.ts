@@ -202,5 +202,5 @@ export const defaultOptions = (p: Preset): Options => Object.fromEntries(p.field
 /** Caption template until Gemini writes captions. */
 export function draftCaption(p: Product) {
   const tag = p.name.toLowerCase().replace(/[^a-z0-9]+/g, "");
-  return `${p.name} lagi rame banget! ${p.details ? `${p.details}. ` : ""}${p.price ? `Cuma ${p.price}. ` : ""}Cek keranjang kuning sebelum kehabisan 🛒\n\n#${tag || "racuntiktok"} #racuntiktok #tiktokshop #fyp`;
+  return `${p.name} lagi rame banget! ${p.details ? `${p.details}. ` : ""}${p.price ? `Cuma ${p.price}. ` : ""}Cek keranjang kuning ya 🛒\n\n#${tag || "racuntiktok"} #racuntiktok #tiktokshop #fyp`;
 }
