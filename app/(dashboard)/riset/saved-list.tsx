@@ -24,7 +24,7 @@ type Saved = {
 };
 type Concept = { id: string; title: string; bestFor: string };
 
-const SOURCE: Record<string, string> = { tiktok: "Ranking TikTok", kalodata: "KaloData", manual: "Manual" };
+const SOURCE: Record<string, string> = { tiktok: "TikTok", kalodata: "TikTok · KaloData", shopee: "Shopee · KaloData", manual: "Manual" };
 const LABEL: Record<string, string> = { gmv30: "Omzet 30h", revenue: "Omzet", creators: "Kreator", rating: "Rating", commission: "Komisi", index: "Indeks", sale: "Terjual" };
 
 function Img({ src }: { src: string | null }) {

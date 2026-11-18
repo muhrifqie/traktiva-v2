@@ -14,7 +14,7 @@ import { defaultOptions, presetById } from "@/lib/presets";
 const SaveInput = z.object({
   productId: z.string().regex(/^\d{10,22}$/),
   country: z.string().length(2).default("ID"),
-  source: z.enum(["tiktok", "kalodata", "manual"]),
+  source: z.enum(["tiktok", "kalodata", "shopee", "manual"]),
   title: z.string().min(1).max(500),
   image: z.string().url().max(1000).nullish(),
   price: z.string().max(80).nullish(),
@@ -22,7 +22,7 @@ const SaveInput = z.object({
   metrics: z.record(z.string(), z.union([z.string(), z.number(), z.null()])).default({}),
 });
 
-const refresh = () => revalidatePath("/riset");
+const refresh = () => revalidatePath("/riset", "layout");
 
 /** Bookmark a product (or refresh its numbers if it's already saved). */
 export async function saveProduct(input: z.input<typeof SaveInput>) {

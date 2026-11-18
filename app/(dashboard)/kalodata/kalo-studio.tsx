@@ -9,13 +9,15 @@ import { toast } from "sonner";
 import { CountryBadge, CountrySelect } from "@/components/country-select";
 import { SaveProductButton } from "@/components/save-product-button";
 import { usePersistentState } from "@/lib/use-persistent-state";
-import { countryOf, SHOPEE_MARKETS } from "@/lib/countries";
-import { MarketTops, type TopsMode } from "./market-tops";
+import { countryOf } from "@/lib/countries";
+import { MarketTops } from "./market-tops";
 import type { KaloProductInfo } from "@/lib/kalodata";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   addKaloSession, checkKaloSessions, deleteKaloSession, createVideoFromKalo, kaloDetail, kaloToShowcase, kaloVideoUrl, searchKalo, signupKaloSession, type KaloDetail, type KaloHit,
 } from "./actions";
+
+export type TikTokTab = "produk" | "video" | "cari" | "tersimpan";
 
 const money = (code: string) => new Intl.NumberFormat("id-ID", { style: "currency", currency: countryOf(code)?.currency ?? "IDR", notation: "compact", maximumFractionDigits: 1 });
 const productUrl = (id: string) => `https://www.tiktok.com/view/product/${id}`;
@@ -27,8 +29,11 @@ const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Gagal");
 // ---------------------------------------------------------------- research
 
 export function KaloStudio({
-  hasSession, lastKeywords, lastCountry = "ID", autoSearch = false, initialResults = null, initialDetailId = null, savedKeys = [],
+  hasSession, lastKeywords, lastCountry = "ID", autoSearch = false, initialResults = null, initialDetailId = null, savedKeys = [], initialTab = "produk", saved, savedCount = 0,
 }: {
+  initialTab?: TikTokTab;
+  saved?: React.ReactNode; // "Tersimpan" list, rendered by the page
+  savedCount?: number;
   hasSession: boolean;
   lastKeywords: string[];
   lastCountry?: string;
@@ -44,7 +49,14 @@ export function KaloStudio({
     initialResults ? { cached: true, keywords: lastKeywords, country: lastCountry } : null,
   );
   const [filter, setFilter] = usePersistentState("riset:kalo-filter", "");
-  const [mode, setMode] = usePersistentState<"cari" | TopsMode>("riset:kalo-mode", "cari");
+  const [mode, setModeState] = useState<TikTokTab>(initialTab);
+  // the tab lives in the URL (?tab=), so a refresh or a shared link opens the same view
+  const setMode = (t: TikTokTab) => {
+    setModeState(t);
+    const u = new URL(window.location.href);
+    u.searchParams.set("tab", t);
+    window.history.replaceState(null, "", u);
+  };
   const [detail, setDetailState] = useState<KaloHit | null>(() => (initialDetailId ? initialResults?.find((r) => r.id === initialDetailId) ?? null : null));
   // the open product lives in the URL (?produk=), so a refresh reopens it
   const setDetail = (h: KaloHit | null) => {
@@ -103,8 +115,7 @@ export function KaloStudio({
   const shown = (results ?? []).filter((r) => !k || r.name.toLowerCase().includes(k));
   const top = results?.[0]?.gmv30 ?? 1;
 
-  const shopeeCountry = (SHOPEE_MARKETS as readonly string[]).includes(country) ? country : "ID";
-  const modes: [typeof mode, string][] = [["cari", "Cari kata kunci"], ["produk", "Top produk"], ["video", "Video terlaris"], ["shopee", "Shopee"]];
+  const modes: [TikTokTab, string][] = [["produk", "Top produk"], ["video", "Video terlaris"], ["cari", "Cari kata kunci"], ["tersimpan", `Tersimpan${savedCount ? ` (${savedCount})` : ""}`]];
   return (
     <div className="flex-1 space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -115,17 +126,12 @@ export function KaloStudio({
             </button>
           ))}
         </div>
-        {mode !== "cari" && (
-          <CountrySelect
-            value={mode === "shopee" ? shopeeCountry : country}
-            onChange={setCountry}
-            label={mode === "shopee" ? "Pasar Shopee" : "Pasar TikTok Shop"}
-            options={mode === "shopee" ? SHOPEE_MARKETS.map((code) => ({ code })) : undefined}
-          />
-        )}
+        {(mode === "produk" || mode === "video") && <CountrySelect value={country} onChange={setCountry} label="Pasar TikTok Shop" />}
       </div>
-      {mode !== "cari" ? (
-        <MarketTops mode={mode} country={mode === "shopee" ? shopeeCountry : country} savedKeys={savedKeys} onDetail={setDetail} />
+      {mode === "tersimpan" ? (
+        saved
+      ) : mode !== "cari" ? (
+        <MarketTops mode={mode} country={country} savedKeys={savedKeys} onDetail={setDetail} />
       ) : (
       <>
       <form

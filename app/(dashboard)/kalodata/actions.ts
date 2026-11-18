@@ -14,7 +14,7 @@ import { KaloClient, KaloError, parseKaloNumber, signupKalodata, type KaloCreato
 import { addToShowcase } from "@/lib/platforms/tiktok-shop";
 import { mirrorShowcase } from "@/lib/showcase";
 
-const refresh = () => revalidatePath("/riset");
+const refresh = () => revalidatePath("/riset", "layout");
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 // ---------------------------------------------------------------- sessions
@@ -145,38 +145,49 @@ export async function kaloToShowcase(productId: string) {
 
 const asCountry = (c: string): CountryCode => (isCountry(c) ? c : "ID");
 
-/** Best-selling TikTok Shop products of one market, last 30 days. Cached 6 h. */
-export async function kaloTopProducts(country: string, refreshNow = false) {
+/** Best-selling TikTok Shop products of one market, last 30 days, 20 per page. Cached 6 h per page. */
+export async function kaloTopProducts(country: string, page = 1, refreshNow = false) {
   const cc = asCountry(country);
-  const key = `kalo:tops:product:${cc}`;
+  const pg = z.number().int().min(1).max(10).parse(page);
+  const key = `kalo:tops:product:${cc}:p${pg}`;
   const hit = refreshNow ? null : await getKv<KaloTopProduct[]>(key, 6 * 3600_000);
   if (hit) return { rows: hit.data, cached: true, at: hit.capturedAt.getTime() };
   const range = await kaloRange(cc);
-  const rows = await kalo((c) => c.productTops(range, 10), cc);
+  const rows = await kalo((c) => c.productTops(range, 20, pg), cc);
   await setKv(key, rows);
   return { rows, cached: false, at: Date.now() };
 }
 
-/** Best-selling videos of one market (across products), last 30 days. Cached 6 h. */
-export async function kaloTopVideos(country: string, refreshNow = false) {
+/** Best-selling videos of one market (across products), last 30 days, 20 per page. Cached 6 h per page. */
+export async function kaloTopVideos(country: string, page = 1, refreshNow = false) {
   const cc = asCountry(country);
-  const key = `kalo:tops:video:${cc}`;
+  const pg = z.number().int().min(1).max(10).parse(page);
+  const key = `kalo:tops:video:${cc}:p${pg}`;
   const hit = refreshNow ? null : await getKv<KaloTopVideo[]>(key, 6 * 3600_000);
   if (hit) return { rows: hit.data, cached: true, at: hit.capturedAt.getTime() };
   const range = await kaloRange(cc);
-  const rows = await kalo((c) => c.videoTops(range, 10), cc);
+  const rows = await kalo((c) => c.videoTops(range, 20, pg), cc);
   await setKv(key, rows);
   return { rows, cached: false, at: Date.now() };
 }
 
-/** Shopee best sellers of the last week (KaloData only covers ID, TH and VN). Cached 6 h. */
-export async function kaloShopeeTops(country: string, keyword = "", refreshNow = false) {
-  const cc = (SHOPEE_MARKETS as readonly string[]).includes(country) ? (country as CountryCode) : "ID";
-  const kw = z.string().trim().max(80).parse(keyword);
-  const key = `kalo:tops:shopee:${cc}:${kw.toLowerCase()}`;
+const shopeeCountry = (c: string): CountryCode => ((SHOPEE_MARKETS as readonly string[]).includes(c) ? (c as CountryCode) : "ID");
+
+const ShopeeQuery = z.object({
+  keyword: z.string().trim().max(80).default(""),
+  dataRange: z.string().regex(/^(L1W|\d{6})$/).default("L1W"),
+  categoryId: z.string().regex(/^\d{1,12}$/).nullish(),
+  sort: z.enum(["unitsSold", "revenue"]).default("unitsSold"),
+});
+
+/** Shopee best sellers (KaloData only covers ID, TH and VN). Cached 6 h per filter combination. */
+export async function kaloShopeeTops(country: string, query: z.input<typeof ShopeeQuery> = {}, refreshNow = false) {
+  const cc = shopeeCountry(country);
+  const q = ShopeeQuery.parse(query);
+  const key = `kalo:tops:shopee:${cc}:${q.dataRange}:${q.categoryId ?? "all"}:${q.sort}:${q.keyword.toLowerCase()}`;
   const hit = refreshNow ? null : await getKv<KaloShopeeProduct[]>(key, 6 * 3600_000);
   if (hit) return { rows: hit.data, cached: true, at: hit.capturedAt.getTime(), country: cc };
-  const rows = await kalo((c) => c.shopeeProducts({ keyword: kw, pageSize: 10 }), cc);
+  const rows = await kalo((c) => c.shopeeProducts({ keyword: q.keyword, dataRange: q.dataRange, cateIds: q.categoryId ? [q.categoryId] : [], sortField: q.sort, pageSize: 10 }), cc);
   await setKv(key, rows);
   return { rows, cached: false, at: Date.now(), country: cc };
 }

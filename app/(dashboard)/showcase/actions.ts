@@ -49,7 +49,7 @@ export async function loadMarketRanking(accountId: number, categoryId?: string) 
   const r = await fetchMarketRanking(acc.sessionKey, categoryId);
   await setShopCache(acc.id, "categories", r.categories);
   await setShopCache(acc.id, `ranking:${r.categoryId}`, r);
-  revalidatePath("/riset");
+  revalidatePath("/riset", "layout");
   return r.categoryId;
 }
 

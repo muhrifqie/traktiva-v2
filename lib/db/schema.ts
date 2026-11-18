@@ -215,7 +215,7 @@ export const savedProducts = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     productId: text("product_id").notNull(), // TikTok Shop product id
     country: text("country").notNull().default("ID"),
-    source: text("source", { enum: ["tiktok", "kalodata", "manual"] }).notNull(),
+    source: text("source", { enum: ["tiktok", "kalodata", "shopee", "manual"] }).notNull(),
     title: text("title").notNull(),
     image: text("image"), // remote cover URL (Kalodata/TikTok CDN)
     price: text("price"),

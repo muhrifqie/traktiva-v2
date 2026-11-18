@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { ExternalLink, ImageIcon, Loader2, Megaphone, Play, RefreshCw, Search, Star, TrendingUp } from "lucide-react";
+import { ChevronDown, ImageIcon, Loader2, Megaphone, Play, RefreshCw, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { CountryBadge } from "@/components/country-select";
 import { openLightbox } from "@/components/media-lightbox";
 import { SaveProductButton } from "@/components/save-product-button";
-import type { KaloShopeeProduct, KaloTopProduct, KaloTopVideo } from "@/lib/kalodata";
-import { kaloShopeeTops, kaloTopProducts, kaloTopVideos, kaloVideoUrl, type KaloHit } from "./actions";
+import type { KaloTopProduct, KaloTopVideo } from "@/lib/kalodata";
+import { kaloTopProducts, kaloTopVideos, kaloVideoUrl, type KaloHit } from "./actions";
 
-export type TopsMode = "produk" | "video" | "shopee";
-type Data = { mode: "produk"; rows: KaloTopProduct[] } | { mode: "video"; rows: KaloTopVideo[] } | { mode: "shopee"; rows: KaloShopeeProduct[] };
+export type TopsMode = "produk" | "video";
+type Data = { mode: "produk"; rows: KaloTopProduct[] } | { mode: "video"; rows: KaloTopVideo[] };
 
 const kaloProductImg = (id: string) => `https://img.kalocdn.com/tiktok.product/${id}/cover.png`;
 const kaloVideoImg = (id: string) => `https://img.kalocdn.com/tiktok.video/${id}/cover.png`;
@@ -18,33 +18,33 @@ const compact = new Intl.NumberFormat("id-ID", { notation: "compact", maximumFra
 const time = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" });
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Gagal");
 
-/** Market rankings without a keyword: top TikTok Shop products, top selling videos, Shopee best sellers. */
+/** TikTok Shop rankings without a keyword: top products and top selling videos of one market. */
 export function MarketTops({ mode, country, savedKeys, onDetail }: { mode: TopsMode; country: string; savedKeys: string[]; onDetail: (h: KaloHit) => void }) {
-  const [data, setData] = useState<(Data & { at: number; cached: boolean; key: string }) | null>(null);
-  const [keyword, setKeyword] = useState("");
+  const [data, setData] = useState<(Data & { at: number; cached: boolean; key: string; page: number; more: boolean }) | null>(null);
   const [pending, start] = useTransition();
   const [opening, setOpening] = useState<string | null>(null);
   const key = `${mode}:${country}`;
 
-  const load = (refresh = false, kw = keyword) =>
+  /** page 1 replaces the list; later pages append ("Muat lebih banyak"). */
+  const load = (refresh = false, page = 1) =>
     start(async () => {
       try {
+        const keep = page > 1 && data?.key === key ? data : null;
         if (mode === "produk") {
-          const r = await kaloTopProducts(country, refresh);
-          setData({ mode, rows: r.rows, at: r.at, cached: r.cached, key });
-        } else if (mode === "video") {
-          const r = await kaloTopVideos(country, refresh);
-          setData({ mode, rows: r.rows, at: r.at, cached: r.cached, key });
+          const r = await kaloTopProducts(country, page, refresh);
+          const rows = [...(keep?.mode === "produk" ? keep.rows : []), ...r.rows.filter((x) => !(keep?.mode === "produk" && keep.rows.some((y) => y.id === x.id)))];
+          setData({ mode, rows, at: r.at, cached: r.cached, key, page, more: r.rows.length >= 20 && page < 10 });
         } else {
-          const r = await kaloShopeeTops(country, kw, refresh);
-          setData({ mode, rows: r.rows, at: r.at, cached: r.cached, key });
+          const r = await kaloTopVideos(country, page, refresh);
+          const rows = [...(keep?.mode === "video" ? keep.rows : []), ...r.rows.filter((x) => !(keep?.mode === "video" && keep.rows.some((y) => y.id === x.id)))];
+          setData({ mode, rows, at: r.at, cached: r.cached, key, page, more: r.rows.length >= 20 && page < 10 });
         }
       } catch (e) {
         toast.error(errMsg(e));
       }
     });
   useEffect(() => {
-    const t = setTimeout(() => load(false, ""), 0);
+    const t = setTimeout(() => load(false), 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when the market or list changes
   }, [key]);
@@ -67,21 +67,9 @@ export function MarketTops({ mode, country, savedKeys, onDetail }: { mode: TopsM
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <CountryBadge code={country} />
         <span>
-          {mode === "produk" ? "10 produk TikTok Shop terlaris" : mode === "video" ? "10 video jualan terlaris (semua produk)" : "Produk Shopee terlaris minggu lalu"} · 30 hari terakhir
+          {shown?.rows.length ?? ""} {mode === "produk" ? "produk TikTok Shop terlaris" : "video jualan terlaris (semua produk)"} · 30 hari terakhir
           {shown && <> · {shown.cached ? "cache" : "baru"} {time.format(shown.at)}</>}
         </span>
-        {mode === "shopee" && (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              load(false, keyword);
-            }}
-            className="flex h-8 items-center gap-2 rounded-lg border bg-card px-2.5"
-          >
-            <Search className="size-3.5" />
-            <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="Kata kunci (opsional)" className="w-40 bg-transparent text-foreground outline-none" />
-          </form>
-        )}
         <button type="button" onClick={() => load(true)} disabled={pending} className="ml-auto flex h-8 items-center gap-1.5 rounded-lg border bg-card px-2.5 font-medium text-foreground hover:bg-accent disabled:opacity-60">
           {pending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} Muat ulang
         </button>
@@ -113,7 +101,7 @@ export function MarketTops({ mode, country, savedKeys, onDetail }: { mode: TopsM
             </div>
           ))}
         </div>
-      ) : shown.mode === "video" ? (
+      ) : (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {shown.rows.map((v) => (
             <button key={v.id} type="button" onClick={() => play(v)} className="group overflow-hidden rounded-lg border bg-card text-left" title={v.description}>
@@ -136,24 +124,11 @@ export function MarketTops({ mode, country, savedKeys, onDetail }: { mode: TopsM
             </button>
           ))}
         </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl border bg-card">
-          {shown.rows.map((r, i) => (
-            <div key={r.pid} className="flex items-center gap-3 border-b px-3 py-2 last:border-b-0">
-              <span className="w-6 shrink-0 text-center text-xs font-semibold text-muted-foreground tabular-nums">{i + 1}</span>
-              <Img src={r.imageUrl} className="size-11 rounded-lg border" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium" title={r.productName}>{r.productName}</p>
-                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                  {r.price} · terjual minggu ini <b className="text-foreground">{r.unitsSold ?? "-"}</b> · total {r.historicalSold} · <Star className="inline size-3 fill-amber-400 text-amber-400" /> {r.rating} · {r.shopName}
-                </p>
-                {r.cateNames?.length > 0 && <p className="truncate text-[10px] text-muted-foreground">{r.cateNames.join(" › ")}</p>}
-              </div>
-              <a href={r.productUrl} target="_blank" rel="noreferrer" title="Buka di Shopee" className="grid size-7 place-items-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"><ExternalLink className="size-3.5" /></a>
-            </div>
-          ))}
-          {shown.rows.length === 0 && <p className="p-8 text-center text-xs text-muted-foreground">Tidak ada hasil.</p>}
-        </div>
+      )}
+      {shown?.more && (
+        <button type="button" onClick={() => load(false, shown.page + 1)} disabled={pending} className="mx-auto flex h-9 items-center gap-1.5 rounded-lg border bg-card px-4 text-xs font-medium hover:bg-accent disabled:opacity-60">
+          {pending ? <Loader2 className="size-3.5 animate-spin" /> : <ChevronDown className="size-3.5" />} Muat 20 lagi (halaman {shown.page + 1})
+        </button>
       )}
     </div>
   );

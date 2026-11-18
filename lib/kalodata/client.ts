@@ -258,18 +258,23 @@ export class KaloClient {
   }
 
   /** Overview ranking: produk terlaris satu negara (halaman Explore → Top Products). */
-  async productTops(range: DateRange, pageSize = 10): Promise<KaloTopProduct[]> {
-    return this.request("POST", "/overview/rank/queryProductTops", { ...range, pageNo: 1, pageSize });
+  async productTops(range: DateRange, pageSize = 20, pageNo = 1): Promise<KaloTopProduct[]> {
+    return this.request("POST", "/overview/rank/queryProductTops", { ...range, pageNo, pageSize });
   }
 
   /** Overview ranking: video jualan terlaris satu negara (lintas produk). */
-  async videoTops(range: DateRange, pageSize = 10): Promise<KaloTopVideo[]> {
-    return this.request("POST", "/overview/rank/queryVideoTops", { ...range, pageNo: 1, pageSize });
+  async videoTops(range: DateRange, pageSize = 20, pageNo = 1): Promise<KaloTopVideo[]> {
+    return this.request("POST", "/overview/rank/queryVideoTops", { ...range, pageNo, pageSize });
   }
 
   /** Periode data Shopee yang tersedia (mingguan; "L1W" = minggu terakhir). */
   async shopeeRanges(): Promise<{ label: string; value: string; weekStart: string; weekEnd: string }[]> {
     return this.request("GET", "/shopee/dataRange");
+  }
+
+  /** Kategori Shopee level 1. */
+  async shopeeCategories(): Promise<{ id: string; label: string }[]> {
+    return this.request("POST", "/shopee/categories/initFirstTree");
   }
 
   /** Produk Shopee terlaris (negara = header country). */

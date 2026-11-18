@@ -6,7 +6,7 @@ import {
 // Groups follow the seller's workflow: research → make content → keep assets → sell & publish → settings.
 export const NAV = [
   { slug: "beranda", title: "Beranda", icon: LayoutDashboard, group: "Utama", color: "#2fa868", desc: "Ringkasan akun, jadwal, dan aktivitas bot hari ini." },
-  { slug: "riset", title: "Riset Produk", icon: TrendingUp, group: "Riset", color: "#26b5ce", desc: "Ranking TikTok, data KaloData, dan produk tersimpan dalam satu tempat." },
+  { slug: "riset", title: "Riset Produk", icon: TrendingUp, group: "Riset", color: "#26b5ce", desc: "Produk & video terlaris TikTok Shop dan Shopee dari KaloData, plus produk tersimpan." },
   { slug: "video", title: "Buat Video Reels", icon: Clapperboard, group: "Buat Konten", color: "#f2994a", desc: "Pilih konsep, masukkan produk, AI bikin videonya." },
   { slug: "proyek", title: "Proyek Video", icon: FolderKanban, group: "Buat Konten", color: "#56ccf2", desc: "Semua proyek video: draf, sedang dibuat, dan yang sudah jadi." },
   { slug: "gambar-ai", title: "Buat Gambar AI", icon: ImagePlus, group: "Buat Konten", color: "#e535ab", desc: "Bikin gambar produk dan konten dari prompt." },
