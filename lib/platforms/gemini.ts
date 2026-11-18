@@ -32,6 +32,7 @@ export async function askGemini(sessionKey: string, prompt: string): Promise<str
           credentials: "include",
           headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8", "x-same-domain": "1" },
           body: new URLSearchParams({ "f.req": freq, at }).toString(),
+          signal: AbortSignal.timeout(120_000), // a stalled stream would otherwise hold the browser profile forever
         });
         return { status: res.status, text: await res.text() };
       },
