@@ -2,6 +2,7 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import { DATA_DIR } from "@/lib/db";
+import type { EditTemplate } from "@/lib/edit";
 
 // Small app preferences in DATA_DIR/settings.json (not worth a DB table).
 
@@ -22,7 +23,7 @@ type VoiceSettings = {
   cartesiaVoiceName?: string;
   speed?: number; // 0.6–1.5
 };
-type Settings = { speed: SpeedId; showcaseSyncMinutes: number /* 0 = off */; voice: VoiceSettings };
+type Settings = { speed: SpeedId; showcaseSyncMinutes: number /* 0 = off */; voice: VoiceSettings; editTemplates?: EditTemplate[] };
 const DEFAULTS: Settings = { speed: "normal", showcaseSyncMinutes: 60, voice: { provider: "flow" } };
 export const SYNC_CHOICES = [0, 15, 30, 60, 180, 360] as const;
 const FILE = path.join(/* turbopackIgnore: true */ DATA_DIR, "settings.json");

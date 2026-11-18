@@ -10,13 +10,13 @@ import { googleAccounts, videoProjects, type ProjectScene } from "@/lib/db/schem
 import fs from "node:fs/promises";
 import { createProjectFolder, probeMedia, removeMedia, resolveMedia, writeMedia } from "@/lib/media";
 import { aiAdjustEdit, exportEdit, prepareEdit } from "@/lib/editor";
-import { clamp, DEFAULT_SAFE, round2, type ProjectEdit } from "@/lib/edit";
+import { clamp, DEFAULT_FX, DEFAULT_SAFE, round2, toTemplate, type EditTemplate, type ProjectEdit } from "@/lib/edit";
 import { defaultOptions, draftCaption, presetById, projectName } from "@/lib/presets";
 import { addToLibrary, copyIntoProject, listGenerated, listUploads } from "@/lib/library";
 import { queueImages, queueRender } from "@/lib/projects";
 import { writeScenes } from "@/lib/prompt-writer";
 import { synthesize } from "@/lib/cartesia";
-import { getSettings } from "@/lib/settings";
+import { getSettings, updateSettings } from "@/lib/settings";
 import { spoken } from "@/lib/voice";
 
 const Id = z.number().int().positive();
@@ -335,12 +335,27 @@ export async function previewVoiceLine(text: string, voiceId: string, speed = 1)
 // ---- Timeline editor (Hasil) ----
 
 const Num = z.number().finite();
+const Anim = z.enum(["none", "fade", "pop", "naik", "sapu"]);
 const EditInput = z.object({
   clipVolume: Num,
   voiceVolume: Num,
   captions: z.array(z.object({ id: z.string().max(20), start: Num, end: Num, text: z.string().max(200), pos: z.object({ x: Num, y: Num, size: Num }).nullish() })).max(200),
-  captionStyle: z.object({ preset: z.enum(["tiktok", "kotak", "kuning", "bersih"]), x: Num.default(0.5), y: Num, size: Num, upper: z.boolean(), anim: z.enum(["none", "fade", "pop", "naik", "sapu"]).default("pop") }),
+  captionStyle: z.object({
+    preset: z.enum(["tiktok", "kotak", "kuning", "bersih"]),
+    x: Num.default(0.5),
+    y: Num,
+    size: Num,
+    upper: z.boolean(),
+    anim: Anim.default("pop"),
+    karaoke: z.boolean().default(false),
+    accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#ffe03d"),
+  }),
   safe: z.object({ top: Num, bottom: Num, left: Num, right: Num }).optional(),
+  overlays: z
+    .array(z.object({ id: z.string().max(20), kind: z.enum(["judul", "harga", "cta"]), start: Num, end: Num, text: z.string().max(80), x: Num, y: Num, size: Num, anim: Anim }))
+    .max(20)
+    .optional(),
+  fx: z.object({ transition: z.enum(["none", "zoom", "flash", "gelap"]), kenburns: z.boolean() }).optional(),
   voices: z.array(z.object({ id: z.string(), start: Num, speed: Num, volume: Num })).max(50),
   bgm: z.object({ src: z.string(), name: z.string().max(120), dur: Num, volume: Num, offset: Num, fade: z.boolean() }).nullable(),
 });
@@ -369,7 +384,16 @@ function mergeEdit(p: Awaited<ReturnType<typeof get>>, patch: EditPatch): Projec
       size: clamp(d.captionStyle.size, 0.03, 0.12),
       upper: d.captionStyle.upper,
       anim: d.captionStyle.anim,
+      karaoke: d.captionStyle.karaoke,
+      accent: d.captionStyle.accent,
     },
+    overlays: d.overlays
+      ? d.overlays.map((o) => {
+          const start = round2(clamp(o.start, 0, D - 0.1));
+          return { ...o, start, end: round2(clamp(o.end, start + 0.1, D)), x: round2(clamp(o.x, 0.02, 0.98)), y: round2(clamp(o.y, 0.02, 0.98)), size: clamp(o.size, 0.03, 0.14) };
+        })
+      : (e.overlays ?? []),
+    fx: d.fx ?? e.fx ?? DEFAULT_FX,
     safe: d.safe ? { top: clamp(d.safe.top, 0, 0.4), bottom: clamp(d.safe.bottom, 0, 0.4), left: clamp(d.safe.left, 0, 0.4), right: clamp(d.safe.right, 0, 0.4) } : (e.safe ?? DEFAULT_SAFE),
     voices: e.voices.map((v) => {
       const x = d.voices.find((y) => y.id === v.id);
@@ -417,7 +441,45 @@ export async function aiEditTimeline(id: number, patch: EditPatch, instruction: 
   return { edit, note };
 }
 
-const Overlay = z.array(z.object({ start: Num, end: Num, x: Num, y: Num, w: Num.default(0), h: Num.default(0), png: z.string().startsWith("data:image/png;base64,").max(3_000_000) })).max(200);
+/** AI Director: three complete versions with different angles. Nothing is saved until the user picks one. */
+export async function aiDirector(id: number, patch: EditPatch, wish: string) {
+  const p = await get(id);
+  const current = mergeEdit(p, patch);
+  // one after another: all calls share the same Gemini browser profile (parallel calls break each other)
+  const ok: Awaited<ReturnType<typeof aiAdjustEdit>>[] = [];
+  let lastError = "AI Director gagal. Coba lagi.";
+  for (const angle of [0, 1, 2]) {
+    try {
+      ok.push(await aiAdjustEdit(p, current, wish.slice(0, 600), { director: true, angle }));
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : lastError;
+    }
+  }
+  if (!ok.length) throw new Error(lastError);
+  return ok;
+}
+
+// ---- Edit templates ("gaya brand"), kept in settings.json ----
+
+export async function listEditTemplates(): Promise<EditTemplate[]> {
+  return getSettings().editTemplates ?? [];
+}
+
+export async function saveEditTemplate(id: number, patch: EditPatch, name: string) {
+  const p = await get(id);
+  const t = toTemplate(mergeEdit(p, patch), z.string().trim().min(1).max(40).parse(name));
+  const list = [t, ...(getSettings().editTemplates ?? []).filter((x) => x.name !== t.name)].slice(0, 30);
+  updateSettings({ editTemplates: list });
+  return list;
+}
+
+export async function deleteEditTemplate(templateId: string) {
+  const list = (getSettings().editTemplates ?? []).filter((x) => x.id !== templateId);
+  updateSettings({ editTemplates: list });
+  return list;
+}
+
+const Overlay = z.array(z.object({ start: Num, end: Num, x: Num, y: Num, w: Num.default(0), h: Num.default(0), anim: Anim.optional(), png: z.string().startsWith("data:image/png;base64,").max(3_000_000) })).max(500);
 
 export async function exportTimeline(id: number, patch: EditPatch, overlays: z.input<typeof Overlay>) {
   const p = await get(id);

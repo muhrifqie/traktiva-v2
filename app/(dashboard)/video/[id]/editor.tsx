@@ -3,21 +3,26 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Copy, Download, Frame, FolderOpen, Loader2, Music, Pause, Play, Plus, Redo2, Scissors, Sparkles, Trash2, Type, Undo2, Upload, Volume2, VolumeX, Wand2,
+  Bookmark, Clapperboard, Copy, Download, Film, Frame, FolderOpen, Loader2, Music, Pause, Play, Plus, Redo2, Scissors, Sparkles, Sticker, Trash2, Type, Undo2, Upload, Volume2, VolumeX, Wand2,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { VideoProject } from "@/lib/db/schema";
 import {
-  autoCaptions, blitCaption, CAPTION_ANIMS, CAPTION_PRESETS, clamp, drawCaption, normalizeEdit, round2, SAFE_PRESETS, styleOf, uid,
-  type Box, type CaptionAnim, type CaptionPos, type CaptionStyle, type EditCaption, type ProjectEdit, type SafeArea,
+  ACCENTS, applyTemplate, autoCaptions, blitCaption, CAPTION_ANIMS, CAPTION_PRESETS, clamp, drawCaption, fxAt, layersOf, normalizeEdit, OVERLAY_KINDS, round2,
+  SAFE_PRESETS, styleOf, TRANSITIONS, uid,
+  type Box, type CaptionAnim, type CaptionPos, type CaptionStyle, type EditCaption, type EditFx, type EditOverlay, type EditTemplate, type Layer,
+  type OverlayKind, type ProjectEdit, type SafeArea,
 } from "@/lib/edit";
 import { mediaUrl } from "@/lib/media-url";
 import { voiceLine } from "@/lib/voice";
-import { aiEditTimeline, exportTimeline, openEditor, openProjectFolder, saveEdit, saveProject, uploadMusic } from "../project-actions";
+import {
+  aiDirector, aiEditTimeline, deleteEditTemplate, exportTimeline, listEditTemplates, openEditor, openProjectFolder, saveEdit, saveEditTemplate, saveProject, uploadMusic,
+} from "../project-actions";
 
 type Project = Omit<VideoProject, "updatedAt"> & { updatedAt: number };
-type Sel = { kind: "caption" | "voice"; id: string } | null;
-type Tab = "teks" | "audio" | "ai" | "posting";
+type Sel = { kind: "caption" | "voice" | "overlay"; id: string } | null;
+type Tab = "teks" | "stiker" | "efek" | "audio" | "ai" | "posting";
+type Hit = { id: string; kind: "caption" | "overlay"; box: Box };
 
 const btn = "flex h-7 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium disabled:opacity-50";
 const primary = `${btn} bg-primary text-primary-foreground hover:bg-primary/90`;
@@ -34,6 +39,8 @@ const patchOf = (e: ProjectEdit) => ({
   captions: e.captions,
   captionStyle: e.captionStyle,
   safe: e.safe,
+  overlays: e.overlays,
+  fx: e.fx,
   voices: e.voices.map(({ id, start, speed, volume }) => ({ id, start, speed, volume })),
   bgm: e.bgm,
 });
@@ -141,10 +148,13 @@ export function TimelineEditor({ p }: { p: Project }) {
   const [zoom, setZoom] = useState(0); // px per second; 0 = fit
   const [busy, setBusy] = useState<"export" | "ai" | "music" | null>(null);
   const [exportedV, setExportedV] = useState(p.edit?.exportedAt ? 0 : -1); // history version last exported
-  const [hit, setHit] = useState<{ id: string; box: Box } | null>(null); // caption on screen (drag target)
+  const [hits, setHits] = useState<Hit[]>([]); // what is on screen now (drag targets)
   const [guide, setGuide] = useState(false); // centre line while dragging
   const [showSafe, setShowSafe] = useState(true);
-  const capCache = useRef<{ key: string; canvas: HTMLCanvasElement; box: Box } | null>(null);
+  // rendered stills, cropped to their box (a full-frame canvas per layer would eat memory with karaoke)
+  const stills = useRef(new Map<string, { canvas: HTMLCanvasElement; box: Box }>());
+  const layerMemo = useRef<{ e: ProjectEdit | null; layers: Layer[] }>({ e: null, layers: [] });
+  const fxEl = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
 
   const video = useRef<HTMLVideoElement>(null);
@@ -198,27 +208,41 @@ export function TimelineEditor({ p }: { p: Project }) {
       const on = !v.paused && !v.ended;
       if (playhead.current) playhead.current.style.transform = `translateX(${t * pps}px)`;
       if (timeLabel.current) timeLabel.current.textContent = `${fmt(t)} / ${fmt(e.duration)}`;
-      // caption layer: rendered once per text/style into an offscreen canvas, then animated per frame
+      // clip effects (zoom punch / Ken Burns / flash / dip to black), same curves as the export
+      const fx = fxAt(e, t);
+      v.style.transform = fx.zoom === 1 ? "" : `scale(${fx.zoom})`;
+      if (fxEl.current) {
+        fxEl.current.style.background = fx.black > 0 ? "#000" : "#fff";
+        fxEl.current.style.opacity = String(Math.max(fx.black, fx.white));
+      }
+      // text layers: each still rendered once (cropped), then animated per frame
       const cv = canvas.current;
       if (cv) {
         const ctx = cv.getContext("2d")!;
         ctx.clearRect(0, 0, cv.width, cv.height);
-        const c = e.captions.find((x) => t >= x.start && t < x.end && x.text.trim());
-        let shown: { id: string; box: Box } | null = null;
-        if (c) {
-          const st = styleOf(e.captionStyle, c);
-          const key = JSON.stringify([c.text, st, e.safe, cv.width, cv.height]);
-          if (capCache.current?.key !== key) {
-            const off = capCache.current?.canvas ?? document.createElement("canvas");
-            off.width = cv.width; // also clears it
-            off.height = cv.height;
-            capCache.current = { key, canvas: off, box: drawCaption(off.getContext("2d")!, off.width, off.height, c.text, st, e.safe) };
+        if (layerMemo.current.e !== e) layerMemo.current = { e, layers: layersOf(e) };
+        const shown: Hit[] = [];
+        for (const l of layerMemo.current.layers) {
+          if (t < l.start || t >= l.end) continue;
+          let st = stills.current.get(l.key);
+          if (!st) {
+            if (stills.current.size > 300) stills.current.clear();
+            const full = document.createElement("canvas");
+            full.width = cv.width;
+            full.height = cv.height;
+            const box = l.draw(full.getContext("2d")!, cv.width, cv.height);
+            const crop = document.createElement("canvas");
+            crop.width = Math.max(1, box.w);
+            crop.height = Math.max(1, box.h);
+            crop.getContext("2d")!.drawImage(full, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
+            st = { canvas: crop, box };
+            stills.current.set(l.key, st);
           }
-          // paused = show the caption fully (for editing); playing = with its entrance animation
-          blitCaption(ctx, capCache.current.canvas, capCache.current.box, cv.height, st.anim, on ? t - c.start : 99);
-          shown = { id: c.id, box: capCache.current.box };
+          // paused = show it fully (for editing); playing = with its entrance animation
+          blitCaption(ctx, st.canvas, st.box, cv.height, l.anim, on ? t - l.start : 99, 0, 0);
+          shown.push({ id: l.id, kind: l.kind, box: st.box });
         }
-        setHit((cur) => (cur?.id === shown?.id && cur?.box === shown?.box ? cur : shown));
+        setHits((cur) => (cur.length === shown.length && cur.every((h, i) => h.id === shown[i].id && h.box === shown[i].box) ? cur : shown));
       }
       // follow the playhead while playing
       const sc = scroller.current;
@@ -268,9 +292,25 @@ export function TimelineEditor({ p }: { p: Project }) {
     setTab("teks");
   };
   const removeSel = () => {
-    if (sel?.kind !== "caption") return;
-    set((e) => ({ ...e, captions: e.captions.filter((c) => c.id !== sel.id) }));
+    if (sel?.kind === "caption") set((e) => ({ ...e, captions: e.captions.filter((c) => c.id !== sel.id) }));
+    else if (sel?.kind === "overlay") set((e) => ({ ...e, overlays: e.overlays.filter((o) => o.id !== sel.id) }));
+    else return;
     setSel(null);
+  };
+  const updOverlay = (id: string, patch: Partial<EditOverlay>, record = true) =>
+    set((e) => ({ ...e, overlays: e.overlays.map((o) => (o.id === id ? { ...o, ...patch } : o)) }), record);
+  const addOverlay = (kind: OverlayKind) => {
+    const k = OVERLAY_KINDS.find((x) => x.id === kind)!;
+    const start = kind === "cta" ? Math.max(0, D - 2.5) : kind === "judul" ? 0 : now();
+    const price = p.product.price?.trim();
+    const o: EditOverlay = {
+      id: uid(), kind, start: round2(start), end: round2(Math.min(D, start + 2.5)), anim: "pop", x: 0.5, y: k.y, size: k.size,
+      text: kind === "harga" && price ? (price.length > 18 ? price.slice(0, 18) : price) : kind === "judul" ? p.product.name.split(/\s+/).slice(0, 3).join(" ") || k.text : k.text,
+    };
+    set((e) => ({ ...e, overlays: [...e.overlays, o] }));
+    setSel({ kind: "overlay", id: o.id });
+    setTab("stiker");
+    seek(o.start + 0.05);
   };
   const splitSel = () => {
     const t = round2(now());
@@ -292,9 +332,10 @@ export function TimelineEditor({ p }: { p: Project }) {
     toast.success(`${next.length} caption dibuat dari naskah`);
   };
 
-  /** Position/size edits go to the caption's own pos when it has one, otherwise to the shared style. */
+  /** Position/size edits go to the overlay, the caption's own pos when it has one, or the shared caption style. */
   const setPos = (id: string | null, patch: Partial<CaptionPos>, record = true) =>
     set((e) => {
+      if (id && e.overlays.some((o) => o.id === id)) return { ...e, overlays: e.overlays.map((o) => (o.id === id ? { ...o, ...patch } : o)) };
       const c = id ? e.captions.find((x) => x.id === id) : null;
       if (c?.pos) return { ...e, captions: e.captions.map((x) => (x.id === c.id ? { ...x, pos: { ...c.pos!, ...patch } } : x)) };
       return { ...e, captionStyle: { ...e.captionStyle, ...patch } };
@@ -316,11 +357,11 @@ export function TimelineEditor({ p }: { p: Project }) {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
-  const moveCaption = (ev: React.PointerEvent) => {
-    if (!hit || !edit) return;
+  const moveLayer = (ev: React.PointerEvent, hit: Hit) => {
+    if (!edit) return;
     const { id, box } = hit;
-    setSel({ kind: "caption", id });
-    setTab("teks");
+    setSel({ kind: hit.kind, id });
+    setTab(hit.kind === "overlay" ? "stiker" : "teks");
     // start from where the text is drawn (the style may be pushed in by the safe area)
     const cx = (box.x + box.w / 2) / edit.width, cy = (box.y + box.h / 2) / edit.height;
     dragStage(ev, (dx, dy, rect) => {
@@ -331,16 +372,16 @@ export function TimelineEditor({ p }: { p: Project }) {
       setPos(id, { x: round2(x), y: round2(clamp(cy + dy / rect.height, 0.02, 0.98)) }, false);
     });
   };
-  const resizeCaption = (ev: React.PointerEvent) => {
-    if (!hit || !edit) return;
+  const resizeLayer = (ev: React.PointerEvent, hit: Hit) => {
+    if (!edit) return;
     const { id, box } = hit;
     const c = edit.captions.find((x) => x.id === id);
-    const size0 = styleOf(edit.captionStyle, c).size;
+    const size0 = edit.overlays.find((o) => o.id === id)?.size ?? styleOf(edit.captionStyle, c).size;
     const rect = stage.current!.getBoundingClientRect();
     const k = rect.width / edit.width;
     const ccx = rect.left + (box.x + box.w / 2) * k, ccy = rect.top + (box.y + box.h / 2) * k;
     const d0 = Math.max(8, Math.hypot(ev.clientX - ccx, ev.clientY - ccy));
-    dragStage(ev, (_dx, _dy, _r, e) => setPos(id, { size: Math.round(clamp((size0 * Math.hypot(e.clientX - ccx, e.clientY - ccy)) / d0, 0.03, 0.12) * 1000) / 1000 }, false));
+    dragStage(ev, (_dx, _dy, _r, e) => setPos(id, { size: Math.round(clamp((size0 * Math.hypot(e.clientX - ccx, e.clientY - ccy)) / d0, 0.03, 0.14) * 1000) / 1000 }, false));
   };
   /** Replay the animation: jump just before the selected (or next) caption and play. */
   const previewAnim = () => {
@@ -400,14 +441,14 @@ export function TimelineEditor({ p }: { p: Project }) {
       full.width = W;
       full.height = H;
       const fctx = full.getContext("2d")!;
-      const overlays = edit.captions.filter((c) => c.text.trim()).map((c) => {
+      const overlays = layersOf(edit).map((l) => {
         fctx.clearRect(0, 0, W, H);
-        const box = drawCaption(fctx, W, H, c.text, styleOf(edit.captionStyle, c), edit.safe);
+        const box = l.draw(fctx, W, H);
         const crop = document.createElement("canvas");
         crop.width = Math.max(1, box.w);
         crop.height = Math.max(1, box.h);
         crop.getContext("2d")!.drawImage(full, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
-        return { start: c.start, end: c.end, x: box.x, y: box.y, w: box.w, h: box.h, png: crop.toDataURL("image/png") };
+        return { start: round2(l.start), end: round2(l.end), x: box.x, y: box.y, w: box.w, h: box.h, anim: l.anim, png: crop.toDataURL("image/png") };
       });
       await saveEdit(p.id, patchOf(edit));
       await exportTimeline(p.id, patchOf(edit), overlays);
@@ -430,6 +471,22 @@ export function TimelineEditor({ p }: { p: Project }) {
       toast.success(r.note);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "AI gagal");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const [versions, setVersions] = useState<{ edit: ProjectEdit; note: string }[]>([]);
+  const runDirector = async (wish: string) => {
+    if (!edit) return;
+    setBusy("ai");
+    setVersions([]);
+    try {
+      const r = await aiDirector(p.id, patchOf(edit), wish);
+      setVersions(r);
+      toast.success(`${r.length} versi siap. Pilih salah satu.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "AI Director gagal");
     } finally {
       setBusy(null);
     }
@@ -480,26 +537,29 @@ export function TimelineEditor({ p }: { p: Project }) {
               onPause={() => setPlaying(false)}
               onEnded={() => setPlaying(false)}
             />
+            <div ref={fxEl} className="pointer-events-none absolute inset-0 opacity-0" />
             <canvas ref={canvas} width={edit.width} height={edit.height} className="pointer-events-none absolute inset-0 size-full" />
             {/* interaction layer: click = play/pause, drag the caption to move it, corner dot = resize */}
             <div ref={stage} className="absolute inset-0" onClick={toggle}>
               {showSafe && <SafeGuides safe={edit.safe} />}
               {guide && <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px bg-fuchsia-400" />}
-              {hit && !playing && (
-                <div
-                  className={`group absolute cursor-move touch-none rounded-sm border border-dashed ${sel?.id === hit.id ? "border-white" : "border-transparent hover:border-white/70"}`}
-                  style={{ left: `${(hit.box.x / edit.width) * 100}%`, top: `${(hit.box.y / edit.height) * 100}%`, width: `${(hit.box.w / edit.width) * 100}%`, height: `${(hit.box.h / edit.height) * 100}%` }}
-                  onPointerDown={moveCaption}
-                  onClick={(ev) => ev.stopPropagation()}
-                  title="Seret untuk memindah caption"
-                >
-                  <span
-                    className={`absolute -right-1.5 -bottom-1.5 size-3 cursor-nwse-resize rounded-full border-2 border-primary bg-white ${sel?.id === hit.id ? "" : "hidden group-hover:block"}`}
-                    onPointerDown={resizeCaption}
-                    title="Tarik untuk mengubah ukuran"
-                  />
-                </div>
-              )}
+              {!playing &&
+                hits.map((h) => (
+                  <div
+                    key={h.id}
+                    className={`group absolute cursor-move touch-none rounded-sm border border-dashed ${sel?.id === h.id ? "border-white" : "border-transparent hover:border-white/70"}`}
+                    style={{ left: `${(h.box.x / edit.width) * 100}%`, top: `${(h.box.y / edit.height) * 100}%`, width: `${(h.box.w / edit.width) * 100}%`, height: `${(h.box.h / edit.height) * 100}%` }}
+                    onPointerDown={(ev) => moveLayer(ev, h)}
+                    onClick={(ev) => ev.stopPropagation()}
+                    title={h.kind === "overlay" ? "Seret untuk memindah stiker" : "Seret untuk memindah caption"}
+                  >
+                    <span
+                      className={`absolute -right-1.5 -bottom-1.5 size-3 cursor-nwse-resize rounded-full border-2 border-primary bg-white ${sel?.id === h.id ? "" : "hidden group-hover:block"}`}
+                      onPointerDown={(ev) => resizeLayer(ev, h)}
+                      title="Tarik untuk mengubah ukuran"
+                    />
+                  </div>
+                ))}
             </div>
             {edit.voices.map((v) => (
               <audio key={v.id} preload="auto" src={mediaUrl(v.src)} ref={(el) => void (el ? voiceEls.current.set(v.id, el) : voiceEls.current.delete(v.id))} />
@@ -521,8 +581,8 @@ export function TimelineEditor({ p }: { p: Project }) {
         <div className="relative min-h-80">
         <div className="flex flex-col rounded-xl border bg-card lg:absolute lg:inset-0">
           <div className="flex items-center gap-0.5 border-b p-1">
-            {([["teks", "Teks", Type], ["audio", "Audio", Volume2], ["ai", "AI", Sparkles], ["posting", "Posting", Upload]] as const).map(([id, label, I]) => (
-              <button key={id} type="button" onClick={() => setTab(id)} className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium ${tab === id ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+            {([["teks", "Teks", Type], ["stiker", "Stiker", Sticker], ["efek", "Efek", Film], ["audio", "Audio", Volume2], ["ai", "AI", Sparkles], ["posting", "Posting", Upload]] as const).map(([id, label, I]) => (
+              <button key={id} type="button" onClick={() => setTab(id)} className={`flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium ${tab === id ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                 <I className="size-3.5" /> {label}
               </button>
             ))}
@@ -581,7 +641,34 @@ export function TimelineEditor({ p }: { p: Project }) {
                 </div>
               </div>
             )}
-            {tab === "ai" && <AiPanel busy={busy === "ai"} hasBgm={!!edit.bgm} onRun={runAi} />}
+            {tab === "stiker" && (
+              <OverlayPanel
+                overlays={edit.overlays}
+                selected={sel?.kind === "overlay" ? edit.overlays.find((o) => o.id === sel.id) : undefined}
+                onAdd={addOverlay}
+                onPick={(o) => (setSel({ kind: "overlay", id: o.id }), seek(o.start + 0.05))}
+                onChange={(id, patch, record) => updOverlay(id, patch, record)}
+                onRemove={removeSel}
+              />
+            )}
+            {tab === "efek" && (
+              <FxPanel
+                fx={edit.fx}
+                onFx={(patch) => set((e) => ({ ...e, fx: { ...e.fx, ...patch } }))}
+                onSaveTemplate={(name) => saveEditTemplate(p.id, patchOf(edit), name)}
+                onApplyTemplate={(t) => (set((e) => applyTemplate(e, t)), toast.success(`Gaya “${t.name}” dipakai`))}
+              />
+            )}
+            {tab === "ai" && (
+              <AiPanel
+                busy={busy === "ai"}
+                hasBgm={!!edit.bgm}
+                onRun={runAi}
+                onDirector={runDirector}
+                versions={versions}
+                onPick={(v) => (set(v.edit), setVersions([]), toast.success("Versi dipakai. Ctrl+Z untuk kembali."))}
+              />
+            )}
             {tab === "posting" && <PostingPanel p={p} />}
           </div>
         </div>
@@ -597,7 +684,7 @@ export function TimelineEditor({ p }: { p: Project }) {
           <span className="mx-1 h-5 w-px bg-border" />
           <button type="button" className={secondary} onClick={addCaption}><Plus className="size-3.5" /> Caption</button>
           <button type="button" className={icon} onClick={splitSel} title="Potong caption di playhead (S)"><Scissors className="size-4" /></button>
-          <button type="button" className={icon} onClick={removeSel} disabled={sel?.kind !== "caption"} title="Hapus (Del)"><Trash2 className="size-4" /></button>
+          <button type="button" className={icon} onClick={removeSel} disabled={sel?.kind !== "caption" && sel?.kind !== "overlay"} title="Hapus (Del)"><Trash2 className="size-4" /></button>
           <span className="ml-2 hidden text-[10px] text-muted-foreground xl:inline">Spasi putar · S potong · Del hapus · ←/→ geser</span>
           <div className="ml-auto flex items-center gap-2">
             <input type="range" min={0} max={200} value={zoom} onChange={(e) => setZoom(Number(e.target.value) < 15 ? 0 : Number(e.target.value))} aria-label="Zoom timeline" className="w-24 accent-primary" />
@@ -612,6 +699,7 @@ export function TimelineEditor({ p }: { p: Project }) {
             <div className="h-5 border-b" />
             <TrackHead label="Video" />
             <TrackHead label="Teks" />
+            <TrackHead label="Stiker" />
             <TrackHead label="Suara" muted={edit.voiceVolume === 0} onMute={edit.voices.length ? () => set((e) => ({ ...e, voiceVolume: e.voiceVolume ? 0 : 1 })) : undefined} />
             <TrackHead label="Musik" muted={!!edit.bgm && edit.bgm.volume === 0} onMute={edit.bgm ? () => set((e) => ({ ...e, bgm: e.bgm && { ...e.bgm, volume: e.bgm.volume ? 0 : 0.2 } })) : undefined} />
           </div>
@@ -674,6 +762,41 @@ export function TimelineEditor({ p }: { p: Project }) {
                     label={c.text}
                   />
                 ))}
+              </Lane>
+              {/* stickers / overlays */}
+              <Lane>
+                {edit.overlays.length ? (
+                  edit.overlays.map((o) => (
+                    <Block
+                      key={o.id}
+                      left={o.start * pps}
+                      width={(o.end - o.start) * pps}
+                      selected={sel?.id === o.id}
+                      tone="bg-emerald-500/20 border-emerald-500/50 text-emerald-950 dark:text-emerald-100"
+                      onSelect={() => (setSel({ kind: "overlay", id: o.id }), setTab("stiker"))}
+                      onMove={(ev) => {
+                        const { start, end } = o;
+                        drag(ev, (d) => {
+                          const s = snap(clamp(start + d, 0, D - (end - start)));
+                          updOverlay(o.id, { start: s, end: round2(s + end - start) }, false);
+                        });
+                      }}
+                      onResize={(ev, side) => {
+                        const { start, end } = o;
+                        drag(ev, (d) =>
+                          side === "l"
+                            ? updOverlay(o.id, { start: snap(clamp(start + d, 0, end - 0.2)) }, false)
+                            : updOverlay(o.id, { end: snap(clamp(end + d, start + 0.2, D)) }, false),
+                        );
+                      }}
+                      label={o.text}
+                    />
+                  ))
+                ) : (
+                  <button type="button" className="absolute top-1 bottom-1 left-1 flex items-center gap-1 rounded-md border border-dashed px-2 text-[10px] text-muted-foreground hover:bg-accent" onPointerDown={(ev) => ev.stopPropagation()} onClick={() => setTab("stiker")}>
+                    <Plus className="size-3" /> Judul / harga / CTA
+                  </button>
+                )}
               </Lane>
               {/* voice-over */}
               <Lane>
@@ -861,6 +984,15 @@ function TextPanel({
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-1">
+            <span className="w-14 text-xs text-muted-foreground">Karaoke</span>
+            <button type="button" className={chip(!style.karaoke)} onClick={() => onStyle({ karaoke: false })}>Mati</button>
+            <button type="button" className={chip(style.karaoke)} onClick={() => onStyle({ karaoke: true })}>Kata menyala</button>
+            {style.karaoke &&
+              ACCENTS.map((c) => (
+                <button key={c} type="button" onClick={() => onStyle({ accent: c })} className={`size-5 rounded-full border-2 ${style.accent === c ? "border-foreground" : "border-transparent"}`} style={{ background: c }} aria-label={`Warna ${c}`} />
+              ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-1">
             <span className="w-14 text-xs text-muted-foreground">Huruf</span>
             <button type="button" className={chip(!style.upper)} onClick={() => onStyle({ upper: false })}>Aa</button>
             <button type="button" className={chip(style.upper)} onClick={() => onStyle({ upper: true })}>AA</button>
@@ -944,12 +1076,40 @@ const AI_CHIPS = [
   "Animasi pop, caption agak ke atas di tengah",
 ];
 
-function AiPanel({ busy, hasBgm, onRun }: { busy: boolean; hasBgm: boolean; onRun: (s: string) => void }) {
+function AiPanel({
+  busy, hasBgm, onRun, onDirector, versions, onPick,
+}: {
+  busy: boolean; hasBgm: boolean; onRun: (s: string) => void; onDirector: (wish: string) => void;
+  versions: { edit: ProjectEdit; note: string }[]; onPick: (v: { edit: ProjectEdit; note: string }) => void;
+}) {
   const [text, setText] = useState("");
   const chips = useMemo(() => (hasBgm ? AI_CHIPS : AI_CHIPS.filter((c) => !/musik/i.test(c))), [hasBgm]);
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">Suruh AI mengatur timeline: teks, gaya & posisi caption, timing, volume suara dan musik. Hasilnya bisa di-undo (Ctrl+Z).</p>
+      <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-2.5">
+        <p className="flex items-center gap-1.5 text-xs font-medium"><Clapperboard className="size-3.5" /> AI Director</p>
+        <p className="text-[11px] text-muted-foreground">Buat 3 versi siap posting (hook, harga, CTA, gaya caption, karaoke, transisi) dengan sudut pandang berbeda, lalu pilih satu. Butuh ±1–2 menit.</p>
+        <button type="button" className={primary} disabled={busy} onClick={() => onDirector(text)}>
+          {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Clapperboard className="size-3.5" />} {busy ? "AI sedang menyutradarai..." : "Buat 3 versi"}
+        </button>
+        {versions.length > 0 && (
+          <div className="grid gap-1.5">
+            {versions.map((v, i) => (
+              <div key={i} className="flex items-start gap-2 rounded-md border bg-background p-2">
+                <div className="min-w-0 flex-1 text-[11px]">
+                  <p className="font-medium">Versi {i + 1}</p>
+                  <p className="text-muted-foreground">{v.note}</p>
+                  <p className="mt-0.5 truncate text-muted-foreground">
+                    {v.edit.overlays.map((o) => `“${o.text}”`).join(" · ") || "tanpa stiker"} · {v.edit.captionStyle.karaoke ? "karaoke" : v.edit.captionStyle.anim} · {v.edit.fx.transition}
+                  </p>
+                </div>
+                <button type="button" className={secondary} onClick={() => onPick(v)}>Pakai</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">Atau suruh AI mengubah bagian tertentu. Hasilnya bisa di-undo (Ctrl+Z). Teks di bawah juga dipakai sebagai keinginan tambahan untuk AI Director.</p>
       <textarea className={field} rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="Contoh: caption lebih heboh, voice-over sedikit lebih cepat, musik 15%" disabled={busy} />
       <div className="flex flex-wrap gap-1.5">
         {chips.map((c) => (
@@ -958,9 +1118,135 @@ function AiPanel({ busy, hasBgm, onRun }: { busy: boolean; hasBgm: boolean; onRu
           </button>
         ))}
       </div>
-      <button type="button" className={primary} disabled={busy || !text.trim()} onClick={() => onRun(text)}>
-        {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} {busy ? "AI sedang mengatur..." : "Atur dengan AI"}
+      <button type="button" className={secondary} disabled={busy || !text.trim()} onClick={() => onRun(text)}>
+        <Sparkles className="size-3.5" /> Atur dengan AI
       </button>
+    </div>
+  );
+}
+
+/** Stickers on their own track: hook title, price badge, call to action. */
+function OverlayPanel({
+  overlays, selected, onAdd, onPick, onChange, onRemove,
+}: {
+  overlays: EditOverlay[]; selected?: EditOverlay; onAdd: (k: OverlayKind) => void; onPick: (o: EditOverlay) => void;
+  onChange: (id: string, patch: Partial<EditOverlay>, record?: boolean) => void; onRemove: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-1">
+        {OVERLAY_KINDS.map((k) => (
+          <button key={k.id} type="button" className={secondary} onClick={() => onAdd(k.id)}><Plus className="size-3.5" /> {k.label}</button>
+        ))}
+      </div>
+      {selected ? (
+        <div className="space-y-2 rounded-lg border bg-background p-2">
+          <div className="flex items-center gap-1">
+            <input className={field} value={selected.text} maxLength={60} onChange={(e) => onChange(selected.id, { text: e.target.value }, false)} onBlur={(e) => onChange(selected.id, { text: e.target.value })} />
+            <button type="button" className={icon} onClick={onRemove} title="Hapus (Del)"><Trash2 className="size-3.5" /></button>
+          </div>
+          <div className="flex flex-wrap items-center gap-1">
+            {OVERLAY_KINDS.map((k) => (
+              <button key={k.id} type="button" className={chip(selected.kind === k.id)} onClick={() => onChange(selected.id, { kind: k.id })}>{k.label}</button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <input type="number" step={0.1} min={0} className={field.replace("w-full", "w-16")} value={selected.start} onChange={(e) => onChange(selected.id, { start: round2(Number(e.target.value)) })} aria-label="Mulai (detik)" />
+            <span>→</span>
+            <input type="number" step={0.1} min={0} className={field.replace("w-full", "w-16")} value={selected.end} onChange={(e) => onChange(selected.id, { end: round2(Number(e.target.value)) })} aria-label="Selesai (detik)" />
+            <span>dtk</span>
+          </div>
+          <Slider label="Ukuran" value={selected.size} min={0.03} max={0.14} step={0.002} onChange={(v, r) => onChange(selected.id, { size: v }, r)} />
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="w-14 text-xs text-muted-foreground">Animasi</span>
+            {CAPTION_ANIMS.map((x) => (
+              <button key={x.id} type="button" onClick={() => onChange(selected.id, { anim: x.id })} className={chip(selected.anim === x.id)}>{x.label}</button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="text-[11px] text-muted-foreground">{overlays.length ? "Klik stiker di timeline atau di video untuk mengedit." : "Belum ada stiker. Tambahkan judul hook di awal, badge harga, dan CTA di akhir."}</p>
+      )}
+      {overlays.length > 0 && (
+        <div className="grid gap-1">
+          {overlays.map((o) => (
+            <button key={o.id} type="button" onClick={() => onPick(o)} className={`flex items-center gap-2 rounded-md border px-2 py-1 text-left text-[11px] ${selected?.id === o.id ? "border-primary bg-primary/5" : "hover:bg-accent"}`}>
+              <span className="w-16 shrink-0 text-muted-foreground">{OVERLAY_KINDS.find((k) => k.id === o.kind)?.label}</span>
+              <span className="min-w-0 flex-1 truncate">{o.text}</span>
+              <span className="font-mono text-muted-foreground">{o.start.toFixed(1)}s</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Clip transitions / Ken Burns, plus saved "brand looks" (templates). */
+function FxPanel({
+  fx, onFx, onSaveTemplate, onApplyTemplate,
+}: {
+  fx: EditFx; onFx: (p: Partial<EditFx>) => void; onSaveTemplate: (name: string) => Promise<EditTemplate[]>; onApplyTemplate: (t: EditTemplate) => void;
+}) {
+  const [templates, setTemplates] = useState<EditTemplate[] | null>(null);
+  const [name, setName] = useState("");
+  useEffect(() => {
+    let alive = true;
+    listEditTemplates().then((t) => alive && setTemplates(t), () => alive && setTemplates([]));
+    return () => void (alive = false);
+  }, []);
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="w-20 text-xs text-muted-foreground">Transisi</span>
+          {TRANSITIONS.map((x) => (
+            <button key={x.id} type="button" className={chip(fx.transition === x.id)} onClick={() => onFx({ transition: x.id })}>{x.label}</button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="w-20 text-xs text-muted-foreground">Zoom pelan</span>
+          <button type="button" className={chip(!fx.kenburns)} onClick={() => onFx({ kenburns: false })}>Mati</button>
+          <button type="button" className={chip(fx.kenburns)} onClick={() => onFx({ kenburns: true })}>Ken Burns</button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">Transisi dipasang di setiap pergantian adegan; durasi video tidak berubah.</p>
+      </div>
+      <div className="space-y-2 border-t pt-2.5">
+        <p className="flex items-center gap-1.5 text-xs font-medium"><Bookmark className="size-3.5" /> Gaya brand</p>
+        <p className="text-[11px] text-muted-foreground">Simpan gaya caption, karaoke, safe area, efek, dan stiker proyek ini, lalu pakai di proyek lain dengan 1 klik.</p>
+        <div className="flex gap-1">
+          <input className={field} value={name} maxLength={40} onChange={(e) => setName(e.target.value)} placeholder="Nama gaya, mis. Toko Sepatu" />
+          <button
+            type="button"
+            className={secondary}
+            disabled={!name.trim()}
+            onClick={() =>
+              onSaveTemplate(name).then(
+                (t) => (setTemplates(t), setName(""), toast.success("Gaya disimpan")),
+                (e) => toast.error(e instanceof Error ? e.message : "Gagal menyimpan"),
+              )
+            }
+          >
+            Simpan
+          </button>
+        </div>
+        {templates === null ? (
+          <p className="text-[11px] text-muted-foreground">Memuat...</p>
+        ) : templates.length ? (
+          <div className="grid gap-1">
+            {templates.map((t) => (
+              <div key={t.id} className="flex items-center gap-2 rounded-md border px-2 py-1 text-[11px]">
+                <span className="min-w-0 flex-1 truncate font-medium">{t.name}</span>
+                <span className="text-muted-foreground">{t.captionStyle.preset}{t.captionStyle.karaoke ? " · karaoke" : ""} · {t.overlays.length} stiker</span>
+                <button type="button" className={secondary} onClick={() => onApplyTemplate(t)}>Pakai</button>
+                <button type="button" className={icon} aria-label="Hapus gaya" onClick={() => deleteEditTemplate(t.id).then(setTemplates)}><Trash2 className="size-3.5" /></button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">Belum ada gaya tersimpan.</p>
+        )}
+      </div>
     </div>
   );
 }
