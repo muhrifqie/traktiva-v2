@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { CircleAlert, ExternalLink, ImageIcon, Loader2, RefreshCw, Star } from "lucide-react";
+import { CircleAlert, ExternalLink, Loader2, Star } from "lucide-react";
 import { toast } from "sonner";
-import { CountryBadge, CountrySelect } from "@/components/country-select";
+import { CountrySelect } from "@/components/country-select";
 import { SaveProductButton } from "@/components/save-product-button";
 import { SHOPEE_MARKETS } from "@/lib/countries";
 import type { KaloShopeeProduct } from "@/lib/kalodata";
 import { kaloShopeeTops } from "./actions";
+import { savedFilter } from "../riset/saved-list";
+import { EmptyBox, iconBtn, ListBox, ListMeta, ProductRow, RisetToolbar } from "./riset-ui";
 
 export type ShopeeTab = "produk" | "tersimpan";
 
@@ -17,7 +19,7 @@ const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Gagal");
 /**
  * Shopee research (KaloData): last week's best sellers per market.
  * ponytail: KaloData trial accounts always get the same 10-row preview (category, keyword, period, sort and page 2
- * are ignored server-side), so the UI offers market only; kaloShopeeTops already accepts the filters for paid plans.
+ * are ignored server-side), so the search box filters the loaded rows; kaloShopeeTops already accepts the filters for paid plans.
  */
 export function ShopeeStudio({
   hasSession, initialTab = "produk", saved, savedCount = 0, savedKeys,
@@ -30,14 +32,16 @@ export function ShopeeStudio({
     window.history.replaceState(null, "", u);
   };
   const [country, setCountry] = useState<string>("ID");
-  const [data, setData] = useState<{ rows: KaloShopeeProduct[]; at: number; cached: boolean } | null>(null);
+  const [filter, setFilter] = useState("");
+  const [savedQ, setSavedQ] = useState("");
+  const [data, setData] = useState<{ rows: KaloShopeeProduct[]; at: number; cached: boolean; country: string } | null>(null);
   const [pending, start] = useTransition();
 
   const load = (cc = country, refresh = false) =>
     start(async () => {
       try {
         const r = await kaloShopeeTops(cc, {}, refresh);
-        setData({ rows: r.rows, at: r.at, cached: r.cached });
+        setData({ rows: r.rows, at: r.at, cached: r.cached, country: r.country });
       } catch (e) {
         toast.error(errMsg(e));
       }
@@ -49,77 +53,69 @@ export function ShopeeStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on market / tab change only
   }, [country, tab, hasSession]);
 
+  const k = filter.trim().toLowerCase();
+  const rows = (data?.country === country ? data.rows : []).filter((r) => !k || `${r.productName} ${r.shopName} ${r.cateNames?.join(" ")}`.toLowerCase().includes(k));
+
   return (
-    <div className="flex-1 space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
-          {([["produk", "Top produk"], ["tersimpan", `Tersimpan${savedCount ? ` (${savedCount})` : ""}`]] as const).map(([id, label]) => (
-            <button key={id} type="button" onClick={() => setTab(id)} className={`h-8 rounded-md px-3 text-xs font-medium ${tab === id ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
+    <div className="flex-1 space-y-3">
+      <RisetToolbar<ShopeeTab>
+        tabs={[{ id: "produk", label: "Top produk" }, { id: "tersimpan", label: "Tersimpan", badge: savedCount || null }]}
+        active={tab}
+        onTab={setTab}
+        search={
+          tab === "produk"
+            ? { value: filter, onChange: setFilter, placeholder: "Saring produk, toko, atau kategori" }
+            : { value: savedQ, onChange: (v) => (setSavedQ(v), savedFilter(v)), placeholder: "Saring produk tersimpan" }
+        }
+      >
+        {tab === "produk" && <CountrySelect value={country} onChange={setCountry} label="Pasar Shopee" options={SHOPEE_MARKETS.map((code) => ({ code }))} />}
+      </RisetToolbar>
 
       {tab === "tersimpan" ? (
         saved
       ) : !hasSession ? (
-        <p className="rounded-xl border border-dashed p-10 text-center text-xs text-muted-foreground">Hubungkan KaloData dulu lewat tombol Kelola sesi di kanan atas.</p>
+        <EmptyBox>Hubungkan KaloData dulu lewat tombol Kelola sesi di kanan atas.</EmptyBox>
       ) : (
-        <>
-          <div className="flex flex-wrap items-center gap-2">
-            <CountrySelect value={country} onChange={(c) => setCountry(c)} label="Pasar Shopee" options={SHOPEE_MARKETS.map((code) => ({ code }))} />
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <CountryBadge code={country} /> Produk Shopee terlaris minggu lalu
-              {data && <> · {data.cached ? "cache" : "baru"} {time.format(data.at)}</>}
-            </span>
-            <button type="button" onClick={() => load(country, true)} disabled={pending} className="ml-auto flex h-9 items-center gap-1.5 rounded-lg border bg-card px-3 text-xs font-medium hover:bg-accent disabled:opacity-60">
-              {pending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} Muat ulang
-            </button>
-          </div>
+        <div className="space-y-3">
+          <ListMeta country={country} onRefresh={() => load(country, true)} pending={pending}>
+            {data?.country === country ? <b className="text-foreground">{rows.length}</b> : null} produk Shopee terlaris minggu lalu
+            {data?.country === country && <> · {data.cached ? "cache" : "baru"} {time.format(data.at)}</>}
+          </ListMeta>
           <p className="flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-muted-foreground">
             <CircleAlert className="mt-px size-3.5 shrink-0 text-amber-500" />
-            Akun trial KaloData hanya dapat 10 produk Shopee teratas; filter kategori, kata kunci, periode, dan halaman berikutnya baru jalan di paket berbayar. Data Shopee hanya ada untuk Indonesia, Thailand, dan Vietnam.
+            Akun trial KaloData hanya dapat 10 produk Shopee teratas; kategori, kata kunci, periode, dan halaman berikutnya baru jalan di paket berbayar. Data Shopee hanya ada untuk Indonesia, Thailand, dan Vietnam.
           </p>
-
-          {!data ? (
-            <div className="flex h-40 items-center justify-center rounded-xl border bg-card text-xs text-muted-foreground">
-              {pending ? <><Loader2 className="mr-2 size-4 animate-spin" /> Mengambil produk Shopee...</> : "Belum ada data."}
-            </div>
+          {data?.country !== country ? (
+            <EmptyBox>{pending ? <><Loader2 className="size-4 animate-spin" /> Mengambil produk Shopee...</> : "Belum ada data."}</EmptyBox>
           ) : (
-            <div className={`overflow-hidden rounded-xl border bg-card ${pending ? "opacity-60" : ""}`}>
-              {data.rows.map((r, i) => (
-                <div key={r.pid} className="flex items-center gap-3 border-b px-3 py-2 last:border-b-0">
-                  <span className="w-6 shrink-0 text-center text-xs font-semibold text-muted-foreground tabular-nums">{i + 1}</span>
-                  <Img src={r.imageUrl} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-medium" title={r.productName}>{r.productName}</p>
-                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                      {r.price} · terjual periode ini <b className="text-foreground">{r.unitsSold ?? "-"}</b> · omzet <b className="text-foreground">{r.revenue}</b> · total {r.historicalSold} ·{" "}
-                      <Star className="inline size-3 fill-amber-400 text-amber-400" /> {r.rating} · {r.shopName}
-                    </p>
-                    {r.cateNames?.length > 0 && <p className="truncate text-[10px] text-muted-foreground">{r.cateNames.join(" › ")}</p>}
-                  </div>
-                  <SaveProductButton
-                    compact
-                    saved={savedKeys.includes(`${r.pid}:${country}`)}
-                    product={{ productId: r.pid, country, source: "shopee", title: r.productName, image: r.imageUrl, price: r.price, shopName: r.shopName, metrics: { sale: r.unitsSold ?? null, revenue: r.revenue, rating: r.rating } }}
-                  />
-                  <a href={r.productUrl} target="_blank" rel="noreferrer" title="Buka di Shopee" className="grid size-7 place-items-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"><ExternalLink className="size-3.5" /></a>
-                </div>
+            <ListBox dim={pending}>
+              {rows.map((r, i) => (
+                <ProductRow
+                  key={r.pid}
+                  rank={i + 1}
+                  image={r.imageUrl}
+                  title={r.productName}
+                  actions={
+                    <>
+                      <SaveProductButton
+                        compact
+                        saved={savedKeys.includes(`${r.pid}:${country}`)}
+                        product={{ productId: r.pid, country, source: "shopee", title: r.productName, image: r.imageUrl, price: r.price, shopName: r.shopName, metrics: { sale: r.unitsSold ?? null, revenue: r.revenue, rating: r.rating } }}
+                      />
+                      <a href={r.productUrl} target="_blank" rel="noreferrer" title="Buka di Shopee" className={iconBtn}><ExternalLink className="size-3.5" /></a>
+                    </>
+                  }
+                >
+                  {r.price} · terjual minggu ini <b className="text-foreground">{r.unitsSold ?? "-"}</b> · omzet <b className="text-foreground">{r.revenue}</b> · total {r.historicalSold} ·{" "}
+                  <Star className="inline size-3 fill-amber-400 text-amber-400" /> {r.rating} · {r.shopName}
+                  {r.cateNames?.length ? ` · ${r.cateNames[r.cateNames.length - 1]}` : ""}
+                </ProductRow>
               ))}
-              {data.rows.length === 0 && <p className="p-8 text-center text-xs text-muted-foreground">Tidak ada hasil.</p>}
-            </div>
+              {rows.length === 0 && <p className="p-8 text-center text-xs text-muted-foreground">Tidak ada yang cocok.</p>}
+            </ListBox>
           )}
-        </>
+        </div>
       )}
     </div>
   );
-}
-
-function Img({ src }: { src: string }) {
-  const [ok, setOk] = useState(true);
-  if (!ok) return <div className="grid size-11 shrink-0 place-items-center rounded-lg border bg-muted"><ImageIcon className="size-4 text-muted-foreground" /></div>;
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setOk(false)} className="size-11 shrink-0 rounded-lg border bg-muted object-cover" />;
 }

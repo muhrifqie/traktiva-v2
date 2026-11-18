@@ -3,14 +3,15 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  BarChart3, CircleAlert, Download, ImageIcon, Play, Copy, ExternalLink, KeyRound, Loader2, Plus, RefreshCw, Search, Sparkles, Store, Trash2, TrendingUp, UserPlus, Users, Video,
+  BarChart3, CircleAlert, Download, ImageIcon, Play, Copy, ExternalLink, KeyRound, Loader2, Plus, RefreshCw, Sparkles, Store, Trash2, TrendingUp, UserPlus, Users, Video,
 } from "lucide-react";
 import { toast } from "sonner";
 import { CountryBadge, CountrySelect } from "@/components/country-select";
 import { SaveProductButton } from "@/components/save-product-button";
-import { usePersistentState } from "@/lib/use-persistent-state";
 import { countryOf } from "@/lib/countries";
 import { MarketTops } from "./market-tops";
+import { savedFilter } from "../riset/saved-list";
+import { EmptyBox, iconBtn, ListBox, ListMeta, pillBtn, ProductRow, RisetToolbar } from "./riset-ui";
 import type { KaloProductInfo } from "@/lib/kalodata";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -48,7 +49,6 @@ export function KaloStudio({
   const [meta, setMeta] = useState<{ cached: boolean; keywords: string[]; country: string } | null>(
     initialResults ? { cached: true, keywords: lastKeywords, country: lastCountry } : null,
   );
-  const [filter, setFilter] = usePersistentState("riset:kalo-filter", "");
   const [mode, setModeState] = useState<TikTokTab>(initialTab);
   // the tab lives in the URL (?tab=), so a refresh or a shared link opens the same view
   const setMode = (t: TikTokTab) => {
@@ -67,6 +67,7 @@ export function KaloStudio({
     window.history.replaceState(null, "", u);
   };
   const [pending, start] = useTransition();
+  const [savedQ, setSavedQ] = useState("");
   const [adding, setAdding] = useState<string | null>(null);
 
   const search = (text = q, cc = country) =>
@@ -111,95 +112,97 @@ export function KaloStudio({
     );
   }
 
-  const k = filter.trim().toLowerCase();
-  const shown = (results ?? []).filter((r) => !k || r.name.toLowerCase().includes(k));
   const top = results?.[0]?.gmv30 ?? 1;
+  const cc = meta?.country ?? country;
+  const runSearch = () => {
+    if (!q.trim()) return;
+    setMode("cari");
+    search(q, country);
+  };
 
-  const modes: [TikTokTab, string][] = [["produk", "Top produk"], ["video", "Video terlaris"], ["cari", "Cari kata kunci"], ["tersimpan", `Tersimpan${savedCount ? ` (${savedCount})` : ""}`]];
   return (
-    <div className="flex-1 space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
-          {modes.map(([id, label]) => (
-            <button key={id} type="button" onClick={() => setMode(id)} className={`h-8 rounded-md px-3 text-xs font-medium ${mode === id ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-              {label}
-            </button>
-          ))}
-        </div>
-        {(mode === "produk" || mode === "video") && <CountrySelect value={country} onChange={setCountry} label="Pasar TikTok Shop" />}
-      </div>
+    <div className="flex-1 space-y-3">
+      <RisetToolbar<TikTokTab>
+        tabs={[
+          { id: "produk", label: "Top produk" },
+          { id: "video", label: "Video terlaris" },
+          ...(results || mode === "cari" ? [{ id: "cari" as const, label: "Hasil cari", badge: results?.length ?? null }] : []),
+          { id: "tersimpan", label: "Tersimpan", badge: savedCount || null },
+        ]}
+        active={mode}
+        onTab={setMode}
+        search={
+          mode === "tersimpan"
+            ? { value: savedQ, onChange: (v) => (setSavedQ(v), savedFilter(v)), placeholder: "Saring produk tersimpan" }
+            : { value: q, onChange: setQ, onSubmit: runSearch, placeholder: "Cari produk, pisahkan koma: kaos polos, kaos oversize", busy: pending && mode === "cari" }
+        }
+      >
+        {mode !== "tersimpan" && (
+          <CountrySelect
+            value={country}
+            onChange={(c) => {
+              setCountry(c);
+              if (mode === "cari" && q.trim()) search(q, c);
+            }}
+            label="Pasar TikTok Shop"
+          />
+        )}
+      </RisetToolbar>
+
       {mode === "tersimpan" ? (
         saved
       ) : mode !== "cari" ? (
         <MarketTops mode={mode} country={country} savedKeys={savedKeys} onDetail={setDetail} />
       ) : (
-      <>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          search();
-        }}
-        className="flex flex-wrap gap-2"
-      >
-        <CountrySelect value={country} onChange={(c) => { setCountry(c); if (q.trim()) search(q, c); }} disabled={pending} label="Pasar KaloData" />
-        <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border bg-card px-3 text-xs focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
-          <Search className="size-4 text-muted-foreground" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Kata kunci produk, pisahkan koma. Contoh: kaos polos, kaos oversize, singlet pria" className="min-w-0 flex-1 bg-transparent outline-none" />
-        </label>
-        <button type="submit" disabled={pending || !q.trim()} className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-          {pending && !adding ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Riset
-        </button>
-      </form>
-      <p className="text-xs text-muted-foreground">
-        Pencarian nama memakai jalur hemat kuota KaloData (estimasi GMV 30 hari). Klik <b>Detail</b> untuk tren harian, video & kreator terlaris (memakai kuota detail harian, hasil disimpan 24 jam).
-      </p>
-
-      {results && (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">{meta && <CountryBadge code={meta.country} />}<b className="text-foreground">{results.length}</b> produk dari {meta?.keywords.length} kata kunci{meta?.cached ? " · dari cache" : ""}</span>
-            <label className="ml-auto flex h-8 w-full items-center gap-2 rounded-lg border bg-card px-2.5 sm:w-60">
-              <Search className="size-3.5" />
-              <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Saring hasil..." className="min-w-0 flex-1 bg-transparent text-foreground outline-none" />
-            </label>
-          </div>
-          <div className="overflow-hidden rounded-xl border bg-card">
-            {shown.slice(0, 200).map((r, i) => (
-              <div key={r.id} className="flex items-center gap-3 border-b px-3 py-2 last:border-b-0">
-                <span className="w-6 shrink-0 text-center text-xs font-semibold text-muted-foreground tabular-nums">{i + 1}</span>
-                <button type="button" onClick={() => setDetail(r)} className="shrink-0" aria-label="Lihat detail">
-                  <KaloImg src={kaloProductImg(r.id)} className="size-11 rounded-lg border" />
-                </button>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium" title={r.name}>{r.name}</p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <div className="h-1 w-32 overflow-hidden rounded-full bg-muted">
-                      <div className="h-full rounded-full bg-[#f2994a]" style={{ width: `${Math.max(2, (r.gmv30 / top) * 100)}%` }} />
-                    </div>
-                    <span className="text-[11px] text-muted-foreground">GMV 30 hari <b className="text-foreground">{money(meta?.country ?? country).format(r.gmv30)}</b></span>
-                  </div>
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <button type="button" onClick={() => setDetail(r)} className="flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] font-medium hover:bg-accent"><TrendingUp className="size-3.5" /> Detail</button>
-                  <SaveProductButton
-                    compact
-                    saved={savedKeys.includes(`${r.id}:${meta?.country ?? country}`)}
-                    product={{ productId: r.id, country: meta?.country ?? country, source: "kalodata", title: r.name, image: kaloProductImg(r.id), metrics: { gmv30: money(meta?.country ?? country).format(r.gmv30) } }}
-                  />
-                  <button type="button" disabled={adding === r.id} onClick={() => toShowcase(r)} title="Tambah ke etalase TikTok" className="flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-                    {adding === r.id ? <Loader2 className="size-3.5 animate-spin" /> : <Store className="size-3.5" />} Etalase
-                  </button>
-                  <a href={productUrl(r.id)} target="_blank" rel="noreferrer" title="Buka di TikTok" className="grid size-7 place-items-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"><ExternalLink className="size-3.5" /></a>
-                  <button type="button" title="Salin ID produk" onClick={() => { void navigator.clipboard.writeText(r.id); toast.success("ID produk disalin"); }} className="grid size-7 place-items-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"><Copy className="size-3.5" /></button>
-                </div>
-              </div>
-            ))}
-            {shown.length === 0 && <p className="p-8 text-center text-xs text-muted-foreground">Tidak ada hasil.</p>}
-          </div>
+          <ListMeta country={cc} onRefresh={meta ? () => search(meta.keywords.join(", "), cc) : undefined} pending={pending}>
+            {results ? (
+              <>
+                <b className="text-foreground">{results.length}</b> produk dari kata kunci “{meta?.keywords.join(", ")}” · estimasi GMV 30 hari{meta?.cached ? " · cache" : ""} · Detail memakai kuota harian
+              </>
+            ) : (
+              "Ketik kata kunci di kolom cari kanan atas, lalu Enter."
+            )}
+          </ListMeta>
+          {!results ? (
+            <EmptyBox>{pending ? <><Loader2 className="size-4 animate-spin" /> Mencari di KaloData...</> : "Belum ada pencarian."}</EmptyBox>
+          ) : (
+            <ListBox dim={pending}>
+              {results.slice(0, 200).map((r, i) => (
+                <ProductRow
+                  key={r.id}
+                  rank={i + 1}
+                  image={kaloProductImg(r.id)}
+                  title={r.name}
+                  onOpen={() => setDetail(r)}
+                  actions={
+                    <>
+                      <button type="button" onClick={() => setDetail(r)} className={pillBtn}><TrendingUp className="size-3.5" /> Detail</button>
+                      <SaveProductButton
+                        compact
+                        saved={savedKeys.includes(`${r.id}:${cc}`)}
+                        product={{ productId: r.id, country: cc, source: "kalodata", title: r.name, image: kaloProductImg(r.id), metrics: { gmv30: money(cc).format(r.gmv30) } }}
+                      />
+                      <button type="button" disabled={adding === r.id} onClick={() => toShowcase(r)} title="Tambah ke etalase TikTok" className="flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                        {adding === r.id ? <Loader2 className="size-3.5 animate-spin" /> : <Store className="size-3.5" />} Etalase
+                      </button>
+                      <a href={productUrl(r.id)} target="_blank" rel="noreferrer" title="Buka di TikTok" className={iconBtn}><ExternalLink className="size-3.5" /></a>
+                      <button type="button" title="Salin ID produk" onClick={() => { void navigator.clipboard.writeText(r.id); toast.success("ID produk disalin"); }} className={iconBtn}><Copy className="size-3.5" /></button>
+                    </>
+                  }
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <span className="inline-block h-1 w-24 overflow-hidden rounded-full bg-muted align-middle">
+                      <span className="block h-full rounded-full bg-[#f2994a]" style={{ width: `${Math.max(2, (r.gmv30 / top) * 100)}%` }} />
+                    </span>
+                    GMV 30 hari <b className="text-foreground">{money(cc).format(r.gmv30)}</b>
+                  </span>
+                </ProductRow>
+              ))}
+              {results.length === 0 && <p className="p-8 text-center text-xs text-muted-foreground">Tidak ada hasil.</p>}
+            </ListBox>
+          )}
         </div>
-      )}
-
-      </>
       )}
 
       <DetailDialog hit={detail} country={meta?.country ?? country} savedKeys={savedKeys} onClose={() => setDetail(null)} />
