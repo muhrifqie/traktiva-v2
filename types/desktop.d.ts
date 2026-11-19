@@ -5,6 +5,9 @@ interface Window {
   desktop?: {
     isDesktop: true;
     platform: string;
+    /** Free this PC's license slot and ask for another key (packaged app). */
+    changeLicense(): Promise<{ ok: boolean }>;
+    refreshLicense(): Promise<{ ok: boolean; message?: string }>;
     window: {
       state(): Promise<DesktopWindowState>;
       minimize(): Promise<void>;

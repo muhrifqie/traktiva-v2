@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:" />
+  <title>Aktivasi Traktiva</title>
+  <link rel="stylesheet" href="shared.css" />
+  <link rel="stylesheet" href="login.css" />
+</head>
+<body>
+  <header class="titlebar">
+    <span class="muted">Traktiva</span>
+    <div class="win">
+      <button type="button" id="min" aria-label="Minimalkan">
+        <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5h8" /></svg>
+      </button>
+      <button type="button" id="quit" class="close" aria-label="Tutup">
+        <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1L1 9" /></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="login">
+    <svg class="logo" viewBox="0 0 512 512" aria-hidden="true">
+      <rect width="512" height="512" rx="96" fill="#106e3a" />
+      <path fill="#fff" d="M97 168h191v-40h126v64H288v181h-66V233H97z" />
+    </svg>
+    <h1 id="title" class="wordmark">Aktifkan Traktiva</h1>
+    <p id="subtitle" class="muted subtitle">Masukkan key lisensi dari penjual.</p>
+
+    <form id="form" autocomplete="off" novalidate>
+      <label for="key" class="label">Key lisensi</label>
+      <input id="key" name="key" spellcheck="false" maxlength="23" placeholder="TRK-XXXX-XXXX-XXXX-XXXX" aria-describedby="hint error" />
+      <p id="hint" class="hint muted">Tempel saja, tanda strip diisi otomatis.</p>
+      <p id="error" class="alert" role="alert" hidden></p>
+      <button id="submit" type="submit" class="primary" disabled>
+        <span class="spinner" aria-hidden="true"></span>
+        <span id="submit-label">Aktifkan</span>
+      </button>
+      <button id="retry" type="button" class="secondary" hidden>Coba lagi</button>
+      <button id="other" type="button" class="secondary" hidden>Pakai key lain</button>
+    </form>
+  </main>
+
+  <footer class="foot muted">
+    <span>1 key = 1 perangkat · butuh internet</span>
+    <span id="device"></span>
+  </footer>
+  <script src="login.js"></script>
+</body>
+</html>
