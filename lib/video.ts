@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { videoProjects } from "@/lib/db/schema";
 import { parallelLimit } from "@/lib/settings";
 
-// Generation slots shared by every project image and clip; the limit follows the speed setting live.
+// Generation slots shared by every project image and clip; the limit is automatic (parallelLimit: PC specs + accounts).
 const g = globalThis as unknown as { __flowSlots?: { active: number; waiting: (() => void)[] } };
 const slots = (g.__flowSlots ??= { active: 0, waiting: [] });
 

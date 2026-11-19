@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CircleAlert, CircleCheck, Clapperboard, ExternalLink, Link2, Loader2, Package, Plus, RefreshCw, Search, Store, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -56,12 +56,46 @@ export function SyncButton({ accountId }: { accountId: number }) {
   );
 }
 
+/**
+ * An account that was never synced (logged in before auto-sync existed, or its post-login sync failed):
+ * fetch its showcase on the first visit instead of waiting for a click. Retry stays one click away.
+ */
+function FirstSync({ accountId }: { accountId: number }) {
+  const router = useRouter();
+  const [state, setState] = useState<{ status: "loading" } | { status: "failed"; error: string }>({ status: "loading" });
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return; // dev StrictMode mounts twice: one TikTok visit only
+    started.current = true;
+    syncShowcase(accountId).then(
+      (r) => {
+        toast.success(`Etalase diambil · ${r.count} produk`);
+        router.refresh();
+      },
+      (e) => setState({ status: "failed", error: e instanceof Error ? e.message : "Gagal mengambil etalase" }),
+    );
+  }, [accountId, router]);
+
+  return (
+    <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed p-12 text-center">
+      {state.status === "loading" ? <Loader2 className="size-7 animate-spin text-muted-foreground" /> : <CircleAlert className="size-7 text-muted-foreground" />}
+      <p className="text-sm font-medium">{state.status === "loading" ? "Mengambil etalase dari TikTok Shop..." : "Etalase belum bisa diambil"}</p>
+      <p className="max-w-sm text-xs text-muted-foreground">
+        {state.status === "loading" ? "Sekali saja untuk akun ini, butuh ±15 detik. Setelah itu etalase diperbarui otomatis." : state.error}
+      </p>
+      {state.status === "failed" && <div className="mt-2"><SyncButton accountId={accountId} /></div>}
+    </div>
+  );
+}
+
 export function ShowcaseGrid({ accountId, products, concepts, neverSynced }: { accountId: number; products: Product[]; concepts: Concept[]; neverSynced: boolean }) {
   const [q, setQ] = usePersistentState("showcase:q", "");
   const [making, setMaking] = useState<Product | null>(null);
   const [viewing, setViewing] = useState<Product | null>(null);
   const k = q.trim().toLowerCase();
   const shown = k ? products.filter((p) => `${p.title} ${p.shopName ?? ""} ${p.productId}`.toLowerCase().includes(k)) : products;
+
+  if (!products.length && neverSynced) return <FirstSync key={accountId} accountId={accountId} />;
 
   if (!products.length) {
     return (

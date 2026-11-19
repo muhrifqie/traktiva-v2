@@ -263,7 +263,7 @@ export function NewProjectButton({ label = "Proyek baru" }: { label?: string }) 
           </DialogHeader>
           <div className="grid gap-2 sm:grid-cols-2">
             <Link href="/video" onClick={() => setOpen(false)} className="flex flex-col gap-1.5 rounded-xl border bg-background p-4 transition-colors hover:border-ring/40 hover:bg-accent">
-              <span className="grid size-9 place-items-center rounded-lg bg-[#f2994a1a] text-[#f2994a]"><Sparkles className="size-4.5" /></span>
+              <span className="grid size-9 place-items-center rounded-lg bg-muted text-black dark:text-white"><Sparkles className="size-4.5" /></span>
               <span className="text-[13px] font-semibold">Pakai konsep jadi</span>
               <span className="text-xs text-muted-foreground">Pilih gaya video yang sudah teruji, tinggal masukkan produk.</span>
             </Link>
@@ -273,7 +273,7 @@ export function NewProjectButton({ label = "Proyek baru" }: { label?: string }) 
               onClick={() => act(() => createProject("custom"))}
               className="flex flex-col gap-1.5 rounded-xl border bg-background p-4 text-left transition-colors hover:border-ring/40 hover:bg-accent disabled:opacity-60"
             >
-              <span className="grid size-9 place-items-center rounded-lg bg-[#8b7cf61a] text-[#a99bff]">{pending ? <Loader2 className="size-4.5 animate-spin" /> : <PenLine className="size-4.5" />}</span>
+              <span className="grid size-9 place-items-center rounded-lg bg-muted text-black dark:text-white">{pending ? <Loader2 className="size-4.5 animate-spin" /> : <PenLine className="size-4.5" />}</span>
               <span className="text-[13px] font-semibold">Racikan sendiri</span>
               <span className="text-xs text-muted-foreground">Tulis prompt sendiri, pakai gambarmu sendiri, atur adegan bebas.</span>
             </button>

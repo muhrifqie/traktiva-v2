@@ -4,14 +4,13 @@ import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { googleAccounts } from "@/lib/db/schema";
 import { loadFlow2ApiConfig } from "@/lib/flow2api";
-import { captchaBrowsersFor, getSettings, parallelLimit, SPEEDS, writingRules } from "@/lib/settings";
+import { getSettings, noteActiveGoogleAccounts, writingRules } from "@/lib/settings";
 import { WritingRulesCard } from "./writing-rules";
 import { LicenseCard } from "./license-card";
 import { ADMIN_PANEL_URL, BUYER_AREA_URL, licenseView, serverInfo } from "@/lib/server-info";
 import pkg from "@/package.json";
 import { ChatgptAccount } from "./chatgpt-account";
 import { GoogleAccounts } from "./google-accounts";
-import { SpeedSetting } from "./speed-setting";
 import { VoiceSetting } from "./voice-setting";
 import { getKv } from "@/lib/kalo";
 import { listVoices, maskKey, type CartesiaVoice } from "@/lib/cartesia";
@@ -23,6 +22,7 @@ const fmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", h
 export default async function PengaturanPage() {
   const accounts = await db.select().from(googleAccounts).orderBy(googleAccounts.email);
   const active = accounts.filter((a) => a.status === "active").length;
+  noteActiveGoogleAccounts(active); // generation speed is automatic, capped by active accounts
   // voice-over settings (the key itself never leaves the server; only a masked form is shown)
   const voice = getSettings().voice ?? { provider: "flow" };
   let voices: CartesiaVoice[] = (await getKv<CartesiaVoice[]>("cartesia:voices:id"))?.data ?? [];
@@ -62,13 +62,6 @@ export default async function PengaturanPage() {
         <ChatgptAccount email={getSettings().chatgpt?.email ?? null} connectedAt={getSettings().chatgpt ? fmt.format(new Date(getSettings().chatgpt!.connectedAt)) : null} />
 
         <WritingRulesCard initial={writingRules()} />
-
-        <SpeedSetting
-          speeds={SPEEDS.map((x) => ({ ...x }))}
-          current={getSettings().speed}
-          recommended={active >= 10 ? "maksimal" : active >= 3 ? "kencang" : "normal"}
-          browsers={captchaBrowsersFor(parallelLimit())}
-        />
 
         <VoiceSetting
           provider={voice.provider}

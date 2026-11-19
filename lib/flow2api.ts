@@ -3,8 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { DATA_DIR } from "@/lib/db";
-import { captchaBrowsersFor, parallelLimit } from "@/lib/settings";
+import { count, eq } from "drizzle-orm";
+import { DATA_DIR, db } from "@/lib/db";
+import { googleAccounts } from "@/lib/db/schema";
+import { captchaBrowsersFor, noteActiveGoogleAccounts, parallelLimit } from "@/lib/settings";
 
 // Client for a local flow2api instance (https://github.com/TheSmallHanCat/flow2api, MIT):
 // admin API to register Google/Flow sessions, OpenAI-compatible API to generate.
@@ -24,7 +26,13 @@ const LEGACY_SOURCE = "C:\\BOT\\flow2api";
 const SIDECAR_PORT = 38127; // fixed local port of Traktiva's own flow2api (the dev source install keeps 8000)
 
 function runtime(): Runtime | null {
-  const source = (dir: string): Runtime => ({ mode: "source", root: dir, config: path.join(/* turbopackIgnore: true */ dir, "config", "setting.toml"), exe: path.join(/* turbopackIgnore: true */ dir, ".venv", "Scripts", "python.exe"), args: ["main.py"] });
+  // pythonw.exe has no console: with python.exe, Windows Terminal (the Windows 11 default) ignores windowsHide
+  // and leaves a terminal window open for as long as flow2api runs
+  const python = (dir: string) => {
+    const scripts = path.join(/* turbopackIgnore: true */ dir, ".venv", "Scripts");
+    return [path.join(scripts, "pythonw.exe"), path.join(scripts, "python.exe")].find((p) => fs.existsSync(p)) ?? path.join(scripts, "python.exe");
+  };
+  const source = (dir: string): Runtime => ({ mode: "source", root: dir, config: path.join(/* turbopackIgnore: true */ dir, "config", "setting.toml"), exe: python(dir), args: ["main.py"] });
   if (process.env.FLOW2API_DIR) return source(process.env.FLOW2API_DIR);
   const devBuild = path.join(/* turbopackIgnore: true */ process.cwd(), "dist-sidecar", "flow2api");
   const bundle = process.env.TRAKTIVA_FLOW2API_BUNDLE || (fs.existsSync(path.join(devBuild, "flow2api.exe")) ? devBuild : null);
@@ -131,6 +139,9 @@ export async function requireFlow2Api() {
   const cfg = loadFlow2ApiConfig();
   if (!cfg) throw new Error("Mesin video belum terpasang di perangkat ini.");
   await ensureRunning(cfg);
+  // the automatic speed is capped by active Google accounts: keep that count current
+  const [{ n }] = await db.select({ n: count() }).from(googleAccounts).where(eq(googleAccounts.status, "active"));
+  noteActiveGoogleAccounts(n);
   const want = captchaBrowsersFor(parallelLimit());
   if (gs.__flowCapacity?.want !== want) {
     gs.__flowCapacity = {
@@ -215,6 +226,16 @@ export async function upsertFlowSession(input: { tokenId?: number | null; st: st
   }
   const j = await admin(cfg, "/api/tokens", { method: "POST", body });
   return { id: Number(j.token.id), email: (j.token.email as string) ?? null, credits: j.token.credits != null ? Number(j.token.credits) : null };
+}
+
+/** Re-read the Flow credits of every active Google account (after a render used some). */
+export async function syncAllFlowCredits() {
+  const list = await db.select().from(googleAccounts).where(eq(googleAccounts.status, "active"));
+  for (const a of list) {
+    if (!a.flowTokenId) continue;
+    const credits = await refreshFlowCredits(a.flowTokenId).catch(() => null);
+    if (credits != null) await db.update(googleAccounts).set({ credits, lastSyncAt: new Date() }).where(eq(googleAccounts.id, a.id));
+  }
 }
 
 export async function refreshFlowCredits(tokenId: number) {

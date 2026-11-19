@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
-import { ShieldCheck, Store } from "lucide-react";
+import { Store } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { PlatformIcon } from "@/components/platform-icon";
 import { db } from "@/lib/db";
@@ -9,15 +9,9 @@ import { PRESETS } from "@/lib/presets";
 import type { ShopOverview } from "@/lib/platforms/tiktok-shop";
 import { getSettings, SYNC_CHOICES } from "@/lib/settings";
 import { getShopCache } from "@/lib/showcase";
-import { AccountPanel } from "./account-panel";
 import { AddProductsButton, AutoSyncSelect, ShowcaseGrid, SyncButton } from "./showcase-grid";
 
 export const dynamic = "force-dynamic";
-
-const TABS = [
-  { id: "etalase", label: "Etalase", icon: Store },
-  { id: "akun", label: "Akun & Performa", icon: ShieldCheck },
-] as const;
 
 const fmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
 
@@ -28,7 +22,7 @@ export default async function ShowcasePage({ searchParams }: PageProps<"/showcas
   const rows = current
     ? await db.select().from(showcaseProducts).where(eq(showcaseProducts.accountId, current.id)).orderBy(asc(showcaseProducts.position))
     : [];
-  const tab = TABS.find((t) => t.id === sp.tab)?.id ?? "etalase";
+  // account performance lives on Profil & Postingan; here the overview only tells "synced at least once"
   const overview = current ? await getShopCache<ShopOverview>(current.id, "overview") : null;
   const lastSync = rows.reduce<Date | null>((m, r) => (!m || r.syncedAt > m ? r.syncedAt : m), null);
   const concepts = PRESETS.filter((p) => p.available).map((p) => ({ id: p.id, title: p.title, bestFor: p.bestFor }));
@@ -71,20 +65,7 @@ export default async function ShowcasePage({ searchParams }: PageProps<"/showcas
             </span>
           </div>
 
-          <nav className="flex gap-1 border-b" aria-label="Bagian TikTok Shop">
-            {TABS.map((t) => (
-              <Link
-                key={t.id}
-                href={`/showcase?akun=${encodeURIComponent(current!.username)}${t.id === "etalase" ? "" : `&tab=${t.id}`}`}
-                className={`-mb-px flex h-9 items-center gap-1.5 border-b-2 px-3 text-[13px] font-medium transition-colors ${tab === t.id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-              >
-                <t.icon className="size-4" /> {t.label}
-              </Link>
-            ))}
-          </nav>
-
-          {tab === "akun" && <AccountPanel overview={overview?.data ?? null} capturedAt={overview ? fmt.format(overview.capturedAt) : null} />}
-          {tab === "etalase" && <ShowcaseGrid
+          <ShowcaseGrid
             accountId={current!.id}
             concepts={concepts}
             products={rows.map((r) => ({
@@ -102,8 +83,8 @@ export default async function ShowcasePage({ searchParams }: PageProps<"/showcas
               labels: r.labels,
               hasDetail: !!r.detail,
             }))}
-            neverSynced={!lastSync}
-          />}
+            neverSynced={!lastSync && !overview} // every sync stores the overview, even for an empty showcase
+          />
         </div>
       )}
     </>

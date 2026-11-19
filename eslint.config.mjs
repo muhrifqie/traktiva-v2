@@ -17,6 +17,8 @@ const eslintConfig = defineConfig([
     "dist/**",
     // Separate Next.js app (admin + public site) with its own lint config.
     "web/**",
+    // local runtime data (DB, browser profiles with Chrome's own JS); never committed
+    "data/**",
   ]),
 ]);
 

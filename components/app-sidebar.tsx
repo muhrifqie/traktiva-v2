@@ -25,7 +25,7 @@ function NavItems({ items, counts, rail }: { items: readonly NavItem[]; counts: 
               className={`h-8 gap-2.5 text-[13px] text-sidebar-foreground/85 data-active:font-medium data-active:text-sidebar-foreground ${rail ? "justify-center px-0" : ""}`}
               render={<Link href={`/${item.slug}`} title={rail ? item.title : undefined} aria-label={item.title} />}
             >
-              <item.icon className="size-4 shrink-0" style={{ color: item.color }} />
+              <item.icon className="size-4 shrink-0 text-black dark:text-white" />
               {!rail && <span className="truncate">{item.title}</span>}
             </SidebarMenuButton>
             {!rail && !!counts[item.slug] && (

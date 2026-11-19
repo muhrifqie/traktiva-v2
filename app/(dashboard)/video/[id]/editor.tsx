@@ -22,6 +22,7 @@ import {
   aiDirector, aiEditTimeline, aiHookVariants, aiMatchCaptionStyle, exportVariant, deleteEditTemplate, exportTimeline, listEditTemplates, openEditor, openProjectFolder, saveEdit, saveEditTemplate, saveProject, uploadMusic,
 } from "../project-actions";
 import { AudioTools } from "./audio-panel";
+import { playMedia } from "@/lib/play-media";
 
 type Project = Omit<VideoProject, "updatedAt"> & { updatedAt: number };
 type Sel = { kind: "caption" | "voice" | "overlay" | "sfx"; id: string } | null;
@@ -339,7 +340,7 @@ export function TimelineEditor({ p }: { p: Project }) {
     const v = video.current;
     if (!v) return;
     gains.wake();
-    if (v.paused) void v.play();
+    if (v.paused) void playMedia(v);
     else v.pause();
   };
 
@@ -465,7 +466,7 @@ export function TimelineEditor({ p }: { p: Project }) {
     if (!c || !video.current) return;
     seek(Math.max(0, c.start - 0.15));
     gains.wake();
-    void video.current.play();
+    void playMedia(video.current);
   };
 
   // keyboard: space play/pause, delete, ctrl+z / ctrl+shift+z, s = split
@@ -1494,7 +1495,7 @@ function MatchButton({ onMatch }: { onMatch: () => Promise<void> }) {
       onClick={() => (setBusy(true), onMatch().finally(() => setBusy(false)))}
       className="flex w-full items-center gap-2 rounded-lg border border-dashed border-primary/40 bg-primary/5 p-2 text-left hover:bg-primary/10 disabled:opacity-60"
     >
-      <span className="grid size-8 shrink-0 place-items-center rounded-md bg-primary/15 text-primary">{busy ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}</span>
+      <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted text-black dark:text-white">{busy ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}</span>
       <span className="min-w-0">
         <span className="block text-xs font-medium">{busy ? "Gemini melihat video laris..." : "Tiru gaya teks video laris"}</span>
         <span className="block truncate text-[10px] text-muted-foreground">Font, warna & posisi disalin dari video referensi KaloData</span>
@@ -1547,7 +1548,7 @@ function SummaryPanel({ edit, p, pro, exported, onOpen }: { edit: ProjectEdit; p
       </div>
       {rows.filter((r) => !r.hide).map((r) => (
         <button key={r.t} type="button" onClick={() => onOpen(r.t)} className="group flex w-full items-center gap-3 rounded-xl border bg-background/40 p-3 text-left transition-colors hover:border-ring/50 hover:bg-accent/40">
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: `${r.color}1a`, color: r.color }}><r.icon className="size-4" /></span>
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-black dark:text-white"><r.icon className="size-4" /></span>
           <span className="min-w-0 flex-1">
             <span className="block text-[13px] font-medium">{r.title}</span>
             <span className="block truncate text-[11px] text-muted-foreground">{r.info}</span>

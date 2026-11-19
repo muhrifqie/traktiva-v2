@@ -135,7 +135,7 @@ export function ProductDetailDialog({ product, onClose, onMakeVideo }: {
         )}
         {data?.facts && (
           <details className="rounded-lg border">
-            <summary className="flex cursor-pointer items-center gap-1.5 px-3 py-2 text-xs font-medium"><Sparkles className="size-3.5 text-[#a99bff]" /> Bahan untuk AI</summary>
+            <summary className="flex cursor-pointer items-center gap-1.5 px-3 py-2 text-xs font-medium"><Sparkles className="size-3.5 text-black dark:text-white" /> Bahan untuk AI</summary>
             <p className="border-t px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">{data.facts}</p>
           </details>
         )}

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { autoSfx, beatTimes, BUILTIN_SFX, round2, sfxSrc, snapToBeat, uid, type EditSfx, type ProjectEdit } from "@/lib/edit";
 import { mediaUrl } from "@/lib/media-url";
 import { audioLibrary, deleteLibraryMusic, draftFullScript, fitToVoice, makeFullVoice, pickLibraryMusic, undoFit } from "../project-actions";
+import { playMedia } from "@/lib/play-media";
 
 type Lib = Awaited<ReturnType<typeof audioLibrary>>;
 const btn = "flex h-7 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium disabled:opacity-50";
@@ -208,7 +209,7 @@ function Preview({ src, small }: { src: string; small?: boolean }) {
           if (on) a.pause();
           else {
             a.currentTime = 0;
-            void a.play();
+            void playMedia(a);
             setOn(true);
           }
         }}

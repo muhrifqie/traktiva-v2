@@ -12,7 +12,7 @@ import { db } from "@/lib/db";
 import { videoProjects } from "@/lib/db/schema";
 import { mediaUrl } from "@/lib/media-url";
 import { projectName } from "@/lib/presets";
-import { navBySlug, navColor } from "@/lib/nav";
+import { navBySlug } from "@/lib/nav";
 import { KaloInsight, KaloInsightSkeleton } from "./kalo-insight";
 import { DailyBars, FollowerLine } from "./charts";
 import { loadBeranda } from "./data";
@@ -49,10 +49,11 @@ function Tile({ className = "", href, children }: { className?: string; href?: s
   );
 }
 
-function TileHead({ icon, label, color, right }: { icon: React.ReactNode; label: string; color?: string; right?: React.ReactNode }) {
+// color is kept for callers but icons are monochrome (black / white with the theme), like the sidebar
+function TileHead({ icon, label, right }: { icon: React.ReactNode; label: string; color?: string; right?: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-      <span className="grid size-7 place-items-center rounded-lg" style={color ? { background: `${color}1a`, color } : undefined}>{icon}</span>
+      <span className="grid size-7 place-items-center rounded-lg bg-muted text-black dark:text-white">{icon}</span>
       {label}
       {right && <span className="ml-auto text-xs">{right}</span>}
     </div>
@@ -410,10 +411,9 @@ export default async function BerandaPage() {
           <div className="mt-3 grid flex-1 grid-cols-4 gap-2">
             {QUICK.map((slug) => {
               const item = navBySlug(slug)!;
-              const color = navColor(item) ?? "#2fa868";
               return (
                 <Link key={slug} href={`/${slug}`} className="flex flex-col items-center justify-center gap-2 rounded-xl border bg-background p-3 text-center text-xs font-medium transition-colors hover:bg-accent">
-                  <span className="grid size-9 place-items-center rounded-lg" style={{ background: `${color}1a`, color }}><item.icon className="size-4.5" /></span>
+                  <span className="grid size-9 place-items-center rounded-lg bg-muted text-black dark:text-white"><item.icon className="size-4.5" /></span>
                   <span className="line-clamp-1">{item.title}</span>
                 </Link>
               );

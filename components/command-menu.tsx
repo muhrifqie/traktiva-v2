@@ -6,7 +6,7 @@ import { Plus } from "lucide-react";
 import {
   Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut,
 } from "@/components/ui/command";
-import { NAV, navColor } from "@/lib/nav";
+import { NAV } from "@/lib/nav";
 
 export const OPEN_COMMAND = "traktiva:open-command";
 
@@ -48,10 +48,9 @@ export function CommandMenu() {
           </CommandGroup>
           <CommandGroup heading="Menu">
             {NAV.map((item) => {
-              const color = navColor(item);
               return (
                 <CommandItem key={item.slug} value={`${item.title} ${item.desc}`} onSelect={() => go(`/${item.slug}`)}>
-                  <item.icon style={color ? { color } : undefined} />
+                  <item.icon className="text-black dark:text-white" />
                   {item.title}
                   <CommandShortcut>{item.group}</CommandShortcut>
                 </CommandItem>

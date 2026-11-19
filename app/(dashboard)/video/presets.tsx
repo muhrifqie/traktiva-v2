@@ -1,9 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { ArrowRight, Clapperboard, ImageIcon, ImagePlus, Loader2, PenLine } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowRight, ImageIcon, Loader2, PenLine, Plus, Trash2, Volume2, VolumeX } from "lucide-react";
 import { toast } from "sonner";
-import { defaultOptions, PRESETS } from "@/lib/presets";
+import { confirmDialog } from "@/components/confirm-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { BACKDROPS, defaultOptions, PRESETS } from "@/lib/presets";
+import type { MyConcept } from "@/lib/settings";
+import { createMyConcept, createProjectFromConcept, deleteMyConcept } from "./concept-actions";
 import { createProject } from "./project-actions";
 
 const BADGE = { Stabil: "bg-status-ok/90 text-white", Baru: "bg-primary/90 text-primary-foreground", Segera: "bg-black/60 text-white", Bebas: "bg-[#8b7cf6]/90 text-white" } as const;
@@ -31,52 +36,177 @@ function Frame({ src }: { src: string }) {
   );
 }
 
-const CUSTOM_STEPS = [
-  { icon: PenLine, text: "Tulis prompt tiap adegan" },
-  { icon: ImagePlus, text: "Pakai gambarmu atau buatan AI" },
-  { icon: Clapperboard, text: "AI gerakkan jadi video" },
-];
-
 const DUMMY = { name: "Produk", details: "", price: "", photos: [] };
+const field = "w-full rounded-lg border bg-background px-3 py-2 text-[13px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20";
+const label = "mb-1 block text-xs font-medium";
 
-export function PresetGallery() {
+/** "+ Buat konsep sendiri": a popup form; the saved concept shows up as a card in the gallery below. */
+export function NewConceptButton() {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, start] = useTransition();
+  const blank = { name: "", idea: "", scenes: 3, background: "auto", audio: "on" as "on" | "off" };
+  const [form, setForm] = useState(blank);
+  const set = <K extends keyof typeof blank>(k: K, v: (typeof blank)[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const save = () =>
+    start(async () => {
+      try {
+        const c = await createMyConcept(form);
+        toast.success(`Konsep "${c.name}" dibuat`);
+        setOpen(false);
+        setForm(blank);
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Gagal menyimpan konsep");
+      }
+    });
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-medium text-primary-foreground hover:bg-primary/90">
+        <Plus className="size-4" /> Buat konsep sendiri
+      </button>
+      <Dialog open={open} onOpenChange={(o) => !pending && setOpen(o)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Buat konsep sendiri</DialogTitle>
+            <DialogDescription>Ceritakan video yang kamu mau. Konsepnya tersimpan sebagai kartu dan bisa dipakai berkali-kali; AI menyusun adegannya mengikuti ceritamu.</DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              save();
+            }}
+          >
+            <div>
+              <label className={label} htmlFor="concept-name">Nama konsep</label>
+              <input id="concept-name" autoFocus required maxLength={60} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Contoh: Unboxing santai di kamar" className={field} />
+            </div>
+            <div>
+              <label className={label} htmlFor="concept-idea">Videonya ingin seperti apa?</label>
+              <textarea
+                id="concept-idea"
+                required
+                minLength={10}
+                maxLength={1500}
+                rows={5}
+                value={form.idea}
+                onChange={(e) => set("idea", e.target.value)}
+                placeholder="Contoh: Buka paket di atas kasur, tunjukkan isi satu per satu dari dekat, lalu dipakai langsung. Suasana santai, cahaya pagi dari jendela, gaya ngobrol ke teman."
+                className={`${field} resize-y`}
+              />
+              <p className="mt-1 text-right text-[11px] text-muted-foreground">{form.idea.length}/1500</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <label className={label} htmlFor="concept-scenes">Jumlah adegan</label>
+                <select id="concept-scenes" value={form.scenes} onChange={(e) => set("scenes", Number(e.target.value))} className={field}>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n} adegan</option>)}
+                </select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className={label} htmlFor="concept-audio">Suara video</label>
+                <select id="concept-audio" value={form.audio} onChange={(e) => set("audio", e.target.value as "on" | "off")} className={field}>
+                  <option value="on">Pakai suara dari AI</option>
+                  <option value="off">Tanpa suara (tambah musik sendiri)</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className={label} htmlFor="concept-bg">Latar produk</label>
+              <select id="concept-bg" value={form.background} onChange={(e) => set("background", e.target.value)} className={field}>
+                {BACKDROPS.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" disabled={pending} onClick={() => setOpen(false)} className="h-9 rounded-lg border px-3.5 text-[13px] font-medium hover:bg-accent disabled:opacity-60">Batal</button>
+              <button type="submit" disabled={pending || !form.name.trim() || form.idea.trim().length < 10} className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                {pending && <Loader2 className="size-3.5 animate-spin" />} Simpan konsep
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+/** Card of one of the owner's own concepts (first in the gallery). */
+function MyConceptCard({ c, busy, onUse }: { c: MyConcept; busy: boolean; onUse: () => void }) {
+  const router = useRouter();
+  const [removing, startRemove] = useTransition();
+  const remove = async () => {
+    if (!(await confirmDialog({ title: `Hapus konsep "${c.name}"?`, description: "Proyek yang sudah dibuat dari konsep ini tetap ada.", confirmLabel: "Hapus", danger: true }))) return;
+    startRemove(async () => {
+      await deleteMyConcept(c.id);
+      router.refresh();
+    });
+  };
+  const backdrop = BACKDROPS.find((b) => b.value === c.background)?.label ?? "Otomatis";
+  return (
+    <article className="group flex flex-col overflow-hidden rounded-xl border bg-card transition-colors hover:border-ring/40">
+      <div className="relative flex aspect-[16/7] flex-col justify-end gap-1 bg-gradient-to-br from-muted to-muted/30 p-4">
+        <span className="absolute top-2 left-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white">Konsep saya</span>
+        <span className="grid size-9 place-items-center rounded-full bg-background/70 text-black dark:text-white"><PenLine className="size-4" /></span>
+        <p className="line-clamp-2 text-xs italic text-muted-foreground">&ldquo;{c.idea}&rdquo;</p>
+      </div>
+      <div className="flex flex-1 flex-col gap-2 p-3.5">
+        <p className="text-[13px] font-semibold leading-snug">{c.name}</p>
+        <p className="line-clamp-3 text-xs text-muted-foreground">{c.idea}</p>
+        <p className="text-xs"><span className="text-muted-foreground">Latar: </span>{backdrop}</p>
+        <div className="mt-auto flex items-center gap-2 pt-2">
+          <span className="flex flex-1 items-center gap-1 text-[11px] text-muted-foreground">
+            {c.scenes} adegan · {c.audio === "off" ? <><VolumeX className="size-3" /> tanpa suara</> : <><Volume2 className="size-3" /> pakai suara</>}
+          </span>
+          <button type="button" title="Hapus konsep" aria-label="Hapus konsep" disabled={removing || busy} onClick={remove} className="grid size-8 place-items-center rounded-lg border text-muted-foreground hover:bg-accent hover:text-destructive disabled:opacity-60">
+            {removing ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+          </button>
+          <button type="button" disabled={busy} onClick={onUse} className="flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+            Pakai konsep ini
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+export function PresetGallery({ mine }: { mine: MyConcept[] }) {
   const [pending, start] = useTransition();
   const [picked, setPicked] = useState<string | null>(null);
-  const pick = (id: string) => {
+  const run = (id: string, go: () => Promise<void>) => {
     setPicked(id);
     start(async () => {
       try {
-        await createProject(id); // redirects to the wizard
+        await go(); // redirects to the wizard
       } catch (e) {
         if (e instanceof Error && !e.message.includes("NEXT_REDIRECT")) toast.error(e.message);
         else throw e;
       }
     });
   };
+  const pick = (id: string) => run(id, () => createProject(id));
 
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      {PRESETS.map((p) => {
+      {mine.map((c) => (
+        <MyConceptCard key={c.id} c={c} busy={pending} onUse={() => run(c.id, () => createProjectFromConcept(c.id))} />
+      ))}
+      {/* the free-form preset is reached through "+ Buat konsep sendiri", not as its own card */}
+      {PRESETS.filter((p) => !p.custom).map((p) => {
         const scenes = p.available ? p.scenes(DUMMY, defaultOptions(p)).length : 0;
-        const frames = p.available && !p.custom ? Math.min(3, scenes) : 3;
+        const frames = p.available ? Math.min(3, scenes) : 3;
         return (
           <article key={p.id} className={`group flex flex-col overflow-hidden rounded-xl border bg-card transition-colors ${p.available ? "hover:border-ring/40" : "opacity-70"}`}>
             {/* example frames: what the result looks like */}
             <div className={`relative grid gap-1 bg-muted/60 p-1 ${frames === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
-              {p.custom
-                ? CUSTOM_STEPS.map(({ icon: Icon, text }, i) => (
-                    <div key={text} className="flex aspect-[9/16] flex-col items-center justify-center gap-2 rounded-md bg-gradient-to-b from-[#8b7cf6]/20 to-muted p-2 text-center">
-                      <span className="grid size-9 place-items-center rounded-full bg-background/70 text-[#a99bff]"><Icon className="size-4" /></span>
-                      <span className="text-[10px] leading-tight text-muted-foreground"><b className="text-foreground">{i + 1}.</b> {text}</span>
-                    </div>
-                  ))
-                : Array.from({ length: frames }, (_, i) => i + 1).map((n) => (
-                    <div key={n} className={`relative overflow-hidden rounded-md bg-muted ${frames === 2 ? "aspect-[27/32]" : "aspect-[9/16]"}`}>
-                      <Frame src={`/presets/${p.id}-${n}.jpg`} />
-                      <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[9px] font-medium text-white">{n}</span>
-                    </div>
-                  ))}
-              <span className="absolute top-2 left-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white">{p.custom ? "Cara kerja" : "Contoh hasil"}</span>
+              {Array.from({ length: frames }, (_, i) => i + 1).map((n) => (
+                <div key={n} className={`relative overflow-hidden rounded-md bg-muted ${frames === 2 ? "aspect-[27/32]" : "aspect-[9/16]"}`}>
+                  <Frame src={`/presets/${p.id}-${n}.jpg`} />
+                  <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[9px] font-medium text-white">{n}</span>
+                </div>
+              ))}
+              <span className="absolute top-2 left-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white">Contoh hasil</span>
               {p.badge && <span className={`absolute top-2 right-2 rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur ${BADGE[p.badge]}`}>{p.badge}</span>}
             </div>
 
@@ -94,7 +224,7 @@ export function PresetGallery() {
               </div>
               <div className="mt-auto flex items-center gap-2 pt-2">
                 <span className="flex-1 text-[11px] text-muted-foreground">
-                  {p.custom ? "Adegan bebas (1–12)" : p.available ? `${scenes} adegan · ±${scenes * 6} detik${p.silent ? " · tanpa suara" : ""}` : "Segera hadir"}
+                  {p.available ? `${scenes} adegan · ±${scenes * 6} detik${p.silent ? " · tanpa suara" : ""}` : "Segera hadir"}
                 </span>
                 <button
                   type="button"

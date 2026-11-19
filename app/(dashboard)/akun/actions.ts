@@ -1,11 +1,12 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, gte, inArray, notInArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { accountPosts, accounts, accountStats } from "@/lib/db/schema";
 import { deleteProfile, isProfileKey } from "@/lib/browser/chrome";
+import { removeMedia } from "@/lib/media";
 import * as tiktok from "@/lib/platforms/tiktok";
 
 // Accounts are only created by a real platform login (username/uid read from the session), never typed in by hand.
@@ -16,6 +17,14 @@ function refresh() {
   revalidatePath("/akun");
   revalidatePath("/beranda");
   revalidatePath("/profil");
+}
+
+/** The social account shown at the bottom of the sidebar (the one the user is working with). */
+export async function selectAccount(id: number) {
+  const a = await getAccount(id);
+  const { updateSettings } = await import("@/lib/settings");
+  updateSettings({ activeAccountId: a.id });
+  revalidatePath("/", "layout");
 }
 
 async function getAccount(id: number) {
@@ -110,6 +119,28 @@ export async function checkTikTokSession(id: number) {
   return { valid: res.valid };
 }
 
+/**
+ * Drop stored posts that are gone from TikTok (deleted, or made private by TikTok) and their saved covers.
+ * Whole list loaded: everything missing goes. Partial list (very long profiles): only posts inside the loaded
+ * date range, so older posts that simply weren't scrolled to are kept.
+ */
+async function pruneDeletedPosts(accountId: number, videos: tiktok.TikTokVideo[], allVideos: boolean) {
+  if (!videos.length) return 0; // an empty answer is more likely a failed load than a wiped account
+  const seen = videos.map((v) => v.id);
+  const dated = videos.filter((v) => !v.isPinned && v.postedAt).map((v) => v.postedAt!);
+  if (!allVideos && !dated.length) return 0;
+  const where = and(
+    eq(accountPosts.accountId, accountId),
+    notInArray(accountPosts.externalId, seen),
+    ...(allVideos ? [] : [gte(accountPosts.postedAt, new Date(Math.min(...dated) * 1000))]),
+  );
+  const gone = await db.select({ id: accountPosts.id, cover: accountPosts.coverUrl }).from(accountPosts).where(where);
+  if (!gone.length) return 0;
+  await db.delete(accountPosts).where(inArray(accountPosts.id, gone.map((g) => g.id)));
+  for (const g of gone) if (g.cover && !g.cover.startsWith("http")) await removeMedia(g.cover).catch(() => {});
+  return gone.length;
+}
+
 /** Pull profile, stats and videos from TikTok and store them (stats as a new snapshot, videos upserted). */
 export async function syncTikTokAccount(id: number) {
   const a = await getAccount(id);
@@ -162,7 +193,8 @@ export async function syncTikTokAccount(id: number) {
       .values({ accountId: a.id, externalId: v.id, ...row })
       .onConflictDoUpdate({ target: [accountPosts.accountId, accountPosts.externalId], set: row });
   }
+  const removed = await pruneDeletedPosts(a.id, p.videos, p.allVideos);
 
   refresh();
-  return { videos: p.videos.length, followers: p.followers, playlists: p.playlists.length };
+  return { videos: p.videos.length, removed, followers: p.followers, playlists: p.playlists.length };
 }
