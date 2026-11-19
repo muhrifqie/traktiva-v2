@@ -7,7 +7,7 @@ import { OPEN_COMMAND } from "@/components/command-menu";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Kbd } from "@/components/ui/kbd";
-import { navBySlug, navColor } from "@/lib/nav";
+import { navBySlug } from "@/lib/nav";
 
 // Global app bar: lives on the chrome above sidebar + page panel, never scrolls with the page.
 // In the desktop app the window title bar is a separate strip above it (components/title-bar.tsx).
@@ -15,15 +15,15 @@ export function SiteHeader() {
   const pathname = usePathname();
   const slug = /^\/video\/\d+/.test(pathname) ? "proyek" : (pathname.split("/")[1] ?? ""); // Studio lives under Proyek
   const item = navBySlug(slug);
-  const color = item && navColor(item);
   const openSearch = () => window.dispatchEvent(new Event(OPEN_COMMAND));
 
   return (
     <header className="sticky top-0 z-50 flex h-(--header-height) w-full shrink-0 select-none items-center gap-3 border-b border-sidebar-border bg-sidebar px-3">
-      <div className="flex shrink-0 items-center gap-1.5 md:w-[calc(var(--sidebar-width)-0.75rem)] md:pl-1">
-        <Link href="/beranda" className="flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-sidebar-accent">
-          <Logo className="size-6" />
-          <span className="text-sm font-semibold tracking-tight">Traktiva</span>
+      {/* same column as the sidebar menu items (8px gutter each side), mark lined up with the menu icons */}
+      <div className="flex shrink-0 items-center md:-ml-1 md:w-[calc(var(--sidebar-width)-1rem)]">
+        <Link href="/beranda" className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2 hover:bg-sidebar-accent">
+          <Logo className="size-8 shrink-0" />
+          <span className="text-lg font-semibold tracking-tight">Traktiva</span>
         </Link>
       </div>
 
@@ -35,7 +35,7 @@ export function SiteHeader() {
               <ChevronRight className="size-3.5 text-muted-foreground/60" />
             </>
           )}
-          <item.icon className="size-4" style={{ color: color ?? "var(--muted-foreground)" }} />
+          <item.icon className="size-4 text-black dark:text-white" />
           <span className="font-medium">{item.title}</span>
         </nav>
       )}

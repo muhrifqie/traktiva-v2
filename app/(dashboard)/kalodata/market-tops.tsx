@@ -8,7 +8,7 @@ import { SaveProductButton } from "@/components/save-product-button";
 import type { KaloTopProduct, KaloTopVideo } from "@/lib/kalodata";
 import { kaloTopProducts, kaloTopVideos, kaloVideoUrl, type KaloHit } from "./actions";
 import { intentProps } from "./detail-cache";
-import { EmptyBox, ListBox, ListMeta, LoadMore, pillBtn, ProductRow } from "./riset-ui";
+import { EmptyBox, ListBox, LoadMore, pillBtn, ProductRow, RefreshButton } from "./riset-ui";
 
 export type TopsMode = "produk" | "video";
 type Rows = { mode: "produk"; rows: KaloTopProduct[] } | { mode: "video"; rows: KaloTopVideo[] };
@@ -17,7 +17,6 @@ type State = Rows & { at: number; cached: boolean; key: string; page: number; mo
 const kaloProductImg = (id: string) => `https://img.kalocdn.com/tiktok.product/${id}/cover.png`;
 const kaloVideoImg = (id: string) => `https://img.kalocdn.com/tiktok.video/${id}/cover.png`;
 const compact = new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 1 });
-const time = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" });
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Gagal");
 const PAGE = 20;
 const MAX_PAGE = 10;
@@ -68,10 +67,7 @@ export function MarketTops({ mode, country, savedKeys, onDetail }: { mode: TopsM
   const noun = mode === "produk" ? "produk" : "video";
   return (
     <div className="space-y-3">
-      <ListMeta country={country} onRefresh={() => load(true)} pending={pending}>
-        {shown ? <b className="text-foreground">{shown.rows.length}</b> : null} {mode === "produk" ? "produk TikTok Shop terlaris" : "video jualan terlaris (semua produk)"} · 30 hari terakhir
-        {shown && <> · {shown.cached ? "cache" : "baru"} {time.format(shown.at)}</>}
-      </ListMeta>
+      <RefreshButton onRefresh={() => load(true)} pending={pending} />
 
       {!shown ? (
         <EmptyBox>{pending ? <><Loader2 className="size-4 animate-spin" /> Mengambil ranking...</> : "Belum ada data."}</EmptyBox>

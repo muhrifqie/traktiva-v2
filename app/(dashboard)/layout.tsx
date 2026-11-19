@@ -1,4 +1,5 @@
 import { count, eq } from "drizzle-orm";
+import { getSettings } from "@/lib/settings";
 import { AppSidebar } from "@/components/app-sidebar";
 import type { UserInfo } from "@/components/user-card";
 import { CommandMenu } from "@/components/command-menu";
@@ -14,15 +15,23 @@ import pkg from "@/package.json";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardLayout({ children }: LayoutProps<"/">) {
-  const [[{ n }], google, [{ videos }]] = await Promise.all([
-    db.select({ n: count() }).from(accounts),
+  const [social, google, [{ videos }]] = await Promise.all([
+    db
+      .select({ id: accounts.id, platform: accounts.platform, username: accounts.username, displayName: accounts.displayName, avatarUrl: accounts.avatarUrl, status: accounts.status })
+      .from(accounts)
+      .orderBy(accounts.platform, accounts.username),
     db.select({ email: googleAccounts.email, status: googleAccounts.status }).from(googleAccounts).orderBy(googleAccounts.id),
     db.select({ videos: count() }).from(videoProjects).where(eq(videoProjects.status, "done")),
   ]);
+  const n = social.length;
+  // the account picked in the sidebar; falls back to the first logged-in one (or any) when none/removed
+  const chosen = getSettings().activeAccountId;
+  const selected = social.find((a) => a.id === chosen) ?? social.find((a) => a.status === "active") ?? social[0] ?? null;
   const user: UserInfo = {
     email: (google.find((g) => g.status === "active") ?? google[0])?.email ?? null,
     googleAccounts: google.length,
     socialAccounts: n,
+    social: { selected, list: social },
     videos,
     appVersion: pkg.version,
     platform: process.platform,

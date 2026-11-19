@@ -4,11 +4,10 @@ import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { googleAccounts } from "@/lib/db/schema";
 import { loadFlow2ApiConfig } from "@/lib/flow2api";
-import { captchaBrowsersFor, getSettings, parallelLimit, SPEEDS, writingRules } from "@/lib/settings";
+import { getSettings, noteActiveGoogleAccounts, writingRules } from "@/lib/settings";
 import { WritingRulesCard } from "./writing-rules";
 import { ChatgptAccount } from "./chatgpt-account";
 import { GoogleAccounts } from "./google-accounts";
-import { SpeedSetting } from "./speed-setting";
 import { VoiceSetting } from "./voice-setting";
 import { getKv } from "@/lib/kalo";
 import { listVoices, maskKey, type CartesiaVoice } from "@/lib/cartesia";
@@ -20,6 +19,7 @@ const fmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", h
 export default async function PengaturanPage() {
   const accounts = await db.select().from(googleAccounts).orderBy(googleAccounts.email);
   const active = accounts.filter((a) => a.status === "active").length;
+  noteActiveGoogleAccounts(active); // generation speed is automatic, capped by active accounts
   // voice-over settings (the key itself never leaves the server; only a masked form is shown)
   const voice = getSettings().voice ?? { provider: "flow" };
   let voices: CartesiaVoice[] = (await getKv<CartesiaVoice[]>("cartesia:voices:id"))?.data ?? [];
@@ -48,13 +48,6 @@ export default async function PengaturanPage() {
 
         <WritingRulesCard initial={writingRules()} />
 
-        <SpeedSetting
-          speeds={SPEEDS.map((x) => ({ ...x }))}
-          current={getSettings().speed}
-          recommended={active >= 10 ? "maksimal" : active >= 3 ? "kencang" : "normal"}
-          browsers={captchaBrowsersFor(parallelLimit())}
-        />
-
         <VoiceSetting
           provider={voice.provider}
           hasKey={!!voice.cartesiaKey}
@@ -67,7 +60,7 @@ export default async function PengaturanPage() {
         <section className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl border bg-card p-4">
             <div className="flex items-center gap-2 text-[13px] font-semibold">
-              <span className="grid size-7 place-items-center rounded-lg bg-[#f2994a1a] text-[#f2994a]"><Clapperboard className="size-4" /></span>
+              <span className="grid size-7 place-items-center rounded-lg bg-muted text-black dark:text-white"><Clapperboard className="size-4" /></span>
               Video (Google Flow)
               <span className="ml-auto rounded-full bg-status-ok/10 px-2 py-0.5 text-[10px] font-medium text-status-ok">Aktif</span>
             </div>

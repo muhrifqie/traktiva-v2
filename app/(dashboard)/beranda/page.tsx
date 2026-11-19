@@ -11,7 +11,7 @@ import { db } from "@/lib/db";
 import { accounts, accountStats, googleAccounts, PLATFORMS, videoProjects } from "@/lib/db/schema";
 import { mediaUrl } from "@/lib/media-url";
 import { projectName } from "@/lib/presets";
-import { navBySlug, navColor } from "@/lib/nav";
+import { navBySlug } from "@/lib/nav";
 import { KaloInsight, KaloInsightSkeleton } from "./kalo-insight";
 
 export const dynamic = "force-dynamic";
@@ -41,10 +41,11 @@ function Tile({ className = "", href, children }: { className?: string; href?: s
   );
 }
 
-function TileHead({ icon, label, color }: { icon: React.ReactNode; label: string; color?: string }) {
+// color is kept for callers but icons are monochrome (black / white with the theme)
+function TileHead({ icon, label }: { icon: React.ReactNode; label: string; color?: string }) {
   return (
     <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-      <span className="grid size-7 place-items-center rounded-lg" style={color ? { background: `${color}1a`, color } : undefined}>{icon}</span>
+      <span className="grid size-7 place-items-center rounded-lg bg-muted text-black dark:text-white">{icon}</span>
       {label}
     </div>
   );
@@ -120,7 +121,7 @@ export default async function BerandaPage() {
         <Tile href="/pengaturan">
           <TileHead icon={<GoogleIcon className="size-4" />} label="Kredit Flow" />
           <p className="mt-auto flex items-baseline gap-1.5 text-3xl font-semibold tabular-nums">
-            <Coins className="size-5 self-center text-[#f2c94c]" />
+            <Coins className="size-5 self-center text-black dark:text-white" />
             {compact.format(credits)}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">{activeGoogle.length} akun Google aktif</p>
@@ -196,10 +197,9 @@ export default async function BerandaPage() {
           <div className="mt-3 grid flex-1 grid-cols-4 gap-2">
             {QUICK.map((slug) => {
               const item = navBySlug(slug)!;
-              const color = navColor(item) ?? "#2fa868";
               return (
                 <Link key={slug} href={`/${slug}`} className="flex flex-col items-center justify-center gap-2 rounded-xl border bg-background p-3 text-center text-xs font-medium transition-colors hover:bg-accent">
-                  <span className="grid size-9 place-items-center rounded-lg" style={{ background: `${color}1a`, color }}><item.icon className="size-4.5" /></span>
+                  <span className="grid size-9 place-items-center rounded-lg bg-muted text-black dark:text-white"><item.icon className="size-4.5" /></span>
                   <span className="line-clamp-1">{item.title}</span>
                 </Link>
               );

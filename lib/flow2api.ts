@@ -2,7 +2,10 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { captchaBrowsersFor, parallelLimit } from "@/lib/settings";
+import { count, eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { googleAccounts } from "@/lib/db/schema";
+import { captchaBrowsersFor, noteActiveGoogleAccounts, parallelLimit } from "@/lib/settings";
 
 // Client for a local flow2api instance (https://github.com/TheSmallHanCat/flow2api, MIT):
 // admin API to register Google/Flow sessions, OpenAI-compatible API to generate.
@@ -41,8 +44,11 @@ const gs = globalThis as unknown as { __flowStart?: Promise<void> | null; __flow
 async function ensureRunning(cfg: Flow2ApiConfig) {
   if (await healthy(cfg)) return;
   gs.__flowStart ??= (async () => {
-    const python = path.join(FLOW2API_DIR, ".venv", "Scripts", "python.exe");
-    if (!fs.existsSync(python)) throw new Error("Mesin video belum terpasang di perangkat ini.");
+    // pythonw.exe has no console: with python.exe, Windows Terminal (the Windows 11 default) ignores windowsHide
+    // and leaves a terminal window open for as long as flow2api runs
+    const scripts = path.join(FLOW2API_DIR, ".venv", "Scripts");
+    const python = [path.join(scripts, "pythonw.exe"), path.join(scripts, "python.exe")].find((p) => fs.existsSync(p));
+    if (!python) throw new Error("Mesin video belum terpasang di perangkat ini.");
     const log = fs.openSync(path.join(FLOW2API_DIR, "flow2api.log"), "a");
     const child = spawn(python, ["main.py"], {
       cwd: FLOW2API_DIR,
@@ -65,6 +71,9 @@ export async function requireFlow2Api() {
   const cfg = loadFlow2ApiConfig();
   if (!cfg) throw new Error("Mesin video belum terpasang di perangkat ini.");
   await ensureRunning(cfg);
+  // the automatic speed is capped by active Google accounts: keep that count current
+  const [{ n }] = await db.select({ n: count() }).from(googleAccounts).where(eq(googleAccounts.status, "active"));
+  noteActiveGoogleAccounts(n);
   const want = captchaBrowsersFor(parallelLimit());
   if (gs.__flowCapacity?.want !== want) {
     gs.__flowCapacity = {
@@ -149,6 +158,16 @@ export async function upsertFlowSession(input: { tokenId?: number | null; st: st
   }
   const j = await admin(cfg, "/api/tokens", { method: "POST", body });
   return { id: Number(j.token.id), email: (j.token.email as string) ?? null, credits: j.token.credits != null ? Number(j.token.credits) : null };
+}
+
+/** Re-read the Flow credits of every active Google account (after a render used some). */
+export async function syncAllFlowCredits() {
+  const list = await db.select().from(googleAccounts).where(eq(googleAccounts.status, "active"));
+  for (const a of list) {
+    if (!a.flowTokenId) continue;
+    const credits = await refreshFlowCredits(a.flowTokenId).catch(() => null);
+    if (credits != null) await db.update(googleAccounts).set({ credits, lastSyncAt: new Date() }).where(eq(googleAccounts.id, a.id));
+  }
 }
 
 export async function refreshFlowCredits(tokenId: number) {

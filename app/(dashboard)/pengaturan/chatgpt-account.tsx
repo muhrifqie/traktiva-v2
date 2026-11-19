@@ -47,7 +47,7 @@ export function ChatgptAccount({ email, connectedAt }: { email: string | null; c
   return (
     <section className="rounded-xl border bg-card p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="grid size-8 place-items-center rounded-lg bg-[#10a37f1a] text-[#10a37f]"><PenLine className="size-4" /></span>
+        <span className="grid size-8 place-items-center rounded-lg bg-muted text-black dark:text-white"><PenLine className="size-4" /></span>
         <div className="min-w-0 flex-1">
           <p className="text-[13px] font-semibold">ChatGPT · penulis</p>
           <p className="text-[11px] text-muted-foreground">

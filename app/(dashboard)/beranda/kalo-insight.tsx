@@ -51,10 +51,10 @@ export async function KaloInsight() {
   const dur = median(videos.map((x) => x.original_duration ?? parseFloat(x.duration)).filter((n) => n > 0));
 
   const facts = [
-    mostSold && { icon: <Flame className="size-3.5 text-[#ff6b3d]" />, text: <>Paling banyak terjual: <b>{compact.format(mostSold.sale)}×</b> {short(mostSold.product_title)} ({mostSold.unit_price})</> },
-    withCommission[0] && { icon: <Percent className="size-3.5 text-[#2fa868]" />, text: <>Komisi tertinggi di top 20: <b>{withCommission[0].r.commission_rate}</b> · {short(withCommission[0].r.product_title)}</> },
-    fresh.length > 0 && { icon: <Sparkles className="size-3.5 text-[#f2c94c]" />, text: <><b>{fresh.length} produk baru</b> (≤60 hari) langsung masuk top 20{fresh[0] ? <> · {short(fresh[0].product_title)}</> : null}</> },
-    videos.length > 0 && { icon: <Megaphone className="size-3.5 text-[#4ea7fc]" />, text: <><b>{adShare}%</b> video terlaris dibantu iklan · durasi tengah <b>{Math.round(dur)} dtk</b></> },
+    mostSold && { icon: <Flame className="size-3.5 text-black dark:text-white" />, text: <>Paling banyak terjual: <b>{compact.format(mostSold.sale)}×</b> {short(mostSold.product_title)} ({mostSold.unit_price})</> },
+    withCommission[0] && { icon: <Percent className="size-3.5 text-black dark:text-white" />, text: <>Komisi tertinggi di top 20: <b>{withCommission[0].r.commission_rate}</b> · {short(withCommission[0].r.product_title)}</> },
+    fresh.length > 0 && { icon: <Sparkles className="size-3.5 text-black dark:text-white" />, text: <><b>{fresh.length} produk baru</b> (≤60 hari) langsung masuk top 20{fresh[0] ? <> · {short(fresh[0].product_title)}</> : null}</> },
+    videos.length > 0 && { icon: <Megaphone className="size-3.5 text-black dark:text-white" />, text: <><b>{adShare}%</b> video terlaris dibantu iklan · durasi tengah <b>{Math.round(dur)} dtk</b></> },
     aiCount > 0 && { icon: <Bot className="size-3.5 text-violet-500" />, text: <><b>{aiCount} dari {videos.length}</b> video terlaris dibuat dengan AI</> },
   ].filter(Boolean) as { icon: React.ReactNode; text: React.ReactNode }[];
 
@@ -116,7 +116,7 @@ function Shell({ at, children }: { at?: number; children: React.ReactNode }) {
   return (
     <section className="relative flex flex-col overflow-hidden rounded-2xl border bg-card p-4 sm:col-span-2 lg:col-span-4">
       <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-        <span className="grid size-7 place-items-center rounded-lg" style={{ background: "#26b5ce1a", color: "#26b5ce" }}>
+        <span className="grid size-7 place-items-center rounded-lg bg-muted text-black dark:text-white">
           <TrendingUp className="size-4" />
         </span>
         Lagi laris di TikTok Shop Indonesia · 30 hari

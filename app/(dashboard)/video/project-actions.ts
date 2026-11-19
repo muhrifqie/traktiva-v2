@@ -212,7 +212,7 @@ async function pendingVersions(p: Awaited<ReturnType<typeof get>>) {
 
 /**
  * Start the pipeline of every project right away, all in parallel. Flow generations share the global slots
- * (Pengaturan → Kecepatan), so extra images/clips wait for a free slot instead of a whole video waiting its turn;
+ * (automatic limit, see parallelLimit), so extra images/clips wait for a free slot instead of a whole video waiting its turn;
  * the AI writer browser is locked per profile, so its turns line up by themselves.
  */
 async function startAll(ids: number[]) {
