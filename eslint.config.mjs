@@ -15,6 +15,8 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "dist/**",
+    // Separate Next.js app (admin + public site) with its own lint config.
+    "web/**",
   ]),
 ]);
 
