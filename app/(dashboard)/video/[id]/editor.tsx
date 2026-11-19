@@ -1,29 +1,31 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import {
-  AudioLines, Bot, Maximize2, Minimize2, Mic, Palette, Send, Bookmark, Clapperboard, Copy, Download, Film, Frame, FolderOpen, Loader2, Music, Pause, Play, Plus, Redo2, Scissors, Sparkles, Sticker, Trash2, Type, Undo2, Upload, Volume2, VolumeX, Wand2,
+  AudioLines, CalendarClock, Split, ArrowLeft, Bot, Check, ChevronRight, CircleDot, LayoutDashboard, Move, Maximize2, Minimize2, Mic, Palette, Send, Bookmark, Clapperboard, Copy, Download, Film, Frame, FolderOpen, Loader2, Music, Pause, Play, Plus, Redo2, Scissors, Sparkles, Sticker, Trash2, Type, Undo2, Upload, Volume2, VolumeX, Wand2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useSidebar } from "@/components/ui/sidebar";
 import type { VideoProject } from "@/lib/db/schema";
 import {
-  ACCENTS, applyTemplate, beatTimes, CAPTION_FONTS, RESEARCH_TEMPLATES, TEXT_COLORS, autoCaptions, blitCaption, CAPTION_ANIMS, CAPTION_PRESETS, clamp, drawCaption, fxAt, layersOf, normalizeEdit, OVERLAY_KINDS, round2,
-  SAFE_PRESETS, styleOf, TRANSITIONS, uid,
-  type Box, type CaptionAnim, type CaptionPos, type CaptionStyle, type EditCaption, type EditFx, type EditOverlay, type EditTemplate, type Layer,
+  ACCENTS, ANIM_DUR, applyTemplate, DEFAULT_CAPTION_STYLE, beatTimes, CAPTION_FONTS, CAPTION_LOOKS, FONT_MOODS, fontOf, RESEARCH_TEMPLATES, TEXT_COLORS, autoCaptions, blitCaption, CAPTION_ANIMS, CAPTION_PRESETS, clamp, drawCaption, fxAt, layersOf, normalizeEdit, OVERLAY_KINDS, round2,
+  SAFE_PRESETS, exportSize, styleOf, tidyCaptions, TRANSITIONS, uid,
+  type Box, type CaptionAnim, type CaptionFont, type FontMood, type CaptionPos, type CaptionStyle, type EditCaption, type EditFx, type EditOverlay, type EditTemplate, type Layer,
   type OverlayKind, type ProjectEdit, type SafeArea,
 } from "@/lib/edit";
 import { fontPreview, loadCaptionFonts } from "@/lib/caption-fonts";
+import { renderOverlays } from "@/lib/render-overlays";
 import { mediaUrl } from "@/lib/media-url";
 import { voiceLine } from "@/lib/voice";
 import {
-  aiDirector, aiEditTimeline, deleteEditTemplate, exportTimeline, listEditTemplates, openEditor, openProjectFolder, saveEdit, saveEditTemplate, saveProject, uploadMusic,
+  aiDirector, aiEditTimeline, aiHookVariants, aiMatchCaptionStyle, exportVariant, deleteEditTemplate, exportTimeline, listEditTemplates, openEditor, openProjectFolder, saveEdit, saveEditTemplate, saveProject, uploadMusic,
 } from "../project-actions";
 import { AudioTools } from "./audio-panel";
 
 type Project = Omit<VideoProject, "updatedAt"> & { updatedAt: number };
 type Sel = { kind: "caption" | "voice" | "overlay" | "sfx"; id: string } | null;
-type Tab = "teks" | "stiker" | "efek" | "audio" | "ai" | "posting";
+type Tab = "ringkasan" | "teks" | "efek" | "audio" | "ai" | "posting";
 type Hit = { id: string; kind: "caption" | "overlay"; box: Box };
 
 const btn = "flex h-7 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium disabled:opacity-50";
@@ -32,14 +34,14 @@ const secondary = `${btn} border bg-background hover:bg-accent`;
 const icon = "grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40";
 const field = "w-full rounded-md border bg-background px-2 py-1 text-xs outline-none focus:border-ring disabled:opacity-60";
 const LANE = 34;
-const INSPECTOR_TABS = [
-  ["teks", "Teks", Type, "Teks & subtitle"],
-  ["stiker", "Stiker", Sticker, "Stiker: judul, harga, CTA, info"],
-  ["efek", "Efek", Wand2, "Efek, transisi & format laris"],
-  ["audio", "Audio", AudioLines, "Audio: suara, musik, SFX"],
-  ["ai", "AI", Bot, "AI Director & asisten"],
-  ["posting", "Posting", Send, "Siap posting"],
-] as const;
+const PANEL_TITLES: Record<Tab, string> = {
+  ringkasan: "Ringkasan proyek",
+  teks: "Teks, subtitle & stiker",
+  efek: "Transisi, efek & gaya tersimpan",
+  audio: "Audio: suara, musik, SFX",
+  ai: "AI Director & asisten",
+  posting: "Siap posting",
+};
 const HEAD = 92;
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
@@ -154,7 +156,22 @@ export function TimelineEditor({ p }: { p: Project }) {
   const [openError, setOpenError] = useState<string | null>(null);
   const { edit, version, get, set, commit, reset, undo, redo, canUndo, canRedo } = useHistory(p.edit ? normalizeEdit(p.edit) : null);
   const [sel, setSel] = useState<Sel>(null);
-  const [tab, setTab] = useState<Tab>("teks");
+  const [tab, setTab] = useState<Tab>("ringkasan");
+  const [pro, setPro] = useLocalFlag("traktiva:editor-pro", false); // Simpel (essentials) / Pro (every control)
+  const [aiCmd, setAiCmd] = useState("");
+  // the editor needs the width: fold the app sidebar while it is open, restore it on leave
+  const sidebar = useSidebar();
+  useEffect(() => {
+    const was = sidebar.open;
+    sidebar.setOpen(false);
+    return () => sidebar.setOpen(was);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per editor visit
+  }, []);
+  /** Stickers live in the Teks panel (own section); jump to it. */
+  const openStiker = () => {
+    setTab("teks");
+    setTimeout(() => document.getElementById("editor-stiker")?.scrollIntoView({ block: "start", behavior: "smooth" }), 60);
+  };
   const [playing, setPlaying] = useState(false);
   const [zoom, setZoom] = useState(0); // px per second; 0 = fit
   const [busy, setBusy] = useState<"export" | "ai" | "music" | null>(null);
@@ -354,7 +371,7 @@ export function TimelineEditor({ p }: { p: Project }) {
     };
     set((e) => ({ ...e, overlays: [...e.overlays, o] }));
     setSel({ kind: "overlay", id: o.id });
-    setTab("stiker");
+    openStiker();
     seek(o.start + 0.05);
   };
   const splitSel = () => {
@@ -365,6 +382,20 @@ export function TimelineEditor({ p }: { p: Project }) {
     const cut = Math.max(1, Math.round((words.length * (t - c.start)) / (c.end - c.start)));
     const b = { id: uid(), start: t, end: c.end, text: words.slice(cut).join(" ") || c.text };
     set((e) => ({ ...e, captions: [...e.captions.map((x) => (x.id === c.id ? { ...x, end: t, text: words.slice(0, cut).join(" ") || x.text } : x)), b].sort((x, y) => x.start - y.start) }));
+  };
+  // real words for the template previews (first caption, ≤2 words)
+  const sampleText = (edit?.captions[0]?.text ?? "").split(/\s+/).filter(Boolean).slice(0, 2).join(" ") || "Cek keranjang";
+  const matchStyle = async () => {
+    try {
+      const r = await aiMatchCaptionStyle(p.id);
+      set((e) => ({ ...e, captionStyle: { ...e.captionStyle, ...r.style } }));
+      toast.success(r.note, {
+        duration: 8000,
+        action: { label: "Simpan gaya", onClick: () => void saveEditTemplate(p.id, patchOf(get()!), "Gaya video laris").then(() => toast.success("Tersimpan di Efek → Gaya tersimpan")) },
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal meniru gaya");
+    }
   };
   const regenCaptions = (words = 4) => {
     if (!edit) return;
@@ -406,7 +437,7 @@ export function TimelineEditor({ p }: { p: Project }) {
     if (!edit) return;
     const { id, box } = hit;
     setSel({ kind: hit.kind, id });
-    setTab(hit.kind === "overlay" ? "stiker" : "teks");
+    if (hit.kind === "overlay") openStiker(); else setTab("teks");
     // start from where the text is drawn (the style may be pushed in by the safe area)
     const cx = (box.x + box.w / 2) / edit.width, cy = (box.y + box.h / 2) / edit.height;
     dragStage(ev, (dx, dy, rect) => {
@@ -477,29 +508,45 @@ export function TimelineEditor({ p }: { p: Project }) {
     return round2(hit ?? t);
   };
 
+  /** Hook A/B: export every variant to final-A/B/C.mp4 (the editor keeps its own edit). */
+  const exportVariants = async (list: { edit: ProjectEdit; hook?: string }[]) => {
+    setBusy("export");
+    try {
+      for (const [i, v] of list.entries()) {
+        const label = "ABCD"[i];
+        toast.loading(`Mengekspor varian ${label} (${i + 1}/${list.length})...`, { id: "variants" });
+        await exportVariant(p.id, patchOf(v.edit), await renderOverlays(v.edit), label, v.hook ?? "");
+      }
+      toast.success(`${list.length} varian diekspor: final-A … final-${"ABCD"[list.length - 1]}.mp4 di folder proyek`, { id: "variants" });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Export varian gagal", { id: "variants" });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runHooks = async () => {
+    if (!edit) return;
+    setBusy("ai");
+    try {
+      setHookVersions(await aiHookVariants(p.id, patchOf(edit)));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Varian hook gagal");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const doExport = async () => {
     if (!edit) return;
     setBusy("export");
     try {
-      await loadCaptionFonts();
-      const W = edit.width, H = edit.height;
-      const full = document.createElement("canvas");
-      full.width = W;
-      full.height = H;
-      const fctx = full.getContext("2d")!;
-      const overlays = layersOf(edit).map((l) => {
-        fctx.clearRect(0, 0, W, H);
-        const box = l.draw(fctx, W, H);
-        const crop = document.createElement("canvas");
-        crop.width = Math.max(1, box.w);
-        crop.height = Math.max(1, box.h);
-        crop.getContext("2d")!.drawImage(full, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
-        return { start: round2(l.start), end: round2(l.end), x: box.x, y: box.y, w: box.w, h: box.h, anim: l.anim, out: !!l.out, png: crop.toDataURL("image/png") };
-      });
+      const { w: W, h: H } = exportSize(edit);
+      const overlays = await renderOverlays(edit);
       await saveEdit(p.id, patchOf(edit));
       await exportTimeline(p.id, patchOf(edit), overlays);
       setExportedV(version);
-      toast.success("Video diekspor ke final.mp4");
+      toast.success(`Video diekspor ke final.mp4 (${W}×${H}, kualitas HD)`);
       router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Export gagal");
@@ -523,6 +570,7 @@ export function TimelineEditor({ p }: { p: Project }) {
   };
 
   const [versions, setVersions] = useState<{ edit: ProjectEdit; note: string }[]>([]);
+  const [hookVersions, setHookVersions] = useState<{ edit: ProjectEdit; note: string; hook: string }[]>([]);
   const runDirector = async (wish: string) => {
     if (!edit) return;
     setBusy("ai");
@@ -632,29 +680,23 @@ export function TimelineEditor({ p }: { p: Project }) {
         {/* inspector */}
         <div className="relative min-h-80">
         <div className="flex overflow-hidden rounded-xl border bg-card lg:absolute lg:inset-0">
-          {/* icon rail, like CapCut's left toolbar */}
-          <nav className="flex w-[62px] shrink-0 flex-col gap-0.5 border-r bg-muted/30 p-1" aria-label="Panel editor">
-            {INSPECTOR_TABS.map(([id, label, I]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setTab(id)}
-                aria-current={tab === id}
-                className={`flex flex-col items-center gap-0.5 rounded-lg py-2 text-[10px] font-medium transition-colors ${tab === id ? "bg-primary/12 text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
-              >
-                <I className="size-[18px]" />
-                {label}
-              </button>
-            ))}
-          </nav>
           <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
-            <span className="text-[13px] font-semibold">{INSPECTOR_TABS.find((x) => x[0] === tab)?.[3]}</span>
-            <span className={`ml-auto whitespace-nowrap text-[11px] ${version > exportedV ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>{version > exportedV ? "● Belum diekspor" : "✓ Diekspor"}</span>
+          <div className="flex h-10 shrink-0 items-center gap-1.5 border-b px-2">
+            {tab !== "ringkasan" ? (
+              <button type="button" className={`${icon} shrink-0`} onClick={() => setTab("ringkasan")} title="Kembali ke ringkasan"><ArrowLeft className="size-4" /></button>
+            ) : (
+              <LayoutDashboard className="ml-1.5 size-4 shrink-0 text-muted-foreground" />
+            )}
+            <span className="truncate text-[13px] font-semibold">{PANEL_TITLES[tab]}</span>
+            <Seg value={pro} onChange={setPro} options={[[false, "Simpel"], [true, "Pro"]]} className="ml-auto shrink-0" />
+            <span className={`shrink-0 whitespace-nowrap text-[11px] ${version > exportedV ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`} title={version > exportedV ? "Ada perubahan yang belum diekspor" : "Sudah diekspor"}>{version > exportedV ? "●" : "✓"}</span>
           </div>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+            {tab === "ringkasan" && <SummaryPanel edit={edit} p={p} pro={pro} exported={version <= exportedV} onOpen={(t) => (t === "stiker" ? openStiker() : setTab(t))} />}
             {tab === "teks" && (
+              <>
               <TextPanel
+                pro={pro}
                 style={edit.captionStyle}
                 onStyle={(s, record) => set((e) => ({ ...e, captionStyle: { ...e.captionStyle, ...s } }), record)}
                 onPos={(patch, record) => setPos(selCap?.id ?? null, patch, record)}
@@ -667,9 +709,25 @@ export function TimelineEditor({ p }: { p: Project }) {
                 onRemove={removeSel}
                 onSplit={splitSel}
                 onRegen={(n) => regenCaptions(n)}
+                onTidy={() => (set((e) => ({ ...e, captions: tidyCaptions(e.captions) })), toast.success("Caption dirapikan: angka jadi digit. Ctrl+Z untuk batal."))}
                 fontsKey={fontsKey}
                 count={edit.captions.length}
+                sample={sampleText}
+                onMatch={matchStyle}
               />
+              <div id="editor-stiker" className="scroll-mt-2">
+                <Section title="Stiker" icon={Sticker} hint="judul hook, harga, CTA, teks info">
+                  <OverlayPanel
+                    overlays={edit.overlays}
+                    selected={sel?.kind === "overlay" ? edit.overlays.find((o) => o.id === sel.id) : undefined}
+                    onAdd={addOverlay}
+                    onPick={(o) => (setSel({ kind: "overlay", id: o.id }), seek(o.start + 0.05))}
+                    onChange={(id, patch, record) => updOverlay(id, patch, record)}
+                    onRemove={removeSel}
+                  />
+                </Section>
+              </div>
+              </>
             )}
             {tab === "audio" && (
               <div className="space-y-3">
@@ -707,16 +765,6 @@ export function TimelineEditor({ p }: { p: Project }) {
                 </div>
               </div>
             )}
-            {tab === "stiker" && (
-              <OverlayPanel
-                overlays={edit.overlays}
-                selected={sel?.kind === "overlay" ? edit.overlays.find((o) => o.id === sel.id) : undefined}
-                onAdd={addOverlay}
-                onPick={(o) => (setSel({ kind: "overlay", id: o.id }), seek(o.start + 0.05))}
-                onChange={(id, patch, record) => updOverlay(id, patch, record)}
-                onRemove={removeSel}
-              />
-            )}
             {tab === "efek" && (
               <FxPanel
                 fx={edit.fx}
@@ -733,6 +781,11 @@ export function TimelineEditor({ p }: { p: Project }) {
                 onDirector={runDirector}
                 versions={versions}
                 onPick={(v) => (set(v.edit), setVersions([]), toast.success("Versi dipakai. Ctrl+Z untuk kembali."))}
+                hooks={hookVersions}
+                onHooks={runHooks}
+                onTryHook={(v) => (set(v.edit), toast.success("Varian dipasang di editor. Ctrl+Z untuk kembali."))}
+                onExportHooks={() => void exportVariants(hookVersions)}
+                exporting={busy === "export"}
               />
             )}
             {tab === "posting" && <PostingPanel p={p} />}
@@ -743,7 +796,7 @@ export function TimelineEditor({ p }: { p: Project }) {
       </div>
 
       {/* timeline */}
-      <div className="rounded-xl border bg-card">
+      <div className="rounded-xl border bg-card select-none">
         <div className="flex flex-wrap items-center gap-0.5 border-b px-1.5 py-1">
           <button type="button" className={icon} onClick={toggle} aria-label={playing ? "Jeda" : "Putar"}>{playing ? <Pause className="size-4" /> : <Play className="size-4" />}</button>
           <button type="button" className={icon} onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"><Undo2 className="size-4" /></button>
@@ -752,9 +805,22 @@ export function TimelineEditor({ p }: { p: Project }) {
           <button type="button" className={secondary} onClick={addCaption}><Plus className="size-3.5" /> Caption</button>
           <button type="button" className={icon} onClick={splitSel} title="Potong caption di playhead (S)"><Scissors className="size-4" /></button>
           <button type="button" className={icon} onClick={removeSel} disabled={sel?.kind !== "caption" && sel?.kind !== "overlay" && sel?.kind !== "sfx"} title="Hapus (Del)"><Trash2 className="size-4" /></button>
-          <span className="ml-2 hidden text-[10px] text-muted-foreground xl:inline">Spasi putar · S potong · Del hapus · ←/→ geser</span>
+          <span className="mx-1 h-5 w-px bg-border" />
+          {/* AI command bar: one instruction, applied to the timeline (Ctrl+Z to undo) */}
+          <form
+            className="flex min-w-0 flex-1 items-center gap-1 rounded-md border bg-background pr-0.5 pl-2 focus-within:border-ring sm:max-w-md"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (aiCmd.trim() && busy !== "ai") void runAi(aiCmd.trim()).then(() => setAiCmd(""));
+            }}
+          >
+            {busy === "ai" ? <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" /> : <Sparkles className="size-3.5 shrink-0 text-primary" />}
+            <input value={aiCmd} onChange={(e) => setAiCmd(e.target.value)} disabled={busy === "ai"} placeholder="Perintah AI: kecilkan musik, caption kuning di tengah..." className="h-7 min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/70" aria-label="Perintah AI" />
+            <button type="button" className="h-6 shrink-0 rounded px-1.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground" onClick={() => setTab("ai")} title="AI Director: 3 variasi hook & gaya">Director</button>
+          </form>
           <div className="ml-auto flex items-center gap-2">
             <input type="range" min={0} max={200} value={zoom} onChange={(e) => setZoom(Number(e.target.value) < 15 ? 0 : Number(e.target.value))} aria-label="Zoom timeline" className="w-24 accent-primary" />
+            <button type="button" className={`${secondary} ${tab === "posting" ? "border-primary text-primary" : ""}`} onClick={() => setTab("posting")} title="Caption, hashtag & file siap posting"><Send className="size-3.5" /> Posting</button>
             <button type="button" className={primary} disabled={!!busy} onClick={doExport}>
               {busy === "export" ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />} {busy === "export" ? "Mengekspor..." : "Export video"}
             </button>
@@ -764,12 +830,12 @@ export function TimelineEditor({ p }: { p: Project }) {
           {/* track headers */}
           <div className="shrink-0 border-r text-[11px]" style={{ width: HEAD }}>
             <div className="h-5 border-b" />
-            <TrackHead label="Video" icon={Film} />
-            <TrackHead label="Teks" icon={Type} />
-            <TrackHead label="Stiker" icon={Sticker} />
-            <TrackHead label="Suara" icon={Mic} muted={edit.voiceVolume === 0} onMute={edit.voices.length ? () => set((e) => ({ ...e, voiceVolume: e.voiceVolume ? 0 : 1 })) : undefined} />
-            <TrackHead label="SFX" icon={Sparkles} muted={edit.sfx.length > 0 && edit.sfx.every((x) => x.volume === 0)} onMute={edit.sfx.length ? () => set((e) => ({ ...e, sfx: e.sfx.map((x) => ({ ...x, volume: e.sfx.every((y) => y.volume === 0) ? 0.6 : 0 })) })) : undefined} />
-            <TrackHead label="Musik" icon={Music} muted={!!edit.bgm && edit.bgm.volume === 0} onMute={edit.bgm ? () => set((e) => ({ ...e, bgm: e.bgm && { ...e.bgm, volume: e.bgm.volume ? 0 : 0.2 } })) : undefined} />
+            <TrackHead label="Video" icon={Film} active={tab === "efek"} onOpen={() => setTab("efek")} />
+            <TrackHead label="Teks" icon={Type} active={tab === "teks"} onOpen={() => setTab("teks")} />
+            <TrackHead label="Stiker" icon={Sticker} onOpen={openStiker} />
+            <TrackHead label="Suara" icon={Mic} active={tab === "audio"} onOpen={() => setTab("audio")} muted={edit.voiceVolume === 0} onMute={edit.voices.length ? () => set((e) => ({ ...e, voiceVolume: e.voiceVolume ? 0 : 1 })) : undefined} />
+            <TrackHead label="SFX" icon={Sparkles} onOpen={() => setTab("audio")} muted={edit.sfx.length > 0 && edit.sfx.every((x) => x.volume === 0)} onMute={edit.sfx.length ? () => set((e) => ({ ...e, sfx: e.sfx.map((x) => ({ ...x, volume: e.sfx.every((y) => y.volume === 0) ? 0.6 : 0 })) })) : undefined} />
+            <TrackHead label="Musik" icon={Music} onOpen={() => setTab("audio")} muted={!!edit.bgm && edit.bgm.volume === 0} onMute={edit.bgm ? () => set((e) => ({ ...e, bgm: e.bgm && { ...e.bgm, volume: e.bgm.volume ? 0 : 0.2 } })) : undefined} />
           </div>
           {/* lanes */}
           <div ref={scroller} className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden" onPointerDown={() => setSel(null)}>
@@ -846,7 +912,7 @@ export function TimelineEditor({ p }: { p: Project }) {
                       width={(o.end - o.start) * pps}
                       selected={sel?.id === o.id}
                       tone="bg-emerald-500/20 border-emerald-500/50 text-emerald-950 dark:text-emerald-100"
-                      onSelect={() => (setSel({ kind: "overlay", id: o.id }), setTab("stiker"))}
+                      onSelect={() => (setSel({ kind: "overlay", id: o.id }), openStiker())}
                       onMove={(ev) => {
                         const { start, end } = o;
                         drag(ev, (d) => {
@@ -866,7 +932,7 @@ export function TimelineEditor({ p }: { p: Project }) {
                     />
                   ))
                 ) : (
-                  <button type="button" className="absolute top-1 bottom-1 left-1 flex items-center gap-1 rounded-md border border-dashed px-2 text-[10px] text-muted-foreground hover:bg-accent" onPointerDown={(ev) => ev.stopPropagation()} onClick={() => setTab("stiker")}>
+                  <button type="button" className="absolute top-1 bottom-1 left-1 flex items-center gap-1 rounded-md border border-dashed px-2 text-[10px] text-muted-foreground hover:bg-accent" onPointerDown={(ev) => ev.stopPropagation()} onClick={() => openStiker()}>
                     <Plus className="size-3" /> Judul / harga / CTA
                   </button>
                 )}
@@ -951,13 +1017,16 @@ function Lane({ children }: { children: React.ReactNode }) {
   return <div className="relative border-b last:border-b-0" style={{ height: LANE }}>{children}</div>;
 }
 
-function TrackHead({ label, icon: I, muted, onMute }: { label: string; icon?: React.ComponentType<{ className?: string }>; muted?: boolean; onMute?: () => void }) {
+/** Lane title; clicking it opens that lane's panel in the inspector (the editor's navigation). */
+function TrackHead({ label, icon: I, muted, onMute, onOpen, active }: { label: string; icon?: React.ComponentType<{ className?: string }>; muted?: boolean; onMute?: () => void; onOpen?: () => void; active?: boolean }) {
   return (
-    <div className="flex items-center gap-1.5 border-b px-2 font-medium last:border-b-0" style={{ height: LANE }}>
-      {I && <I className="size-3.5 text-muted-foreground" />}
-      <span className="flex-1">{label}</span>
+    <div className={`flex items-center gap-1 border-b pr-1 pl-1 font-medium last:border-b-0 ${active ? "bg-primary/8" : ""}`} style={{ height: LANE }}>
+      <button type="button" onClick={onOpen} title={onOpen ? `Buka panel ${label}` : undefined} className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-1 text-left transition-colors hover:bg-accent ${active ? "text-primary" : ""}`}>
+        {I && <I className={`size-3.5 shrink-0 ${active ? "text-primary" : "text-muted-foreground"}`} />}
+        <span className="truncate">{label}</span>
+      </button>
       {onMute && (
-        <button type="button" onClick={onMute} className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={muted ? "Bunyikan" : "Bisukan"}>
+        <button type="button" onClick={onMute} className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={muted ? "Bunyikan" : "Bisukan"}>
           {muted ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}
         </button>
       )}
@@ -992,48 +1061,137 @@ function Block({
   );
 }
 
+/**
+ * Range input with a filled track, a value pill and (when `def` is given) click-the-pill to reset.
+ * record=false while dragging (live preview), true on release (one undo step).
+ */
 function Slider({
-  label, value, onChange, min = 0, max = 2, step = 0.05, unit = "%",
-}: { label: string; value: number; onChange: (v: number, record: boolean) => void; min?: number; max?: number; step?: number; unit?: "%" | "×" | "s" }) {
+  label, value, onChange, min = 0, max = 2, step = 0.05, unit = "%", def,
+}: { label: string; value: number; onChange: (v: number, record: boolean) => void; min?: number; max?: number; step?: number; unit?: "%" | "×" | "s"; def?: number }) {
   const shown = unit === "%" ? `${Math.round(value * 100)}%` : `${value}${unit}`;
+  const pct = ((clamp(value, min, max) - min) / (max - min || 1)) * 100;
+  const changed = def != null && Math.abs(value - def) > step / 2;
   return (
-    <label className="grid grid-cols-[minmax(64px,auto)_1fr_38px] items-center gap-2 text-xs">
+    <div className="grid grid-cols-[minmax(68px,auto)_1fr_auto] items-center gap-2.5 text-xs">
       <span className="truncate text-muted-foreground">{label}</span>
       <input
         type="range"
+        aria-label={label}
         min={min}
         max={max}
         step={step}
         value={value}
         onChange={(e) => onChange(round2(Number(e.target.value)), false)}
         onPointerUp={(e) => onChange(round2(Number((e.target as HTMLInputElement).value)), true)}
-        className="h-4 w-full accent-primary"
+        onKeyUp={(e) => onChange(round2(Number((e.target as HTMLInputElement).value)), true)}
+        style={{ background: `linear-gradient(to right, var(--primary) ${pct}%, color-mix(in oklab, var(--foreground) 14%, transparent) ${pct}%)` }}
+        className="h-1.5 w-full cursor-pointer appearance-none rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-primary [&::-moz-range-thumb]:bg-white [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-primary [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-thumb]:transition-transform hover:[&::-webkit-slider-thumb]:scale-125"
       />
-      <span className="text-right font-mono text-[11px] tabular-nums">{shown}</span>
-    </label>
+      <button
+        type="button"
+        disabled={!changed}
+        onClick={() => def != null && onChange(def, true)}
+        title={changed ? "Klik untuk kembali ke bawaan" : undefined}
+        className={`min-w-11 rounded-md px-1.5 py-0.5 text-right font-mono text-[11px] tabular-nums ${changed ? "bg-primary/12 text-primary hover:bg-primary/20" : "bg-muted text-foreground"}`}
+      >
+        {shown}
+      </button>
+    </div>
   );
 }
 
 const chip = (on: boolean) =>
-  `h-6 rounded-full border px-2.5 text-[11px] ${on ? "border-primary bg-primary/10 font-medium text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`;
+  `h-7 rounded-md border px-2.5 text-[11px] transition-colors disabled:pointer-events-none disabled:opacity-40 ${on ? "border-primary bg-primary/12 font-medium text-primary" : "bg-background text-muted-foreground hover:border-ring/50 hover:text-foreground"}`;
+
+/** Segmented control for a small set of exclusive options. */
+function Seg<T extends string | boolean>({ value, options, onChange, className = "" }: { value: T; options: [T, string, string?][]; onChange: (v: T) => void; className?: string }) {
+  return (
+    <div className={`inline-flex rounded-md bg-muted p-0.5 ${className}`}>
+      {options.map(([v, label, disabledReason]) => (
+        <button
+          key={String(v)}
+          type="button"
+          disabled={!!disabledReason}
+          title={disabledReason}
+          aria-pressed={value === v}
+          onClick={() => onChange(v)}
+          className={`h-6 flex-1 rounded px-2.5 text-[11px] font-medium whitespace-nowrap transition-colors disabled:opacity-40 ${value === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Round colour swatch (rounded square for box colours) with a clear selected ring. */
+function Swatch({ color, on, onClick, label, square = false }: { color: string; on: boolean; onClick: () => void; label: string; square?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      aria-pressed={on}
+      className={`size-6 shrink-0 border border-black/20 transition-transform hover:scale-110 ${square ? "rounded-md" : "rounded-full"} ${on ? "ring-2 ring-primary ring-offset-2 ring-offset-card" : ""}`}
+      style={{ background: color }}
+    />
+  );
+}
+
+/** Custom colour (native picker) shown as a rainbow swatch. */
+function ColorPick({ value, onChange, label, square = false }: { value: string; onChange: (v: string, record: boolean) => void; label: string; square?: boolean }) {
+  return (
+    <label className={`relative size-6 shrink-0 cursor-pointer overflow-hidden border border-black/20 bg-[conic-gradient(red,yellow,lime,cyan,blue,magenta,red)] transition-transform hover:scale-110 ${square ? "rounded-md" : "rounded-full"}`} title={label}>
+      <input type="color" value={value} onChange={(e) => onChange(e.target.value, false)} onBlur={(e) => onChange(e.target.value, true)} className="absolute inset-0 cursor-pointer opacity-0" aria-label={label} />
+    </label>
+  );
+}
+
+const POS_X = [0.28, 0.5, 0.72];
+const POS_Y = [0.2, 0.5, 0.72];
+
+/** 3×3 phone-shaped grid: click a cell to place the text there; the nearest cell to the current spot is lit. */
+function PosGrid({ x, y, onPick }: { x: number; y: number; onPick: (p: { x: number; y: number }) => void }) {
+  const near = (v: number, list: number[]) => list.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a));
+  const nx = near(x, POS_X), ny = near(y, POS_Y);
+  return (
+    <div className="grid h-[92px] w-[54px] shrink-0 grid-cols-3 grid-rows-3 gap-0.5 rounded-lg border-2 border-foreground/25 bg-muted p-1" role="group" aria-label="Posisi cepat">
+      {POS_Y.flatMap((py) =>
+        POS_X.map((px) => (
+          <button
+            key={`${px}-${py}`}
+            type="button"
+            onClick={() => onPick({ x: px, y: py })}
+            aria-label={`Taruh di ${py < 0.4 ? "atas" : py > 0.6 ? "bawah" : "tengah"} ${px < 0.4 ? "kiri" : px > 0.6 ? "kanan" : "tengah"}`}
+            className={`rounded-sm transition-colors ${px === nx && py === ny ? "bg-primary" : "bg-foreground/10 hover:bg-foreground/30"}`}
+          />
+        )),
+      )}
+    </div>
+  );
+}
 
 function TextPanel({
-  style, onStyle, onPos, onAnim, safe, onSafe, selected, onCaption, onAdd, onRemove, onSplit, onRegen, count, fontsKey = 0,
+  style, onStyle, onPos, onAnim, safe, onSafe, selected, onCaption, onAdd, onRemove, onSplit, onRegen, onTidy, count, fontsKey = 0, sample, onMatch, pro = true,
 }: {
+  pro?: boolean; // false = Simpel: templates, font, colour, position & animation only
+  onTidy: () => void;
   fontsKey?: number;
+  sample: string; // real caption text for the template previews
+  onMatch: () => Promise<void>; // "Tiru gaya video laris"
   style: CaptionStyle; onStyle: (s: Partial<CaptionStyle>, record?: boolean) => void; onPos: (p: Partial<CaptionPos>, record?: boolean) => void;
   onAnim: (a: CaptionAnim) => void; safe: SafeArea; onSafe: (s: Partial<SafeArea>, record?: boolean) => void; selected?: EditCaption;
   onCaption: (p: Partial<EditCaption>, record?: boolean) => void; onAdd: () => void; onRemove: () => void; onSplit: () => void; onRegen: (words?: number) => void; count: number;
 }) {
-  const [sub, setSub] = useState<"gaya" | "posisi" | "safe">("gaya");
   const own = !!selected?.pos;
   const pos = styleOf(style, selected);
-  const safePreset = SAFE_PRESETS.find((x) => (Object.keys(x.safe) as (keyof SafeArea)[]).every((k) => Math.abs(x.safe[k] - safe[k]) < 0.001))?.id;
+  const safePreset = SAFE_PRESETS.find((x) => (Object.keys(x.safe) as (keyof SafeArea)[]).every((k) => Math.abs(x.safe[k] - safe[k]) < 0.001))?.id ?? "custom";
+  const font = fontOf(style.font);
   return (
-    <div className="space-y-3">
+    <div className="@container space-y-3">
       {/* selected caption (or how to pick one) */}
       {selected ? (
-        <div className="space-y-1.5 rounded-lg border bg-background p-2">
+        <div className="space-y-1.5 rounded-xl border bg-background p-2">
           <div className="flex items-center gap-1">
             <textarea className={`${field} resize-none`} rows={2} value={selected.text} maxLength={200} onChange={(e) => onCaption({ text: e.target.value }, false)} onBlur={(e) => onCaption({ text: e.target.value }, true)} />
             <div className="flex flex-col">
@@ -1046,132 +1204,142 @@ function TextPanel({
             <span>→</span>
             <input type="number" step={0.1} min={0} className={`${field.replace("w-full", "w-16")}`} value={selected.end} onChange={(e) => onCaption({ end: round2(Number(e.target.value)) })} aria-label="Selesai (detik)" />
             <span>dtk</span>
-            <label className="ml-auto flex items-center gap-1.5" title="Posisi & ukuran caption ini tidak ikut caption lain (mis. judul hook di atas)">
-              <input type="checkbox" checked={own} onChange={(e) => onCaption({ pos: e.target.checked ? { x: style.x, y: style.y, size: style.size } : null })} />
-              Posisi sendiri
-            </label>
           </div>
         </div>
       ) : (
         <p className="text-[11px] text-muted-foreground">Klik caption di timeline atau di video untuk mengedit teksnya. {count} caption.</p>
       )}
 
-      <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
-        {([["gaya", "Gaya"], ["posisi", own ? "Posisi (caption ini)" : "Posisi"], ["safe", "Safe area"]] as const).map(([id, label]) => (
-          <button key={id} type="button" onClick={() => setSub(id)} className={`h-6 flex-1 rounded-md text-[11px] font-medium ${sub === id ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-            {label}
-          </button>
-        ))}
-      </div>
+      <MatchButton onMatch={onMatch} />
+      <Section title="Template siap pakai" icon={Sparkles} hint="Satu klik: font, warna, outline, animasi & posisi">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-1.5">
+          {CAPTION_LOOKS.map((l, i) => {
+            const on = style.preset === l.style.preset && style.font === l.style.font;
+            return (
+              <button key={l.id} type="button" title={l.use} aria-pressed={on} onClick={() => onStyle(l.style)} className={`relative overflow-hidden rounded-lg border text-left transition-colors ${on ? "border-primary ring-1 ring-primary" : "hover:border-ring/60"}`}>
+                <LookSwatch style={{ ...style, ...l.style }} text={sample} fontsKey={fontsKey} delay={(i % 4) * 0.35} />
+                {on && <Check className="absolute top-1 right-1 size-4 rounded-full bg-primary p-0.5 text-primary-foreground" />}
+                <span className="block truncate px-1.5 py-1 text-[11px] font-medium">{l.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </Section>
 
-      {sub === "gaya" && (
+      <div className="grid gap-3 @2xl:grid-cols-2">
         <div className="space-y-3">
-          <Section title="Template teks" icon={Palette}>
-            <div className="grid grid-cols-5 gap-1">
+          <Section title="Font" icon={Type} hint={font.label}>
+            <FontPicker value={style.font} onPick={(f) => onStyle({ font: f })} />
+          </Section>
+          {pro && (
+          <Section title="Bentuk teks" icon={Palette}>
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-1">
               {CAPTION_PRESETS.map((x) => (
-                <button key={x.id} type="button" title={x.label} onClick={() => onStyle({ preset: x.id })} className={`overflow-hidden rounded-md border text-[9px] text-muted-foreground ${style.preset === x.id ? "border-primary ring-1 ring-primary" : "hover:bg-accent"}`}>
+                <button key={x.id} type="button" title={x.label} aria-pressed={style.preset === x.id} onClick={() => onStyle({ preset: x.id })} className={`overflow-hidden rounded-md border text-[9px] ${style.preset === x.id ? "border-primary text-primary ring-1 ring-primary" : "text-muted-foreground hover:border-ring/60"}`}>
                   <PresetSwatch style={{ ...style, preset: x.id, color: null, box: null }} fontsKey={fontsKey} />
                   <span className="block py-0.5">{x.label}</span>
                 </button>
               ))}
             </div>
           </Section>
-          <Section title="Font" icon={Type}>
-            <div className="grid grid-cols-3 gap-1">
-              {CAPTION_FONTS.map((f) => (
-                <button key={f.id} type="button" onClick={() => onStyle({ font: f.id })} className={`h-8 truncate rounded-md border px-1.5 text-[13px] ${style.font === f.id ? "border-primary bg-primary/10" : "hover:bg-accent"}`} style={{ fontFamily: fontPreview(f.id), fontWeight: f.weight }}>
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          </Section>
+          )}
           <Section title="Warna" icon={Palette}>
-            <div className="flex flex-wrap items-center gap-1">
-              <span className="w-12 text-[11px] text-muted-foreground">Teks</span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="w-11 text-[11px] text-muted-foreground">Teks</span>
               <button type="button" className={chip(!style.color)} onClick={() => onStyle({ color: null })}>Auto</button>
-              {TEXT_COLORS.map((c) => (
-                <button key={c} type="button" onClick={() => onStyle({ color: c })} className={`size-6 rounded-full border-2 ${style.color === c ? "border-primary" : "border-border"}`} style={{ background: c }} aria-label={`Warna teks ${c}`} />
-              ))}
+              {TEXT_COLORS.map((c) => <Swatch key={c} color={c} on={style.color === c} onClick={() => onStyle({ color: c })} label={`Warna teks ${c}`} />)}
+              <ColorPick value={style.color ?? "#ffffff"} onChange={(c, r) => onStyle({ color: c }, r)} label="Warna teks lain" />
             </div>
             {["kotak", "bubble", "merah"].includes(style.preset) && (
-              <div className="flex flex-wrap items-center gap-1">
-                <span className="w-12 text-[11px] text-muted-foreground">Kotak</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="w-11 text-[11px] text-muted-foreground">Kotak</span>
                 <button type="button" className={chip(!style.box)} onClick={() => onStyle({ box: null })}>Auto</button>
-                {["#ffffff", "#111111", "#e11d2e", "#7c3aed", "#16a34a", "#ffe03d", "#0ea5e9"].map((c) => (
-                  <button key={c} type="button" onClick={() => onStyle({ box: c })} className={`size-6 rounded-md border-2 ${style.box === c ? "border-primary" : "border-border"}`} style={{ background: c }} aria-label={`Warna kotak ${c}`} />
-                ))}
+                {["#ffffff", "#111111", "#e11d2e", "#7c3aed", "#16a34a", "#ffe03d", "#0ea5e9"].map((c) => <Swatch key={c} square color={c} on={style.box === c} onClick={() => onStyle({ box: c })} label={`Warna kotak ${c}`} />)}
+                <ColorPick square value={style.box ?? "#ffffff"} onChange={(c, r) => onStyle({ box: c }, r)} label="Warna kotak lain" />
               </div>
             )}
           </Section>
+          {pro && (
+          <Section
+            title="Detail teks"
+            icon={Type}
+            action={<button type="button" className="text-[11px] font-medium text-primary hover:underline" onClick={() => onStyle({ stroke: null, shadow: null, spacing: null, lineHeight: null, light: false })}>Reset</button>}
+          >
+            <div className="flex flex-wrap gap-1.5">
+              <Seg value={!!style.light} onChange={(v) => onStyle({ light: v })} options={[[false, "Tebal"], [true, "Tipis", font.light ? undefined : "Font ini cuma punya satu ketebalan"]]} />
+              <Seg value={style.upper} onChange={(v) => onStyle({ upper: v })} options={[[false, "Aa"], [true, "AA"]]} />
+            </div>
+            <Slider label="Outline" value={style.stroke ?? DEFAULT_STROKE[style.preset] ?? 0} def={DEFAULT_STROKE[style.preset] ?? 0} min={0} max={0.3} step={0.01} onChange={(v, r) => onStyle({ stroke: v }, r)} />
+            <Slider label="Bayangan" value={style.shadow ?? 0} def={0} min={0} max={1} step={0.05} onChange={(v, r) => onStyle({ shadow: v }, r)} />
+            <Slider label="Jarak huruf" value={style.spacing ?? 0} def={0} min={-0.05} max={0.3} step={0.01} onChange={(v, r) => onStyle({ spacing: v }, r)} />
+            <Slider label="Jarak baris" value={style.lineHeight ?? 1.22} def={1.22} min={0.9} max={1.6} step={0.02} unit="×" onChange={(v, r) => onStyle({ lineHeight: v }, r)} />
+          </Section>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <Section
+            title={own ? "Posisi · caption ini" : "Posisi & ukuran"}
+            icon={Move}
+            action={
+              selected && (
+                <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground" title="Posisi & ukuran caption ini tidak ikut caption lain (mis. judul hook di atas)">
+                  <input type="checkbox" className="accent-primary" checked={own} onChange={(e) => onCaption({ pos: e.target.checked ? { x: style.x, y: style.y, size: style.size } : null })} />
+                  Posisi sendiri
+                </label>
+              )
+            }
+          >
+            <div className="flex items-center gap-3">
+              <PosGrid x={pos.x} y={pos.y} onPick={(p) => onPos(p)} />
+              <div className="min-w-0 flex-1 space-y-2">
+                <Slider label="Ukuran" value={pos.size} def={DEFAULT_CAPTION_STYLE.size} min={0.03} max={0.12} step={0.002} onChange={(v, r) => onPos({ size: v }, r)} />
+                {pro && <Slider label="Horizontal" value={pos.x} def={0.5} min={0.05} max={0.95} step={0.01} onChange={(v, r) => onPos({ x: v }, r)} />}
+                {pro && <Slider label="Vertikal" value={pos.y} def={DEFAULT_CAPTION_STYLE.y} min={0.05} max={0.95} step={0.01} onChange={(v, r) => onPos({ y: v }, r)} />}
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground">Bisa juga diseret langsung di video; titik di sudut untuk ukuran.</p>
+          </Section>
+          {pro && (
+          <Section title="Safe area" icon={Frame} hint="area yang tertutup tombol aplikasi">
+            <Seg value={safePreset} onChange={(id) => { const x = SAFE_PRESETS.find((p) => p.id === id); if (x) onSafe(x.safe); }} options={[...SAFE_PRESETS.map((x) => [x.id, x.label] as [string, string]), ...(safePreset === "custom" ? [["custom", "Kustom"] as [string, string]] : [])]} className="w-full" />
+            <div className="grid gap-x-4 gap-y-2 @md:grid-cols-2">
+              <Slider label="Atas" value={safe.top} min={0} max={0.35} step={0.01} onChange={(v, r) => onSafe({ top: v }, r)} />
+              <Slider label="Bawah" value={safe.bottom} min={0} max={0.35} step={0.01} onChange={(v, r) => onSafe({ bottom: v }, r)} />
+              <Slider label="Kiri" value={safe.left} min={0} max={0.35} step={0.01} onChange={(v, r) => onSafe({ left: v }, r)} />
+              <Slider label="Kanan" value={safe.right} min={0} max={0.35} step={0.01} onChange={(v, r) => onSafe({ right: v }, r)} />
+            </div>
+          </Section>
+          )}
           <Section title="Animasi" icon={Sparkles}>
-            <div className="flex flex-wrap items-center gap-1">
-              <span className="w-12 text-[11px] text-muted-foreground">Masuk</span>
+            <div className="grid grid-cols-4 gap-1">
               {CAPTION_ANIMS.map((x) => (
-                <button key={x.id} type="button" onClick={() => onAnim(x.id)} className={chip(style.anim === x.id)}>{x.label}</button>
+                <button key={x.id} type="button" aria-pressed={style.anim === x.id} onClick={() => onAnim(x.id)} className={chip(style.anim === x.id)}>{x.label}</button>
               ))}
             </div>
-            <div className="flex flex-wrap items-center gap-1">
-              <span className="w-12 text-[11px] text-muted-foreground">Keluar</span>
-              <button type="button" className={chip(!style.out)} onClick={() => onStyle({ out: false })}>Potong</button>
-              <button type="button" className={chip(style.out)} onClick={() => onStyle({ out: true })}>Fade keluar</button>
+            <div className="flex items-center gap-2">
+              <span className="w-11 text-[11px] text-muted-foreground">Keluar</span>
+              <Seg value={style.out} onChange={(v) => onStyle({ out: v })} options={[[false, "Potong"], [true, "Fade keluar"]]} />
             </div>
           </Section>
-          <Section title="Karaoke & huruf" icon={Mic}>
-            <div className="flex flex-wrap items-center gap-1">
-              <button type="button" className={chip(!style.karaoke)} onClick={() => onStyle({ karaoke: false })}>Karaoke mati</button>
-              <button type="button" className={chip(style.karaoke)} onClick={() => onStyle({ karaoke: true })}>Kata menyala</button>
-              {style.karaoke &&
-                ACCENTS.map((c) => (
-                  <button key={c} type="button" onClick={() => onStyle({ accent: c })} className={`size-5 rounded-full border-2 ${style.accent === c ? "border-foreground" : "border-transparent"}`} style={{ background: c }} aria-label={`Warna ${c}`} />
-                ))}
-              <span className="mx-1 h-4 w-px bg-border" />
-              <button type="button" className={chip(!style.upper)} onClick={() => onStyle({ upper: false })}>Aa</button>
-              <button type="button" className={chip(style.upper)} onClick={() => onStyle({ upper: true })}>AA</button>
+          {pro && (
+          <Section title="Karaoke" icon={Mic} hint="kata yang diucapkan menyala">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Seg value={style.karaoke} onChange={(v) => onStyle({ karaoke: v })} options={[[false, "Mati"], [true, "Nyala"]]} />
+              {style.karaoke && ACCENTS.map((c) => <Swatch key={c} color={c} on={style.accent === c} onClick={() => onStyle({ accent: c })} label={`Warna karaoke ${c}`} />)}
             </div>
           </Section>
+          )}
         </div>
-      )}
+      </div>
 
-      {sub === "posisi" && (
-        <div className="space-y-2">
-          <Slider label="Ukuran" value={pos.size} min={0.03} max={0.12} step={0.002} onChange={(v, r) => onPos({ size: v }, r)} />
-          <Slider label="Horizontal" value={pos.x} min={0.05} max={0.95} step={0.01} onChange={(v, r) => onPos({ x: v }, r)} />
-          <Slider label="Vertikal" value={pos.y} min={0.05} max={0.95} step={0.01} onChange={(v, r) => onPos({ y: v }, r)} />
-          <div className="flex flex-wrap gap-1">
-            <button type="button" className={chip(false)} onClick={() => onPos({ x: 0.5 })}>↔ Tengahkan</button>
-            <button type="button" className={chip(false)} onClick={() => onPos({ y: 0.2 })}>Atas</button>
-            <button type="button" className={chip(false)} onClick={() => onPos({ y: 0.5 })}>Tengah</button>
-            <button type="button" className={chip(false)} onClick={() => onPos({ y: 0.72 })}>Bawah</button>
-          </div>
-          <p className="text-[11px] text-muted-foreground">Bisa juga diseret langsung di video; titik di sudut untuk ukuran.</p>
-        </div>
-      )}
-
-      {sub === "safe" && (
-        <div className="space-y-2">
-          <div className="flex flex-wrap gap-1">
-            {SAFE_PRESETS.map((x) => (
-              <button key={x.id} type="button" onClick={() => onSafe(x.safe)} className={chip(safePreset === x.id)}>{x.label}</button>
-            ))}
-          </div>
-          <div className="grid gap-x-4 gap-y-2 xl:grid-cols-2">
-            <Slider label="Atas" value={safe.top} min={0} max={0.35} step={0.01} onChange={(v, r) => onSafe({ top: v }, r)} />
-            <Slider label="Bawah" value={safe.bottom} min={0} max={0.35} step={0.01} onChange={(v, r) => onSafe({ bottom: v }, r)} />
-            <Slider label="Kiri" value={safe.left} min={0} max={0.35} step={0.01} onChange={(v, r) => onSafe({ left: v }, r)} />
-            <Slider label="Kanan" value={safe.right} min={0} max={0.35} step={0.01} onChange={(v, r) => onSafe({ right: v }, r)} />
-          </div>
-          <p className="text-[11px] text-muted-foreground">Teks tidak akan keluar dari kotak putus-putus di video.</p>
-        </div>
-      )}
-
-      <div className="flex flex-wrap gap-1 border-t pt-2.5">
+      <div className="flex flex-wrap items-center gap-1.5 border-t pt-2.5">
         <button type="button" className={secondary} onClick={onAdd}><Plus className="size-3.5" /> Caption</button>
-        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-          <Wand2 className="size-3.5" /> Buat ulang dari naskah:
-          {[1, 2, 4].map((n) => (
-            <button key={n} type="button" className={chip(false)} onClick={() => onRegen(n)} title={n < 4 ? "Subtitle pendek seperti video laris" : "Caption kalimat"}>{n} kata</button>
-          ))}
-        </span>
+        <button type="button" className={secondary} onClick={onTidy} title="Angka jadi digit (Rp34.900, 4,8, 50%), potongan caption dirapikan, tanpa titik/koma di akhir. Timing tetap."><Sparkles className="size-3.5" /> Rapikan angka & potongan</button>
+        <span className="ml-1 flex items-center gap-1 text-[11px] text-muted-foreground"><Wand2 className="size-3.5" /> Buat ulang dari naskah:</span>
+        {[1, 2, 4].map((n) => (
+          <button key={n} type="button" className={chip(false)} onClick={() => onRegen(n)} title={n < 4 ? "Subtitle pendek seperti video laris" : "Caption kalimat"}>{n} kata</button>
+        ))}
       </div>
     </div>
   );
@@ -1201,16 +1369,208 @@ function PresetSwatch({ style, fontsKey = 0 }: { style: CaptionStyle; fontsKey?:
     ctx.clearRect(0, 0, c.width, c.height);
     drawCaption(ctx, c.width, c.height, "Promo", { ...style, x: 0.5, y: 0.5, size: 0.2, karaoke: false }, { top: 0, bottom: 0, left: 0, right: 0 });
   }, [style, fontsKey]);
-  return <canvas ref={ref} width={150} height={80} className="h-9 w-full bg-[linear-gradient(135deg,#5b6b7a,#2a3440)]" />;
+  return <canvas ref={ref} width={240} height={128} className="aspect-[15/8] w-full bg-[linear-gradient(135deg,#5b6b7a,#2a3440)]" />;
+}
+
+/** Outline each preset draws when the user hasn't set one (for the slider's starting point). */
+const DEFAULT_STROKE: Partial<Record<CaptionStyle["preset"], number>> = { tiktok: 0.16, kuning: 0.16, merah: 0, komik: 0.24, gradasi: 0.14, minimal: 0.09 };
+
+/**
+ * Template tile: the look drawn with the project's real caption text, playing its entrance animation on a loop
+ * (karaoke looks also step the highlighted word). `delay` staggers the tiles so they don't pulse in sync.
+ * Still frame when the viewer prefers reduced motion or the tile is off-screen.
+ */
+function LookSwatch({ style, text, fontsKey = 0, delay = 0 }: { style: CaptionStyle; text: string; fontsKey?: number; delay?: number }) {
+  const W = 200, H = 112;
+  const ref = useRef<HTMLCanvasElement>(null);
+  const look = useMemo(() => ({ ...style, x: 0.5, y: 0.5, size: clamp(style.size * 2.6, 0.12, 0.18), karaoke: false }), [style]);
+  // one pre-rendered still per highlighted word (karaoke) or a single still
+  const frames = useMemo(() => {
+    if (typeof document === "undefined") return [];
+    const words = text.split(/\s+/).filter(Boolean).length;
+    return (style.karaoke ? [...Array(words).keys()] : [-1]).map((hl) => {
+      const c = document.createElement("canvas");
+      c.width = W;
+      c.height = H;
+      const box = drawCaption(c.getContext("2d")!, W, H, text, look, { top: 0.06, bottom: 0.06, left: 0.05, right: 0.05 }, hl);
+      return { c, box };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- redraw once the fonts load
+  }, [look, text, style.karaoke, fontsKey]);
+  useEffect(() => {
+    const el = ref.current;
+    const ctx = el?.getContext("2d");
+    if (!el || !ctx || !frames.length) return;
+    const paint = (t: number) => {
+      const f = frames[Math.floor(Math.max(0, t) / 0.45) % frames.length];
+      ctx.clearRect(0, 0, W, H);
+      blitCaption(ctx, f.c, f.box, H, style.anim, t);
+    };
+    paint(99);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const cycle = ANIM_DUR[style.anim] + 1.4;
+    let raf = 0, visible = false;
+    const t0 = performance.now() + delay * 1000;
+    const loop = (now: number) => {
+      paint(((now - t0) / 1000 + cycle * 10) % cycle);
+      raf = requestAnimationFrame(loop);
+    };
+    const io = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting === visible) return;
+      visible = e.isIntersecting;
+      cancelAnimationFrame(raf);
+      if (visible) raf = requestAnimationFrame(loop);
+    });
+    io.observe(el);
+    return () => (io.disconnect(), cancelAnimationFrame(raf));
+  }, [frames, style.anim, delay]);
+  return <canvas ref={ref} width={W} height={H} className="aspect-[25/14] w-full bg-[linear-gradient(135deg,#6b7c8c,#2a3440)]" />;
+}
+
+const RECENT_KEY = "traktiva:recent-fonts";
+// last fonts used, per viewer (localStorage; empty on the server and when storage is blocked)
+const recentStore = {
+  get: () => {
+    try {
+      return localStorage.getItem(RECENT_KEY) ?? "[]";
+    } catch {
+      return "[]";
+    }
+  },
+  set: (v: CaptionFont[]) => {
+    try {
+      localStorage.setItem(RECENT_KEY, JSON.stringify(v));
+    } catch {}
+    window.dispatchEvent(new Event(RECENT_KEY));
+  },
+  subscribe: (cb: () => void) => (window.addEventListener(RECENT_KEY, cb), () => window.removeEventListener(RECENT_KEY, cb)),
+};
+
+/** Font list grouped by mood, plus the last fonts used; every name is shown in its own face. */
+function FontPicker({ value, onPick }: { value: CaptionFont; onPick: (f: CaptionFont) => void }) {
+  // tab follows the active font (e.g. after a template) until the user picks a tab
+  const [tab, setMood] = useState<FontMood | "baru" | null>(null);
+  const mood = tab ?? fontOf(value).mood;
+  const raw = useSyncExternalStore(recentStore.subscribe, recentStore.get, () => "[]");
+  const recent = useMemo<CaptionFont[]>(() => {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }, [raw]);
+  const pick = (f: CaptionFont) => {
+    onPick(f);
+    recentStore.set([f, ...recent.filter((x) => x !== f)].slice(0, 6));
+  };
+  const list = mood === "baru" ? recent.map((id) => fontOf(id)).filter((f) => !f.hidden) : CAPTION_FONTS.filter((f) => f.mood === mood && !f.hidden);
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-1">
+        {recent.length > 0 && <button type="button" className={chip(mood === "baru")} onClick={() => setMood("baru")}>Terakhir</button>}
+        {FONT_MOODS.map((m) => (
+          <button key={m.id} type="button" className={chip(mood === m.id)} onClick={() => setMood(m.id)}>{m.label}</button>
+        ))}
+      </div>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-1">
+        {list.map((f) => (
+          <button key={f.id} type="button" onClick={() => pick(f.id)} className={`h-9 truncate rounded-md border px-2 text-left text-[15px] leading-none ${value === f.id ? "border-primary bg-primary/10" : "hover:bg-accent"}`} style={fontPreview(f.id)}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+      {fontOf(value).hidden && <p className="text-[10px] text-muted-foreground">Font lama ({fontOf(value).label}) masih dipakai proyek ini; pilih font baru di atas.</p>}
+    </div>
+  );
+}
+
+/** Gemini copies the caption look of the project's reference (best-selling) video. */
+function MatchButton({ onMatch }: { onMatch: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => (setBusy(true), onMatch().finally(() => setBusy(false)))}
+      className="flex w-full items-center gap-2 rounded-lg border border-dashed border-primary/40 bg-primary/5 p-2 text-left hover:bg-primary/10 disabled:opacity-60"
+    >
+      <span className="grid size-8 shrink-0 place-items-center rounded-md bg-primary/15 text-primary">{busy ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}</span>
+      <span className="min-w-0">
+        <span className="block text-xs font-medium">{busy ? "Gemini melihat video laris..." : "Tiru gaya teks video laris"}</span>
+        <span className="block truncate text-[10px] text-muted-foreground">Font, warna & posisi disalin dari video referensi KaloData</span>
+      </span>
+    </button>
+  );
+}
+
+/** Per-viewer on/off preference in localStorage (false on the server and when storage is blocked). */
+function useLocalFlag(key: string, fallback: boolean): [boolean, (v: boolean) => void] {
+  const raw = useSyncExternalStore(
+    (cb) => (window.addEventListener(key, cb), () => window.removeEventListener(key, cb)),
+    () => {
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    () => null,
+  );
+  const set = (v: boolean) => {
+    try {
+      localStorage.setItem(key, v ? "1" : "0");
+    } catch {}
+    window.dispatchEvent(new Event(key));
+  };
+  return [raw == null ? fallback : raw === "1", set];
+}
+
+/** What the inspector shows when nothing is open: one row per part of the video, each opens its panel. */
+function SummaryPanel({ edit, p, pro, exported, onOpen }: { edit: ProjectEdit; p: Project; pro: boolean; exported: boolean; onOpen: (t: Tab | "stiker") => void }) {
+  const st = edit.captionStyle;
+  const look = CAPTION_LOOKS.find((l) => l.style.preset === st.preset && l.style.font === st.font);
+  const voice = edit.voices.length === 1 && edit.voices[0].dur > 8 ? "Voice-over utuh" : edit.voices.length ? `${edit.voices.length} suara adegan` : "Tanpa voice-over";
+  const rows: { t: Tab | "stiker"; icon: React.ComponentType<{ className?: string }>; color: string; title: string; info: string; hide?: boolean }[] = [
+    { t: "teks", icon: Type, color: "#f2c94c", title: "Teks & subtitle", info: `${edit.captions.length} caption · ${look ? look.label : fontOf(st.font).label}${st.karaoke ? " · karaoke" : ""}` },
+    { t: "stiker", icon: Sticker, color: "#2fa868", title: "Stiker", info: edit.overlays.length ? edit.overlays.map((o) => `“${o.text.split("\n")[0]}”`).join(" · ") : "Belum ada (video laris jarang pakai stiker)" },
+    { t: "audio", icon: AudioLines, color: "#ff3b6b", title: "Audio", info: `${voice} · ${edit.bgm ? edit.bgm.name : "tanpa musik"}${edit.sfx.length ? ` · ${edit.sfx.length} SFX` : ""}` },
+    { t: "efek", icon: Wand2, color: "#4ea7fc", title: "Transisi & efek", info: `${TRANSITIONS.find((x) => x.id === edit.fx.transition)?.label ?? "Potong"}${edit.fx.kenburns ? " · zoom pelan" : ""} · format laris & gaya tersimpan`, hide: !pro },
+    { t: "ai", icon: Bot, color: "#a78bfa", title: "AI Director", info: "3 variasi hook & gaya untuk dites" },
+    { t: "posting", icon: Send, color: "#26b5ce", title: "Siap posting", info: p.caption ? "Caption & hashtag siap" : "Tulis caption & hashtag" },
+  ];
+  return (
+    <div className="space-y-2">
+      <div className={`flex items-center gap-2 rounded-xl border p-3 text-xs ${exported ? "border-status-ok/30 bg-status-ok/5" : "border-amber-500/30 bg-amber-500/5"}`}>
+        {exported ? <Check className="size-4 text-status-ok" /> : <CircleDot className="size-4 text-amber-500" />}
+        <span className="flex-1">{exported ? "Video terbaru sudah diekspor." : "Ada perubahan yang belum diekspor. Tekan Export video kalau sudah pas."}</span>
+        <span className="font-mono text-[11px] text-muted-foreground">{fmt(edit.duration)}</span>
+      </div>
+      {rows.filter((r) => !r.hide).map((r) => (
+        <button key={r.t} type="button" onClick={() => onOpen(r.t)} className="group flex w-full items-center gap-3 rounded-xl border bg-background/40 p-3 text-left transition-colors hover:border-ring/50 hover:bg-accent/40">
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: `${r.color}1a`, color: r.color }}><r.icon className="size-4" /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px] font-medium">{r.title}</span>
+            <span className="block truncate text-[11px] text-muted-foreground">{r.info}</span>
+          </span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        </button>
+      ))}
+      <p className="px-1 text-[11px] text-muted-foreground">Tip: klik nama lajur di timeline (Video, Teks, Suara…) atau klik blok di timeline untuk langsung membuka panelnya.{pro ? "" : " Mode Simpel menyembunyikan kontrol detail; pilih Pro di atas untuk semua kontrol."}</p>
+    </div>
+  );
 }
 
 /** Titled group inside an inspector panel. */
-function Section({ title, icon: I, children }: { title: string; icon: React.ComponentType<{ className?: string }>; children: React.ReactNode }) {
+function Section({ title, icon: I, hint, action, children }: { title: string; icon: React.ComponentType<{ className?: string }>; hint?: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="space-y-1.5">
-      <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"><I className="size-3.5" /> {title}</p>
+    <section className="space-y-2.5 rounded-xl border bg-background/40 p-3">
+      <header className="flex min-w-0 items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+        <I className="size-3.5 shrink-0" /> <span className="shrink-0">{title}</span>
+        {hint && <span className="truncate font-normal tracking-normal normal-case">· {hint}</span>}
+        {action && <span className="ml-auto shrink-0 tracking-normal normal-case">{action}</span>}
+      </header>
       {children}
-    </div>
+    </section>
   );
 }
 
@@ -1219,20 +1579,42 @@ const AI_CHIPS = [
   "Rapikan timing caption supaya pas dengan suara",
   "Caption kuning huruf besar di tengah layar",
   "Kecilkan musik saat ada suara, keraskan di akhir",
-  "Tambah caption ajakan 'cek keranjang kuning' di 2 detik terakhir",
+  "Tambah caption ajakan 'cek keranjang di bawah' di 2 detik terakhir",
   "Animasi pop, caption agak ke atas di tengah",
 ];
 
 function AiPanel({
-  busy, hasBgm, onRun, onDirector, versions, onPick,
+  busy, hasBgm, onRun, onDirector, versions, onPick, hooks, onHooks, onTryHook, onExportHooks, exporting,
 }: {
   busy: boolean; hasBgm: boolean; onRun: (s: string) => void; onDirector: (wish: string) => void;
   versions: { edit: ProjectEdit; note: string }[]; onPick: (v: { edit: ProjectEdit; note: string }) => void;
+  hooks: { edit: ProjectEdit; note: string; hook: string }[]; onHooks: () => void; onTryHook: (v: { edit: ProjectEdit }) => void; onExportHooks: () => void; exporting: boolean;
 }) {
   const [text, setText] = useState("");
   const chips = useMemo(() => (hasBgm ? AI_CHIPS : AI_CHIPS.filter((c) => !/musik/i.test(c))), [hasBgm]);
   return (
     <div className="space-y-3">
+      <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-2.5">
+        <p className="flex items-center gap-1.5 text-xs font-medium"><Split className="size-3.5" /> Varian hook A/B</p>
+        <p className="text-[11px] text-muted-foreground">3 versi yang cuma beda kalimat pembuka (3 detik pertama). Isi video, gaya & musik sama, jadi yang dites benar-benar hook-nya. Posting di jam berbeda, lihat mana yang paling ditonton. Butuh voice-over utuh (Cartesia).</p>
+        <div className="flex flex-wrap gap-1.5">
+          <button type="button" className={primary} disabled={busy || exporting} onClick={onHooks}>
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Split className="size-3.5" />} {hooks.length ? "Buat ulang varian" : "Buat 3 varian hook"}
+          </button>
+          {hooks.length > 0 && (
+            <button type="button" className={secondary} disabled={busy || exporting} onClick={onExportHooks}>
+              {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />} Export {hooks.length} varian
+            </button>
+          )}
+        </div>
+        {hooks.map((v, i) => (
+          <div key={i} className="flex items-start gap-2 rounded-md border bg-background p-2">
+            <span className="grid size-6 shrink-0 place-items-center rounded bg-amber-500/15 text-[11px] font-bold text-amber-600 dark:text-amber-400">{"ABCD"[i]}</span>
+            <p className="min-w-0 flex-1 text-[11px] text-muted-foreground">{v.note}</p>
+            <button type="button" className={secondary} disabled={busy || exporting} onClick={() => onTryHook(v)}>Coba</button>
+          </div>
+        ))}
+      </div>
       <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-2.5">
         <p className="flex items-center gap-1.5 text-xs font-medium"><Clapperboard className="size-3.5" /> AI Director</p>
         <p className="text-[11px] text-muted-foreground">Buat 3 versi siap posting (hook, harga, CTA, gaya caption, karaoke, transisi) dengan sudut pandang berbeda, lalu pilih satu. Butuh ±1–2 menit.</p>
@@ -1431,7 +1813,9 @@ function PostingPanel({ p }: { p: Project }) {
       <div className="flex flex-wrap gap-2">
         {url && <a href={`${url}?download`} className={primary}><Download className="size-3.5" /> Unduh final.mp4</a>}
         <button type="button" className={secondary} onClick={() => openProjectFolder(p.id).catch(() => toast.error("Gagal membuka folder"))}><FolderOpen className="size-3.5" /> Buka folder</button>
+        {url && <a href={`/jadwal?project=${p.id}`} className={secondary}><CalendarClock className="size-3.5" /> Jadwalkan upload</a>}
       </div>
+      <p className="text-[11px] text-muted-foreground">Jadwal Upload mengunggah video ini (dan varian A/B-nya) ke TikTok sendiri, lengkap dengan caption dan produk keranjang.</p>
     </div>
   );
 }

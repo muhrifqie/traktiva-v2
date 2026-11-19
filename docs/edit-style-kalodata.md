@@ -14,7 +14,7 @@ Cara ulang: `npx tsx --conditions=react-server scripts/collect-kalo-videos.mts` 
 | Suara | Voice-over/ngomong **mulai detik 0**, cepat **165–200 kata/menit** | Musik saja, tanpa omongan |
 | Gambar | Wajah + produk dipegang, 1 take | Produk dipegang tangan / dicoba di kaki, 1 take |
 | Teks layar | Tidak ada, atau subtitle 1–3 kata kecil (huruf kapital/kecil) di tengah-bawah, kadang 1 kata kuning | 2 baris kecil statis di **atas** sepanjang video ("Sepatu cakep poll / Empuk, nyaman di kaki ✨") |
-| CTA | **Lisan**: "cek keranjang kuning / link di kiri bawah" + urgensi | Tidak ada CTA di layar |
+| CTA | **Lisan**: "cek keranjang di bawah" + urgensi | Tidak ada CTA di layar |
 
 Gadget (mouse) beda: **potongan cepat ±3 dtk** (13–19 potongan per video), demo hasil (tes CPS, menu software), subtitle 1 kata kecil di ±78% tinggi, judul tebal di atas hanya 2 detik pertama (1 video).
 
@@ -36,11 +36,11 @@ Gadget (mouse) beda: **potongan cepat ±3 dtk** (13–19 potongan per video), de
 
 ## Pola penutup (CTA lisan)
 
-"cek keranjang kuning / link di kiri bawah" + urgensi: "mumpung promo", "sebelum stoknya habis", "jangan sampai gak kebagian", info pre-order. Tidak ada yang memakai stiker CTA.
+"cek keranjang di bawah" + urgensi: "mumpung promo", "sebelum stoknya habis", "jangan sampai gak kebagian", info pre-order. Tidak ada yang memakai stiker CTA.
 
 ## Dampak ke Traktiva
 
 - Default editor terlalu ramai dibanding video laku: caption besar ber-outline, badge harga, transisi. Sediakan preset **minimal** dan jadikan efek opsional (default mati).
 - Template per format: **Review** (VO dari detik 0, hook jangkar harga, CTA lisan + urgensi, subtitle 1–3 kata kecil), **Estetik** (15–20 dtk, musik, teks 2 baris kecil di atas), **Demo cepat** (gadget: potong 2–3 dtk).
-- Naskah voice-over: ±2,8–3,3 kata/detik; CTA keranjang kuning ada di naskah, bukan stiker.
+- Naskah voice-over: ±2,8–3,3 kata/detik; CTA keranjang di bawah ada di naskah, bukan stiker.
 - Export: normalisasi loudness ke ±−15 LUFS.

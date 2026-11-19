@@ -2,9 +2,9 @@ import "server-only";
 import fs from "node:fs/promises";
 import { and, eq, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { accounts, shopCache, showcaseProducts } from "@/lib/db/schema";
+import { accounts, shopCache, showcaseProducts, type ProductDetail } from "@/lib/db/schema";
 import { resolveMedia, saveResult } from "@/lib/media";
-import { fetchShopSnapshot, type ShowcaseProduct } from "@/lib/platforms/tiktok-shop";
+import { fetchProductDetail, fetchShopSnapshot, type ShowcaseProduct } from "@/lib/platforms/tiktok-shop";
 import { getSettings } from "@/lib/settings";
 
 // Local mirror of each TikTok account's showcase + background auto-sync.
@@ -112,4 +112,50 @@ export function startShowcaseAutoSync() {
   if (!minutes) return;
   g.__showcaseTimer = setInterval(() => void syncAllShowcases().catch(() => {}), minutes * 60_000);
   g.__showcaseTimer.unref?.();
+}
+
+// ---------------------------------------------------------------- product detail (opened from the showcase)
+
+const DETAIL_TTL = 24 * 3600_000; // price/stock change; re-read after a day
+
+/** The saved detail of a showcase product, read from TikTok when missing, older than a day, or `force`. */
+export async function loadProductDetail(showcaseId: number, force = false) {
+  const row = await db.select().from(showcaseProducts).where(eq(showcaseProducts.id, showcaseId)).get();
+  if (!row) throw new Error("Produk tidak ditemukan. Sinkronkan etalase lagi.");
+  if (!force && row.detail && row.detailAt && Date.now() - row.detailAt.getTime() < DETAIL_TTL) return { ...row, detail: row.detail };
+  const acc = await getTiktokAccount(row.accountId);
+  const { imageUrls, ...raw } = await fetchProductDetail(acc.sessionKey, row.productId);
+  // photos are cached (TikTok CDN links expire); 4 downloads at a time
+  const images: string[] = new Array(imageUrls.length).fill("");
+  const queue = imageUrls.map((u, i) => ({ u, i }));
+  await Promise.all(
+    Array.from({ length: 4 }, async () => {
+      for (let it = queue.shift(); it; it = queue.shift()) images[it.i] = (await saveResult(it.u, `${COVERS}/${row.productId}/foto-${it.i + 1}`, /\.webp(\?|$)/.test(it.u) ? ".webp" : ".jpg").catch(() => "")) || "";
+    }),
+  );
+  const detail: ProductDetail = { ...raw, images: images.filter(Boolean) };
+  const detailAt = new Date();
+  await db.update(showcaseProducts).set({ detail, detailAt }).where(eq(showcaseProducts.id, row.id));
+  return { ...row, detail, detailAt };
+}
+
+/** Product facts for the AI writers (goes into product.details): short, factual, no invented claims. */
+export function detailFacts(d: ProductDetail) {
+  const n = (x: number) => new Intl.NumberFormat("id-ID").format(x);
+  const facts = [
+    d.sold ? `terjual ${n(d.sold)}` : null,
+    d.rating ? `rating ${String(d.rating).replace(".", ",")}${d.reviews ? ` dari ${n(d.reviews)} ulasan` : ""}` : null,
+    d.originalPrice ? `harga coret ${d.originalPrice}${d.discount ? ` (${d.discount.replace(/^Save up to /i, "hemat sampai ")})` : ""}` : null,
+    ...d.variants.filter((v) => v.values.length).map((v) => `${v.name}: ${v.values.slice(0, 8).join(", ")}${v.values.length > 8 ? ", ..." : ""}`),
+    d.shipping,
+    d.shop?.name ? `toko ${d.shop.name.replace(/\.+$/, "")}` : null,
+  ].filter(Boolean);
+  // the description's first lines carry the selling points; drop the "* Judul:" echo of the title
+  const desc = d.description
+    .split("\n")
+    .map((l) => l.replace(/^[*•\-\s]+/, "").replace(/[.\s]+$/, "").trim())
+    .filter((l) => l && !/^judul\s*:/i.test(l))
+    .join(". ")
+    .replace(/\s+/g, " ");
+  return `${facts.join("; ")}${desc ? `. Deskripsi penjual: ${desc}` : ""}`.slice(0, 1000);
 }

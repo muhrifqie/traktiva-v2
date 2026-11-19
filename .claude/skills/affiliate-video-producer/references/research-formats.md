@@ -25,7 +25,7 @@ TikTok guidance (official): hook in the first 3–6 s and related to the product
 
 ## Closing (spoken CTA)
 
-"cek keranjang kuning" / "link di kiri bawah" + light urgency only when true: "mumpung masih promo", pre-order note. Never a sticker by default.
+"cek keranjang di bawah" + light urgency only when true: "mumpung masih promo", pre-order note. Never a sticker by default.
 
 ## Pace
 

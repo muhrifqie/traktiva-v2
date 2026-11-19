@@ -28,7 +28,7 @@ Ground every creative choice in data, not taste: `references/research-formats.md
 
 ## Rules
 
-- Product visible in the first frame; first spoken line is the hook (0–3 s); CTA is spoken ("cek keranjang kuning" / "link di kiri bawah"). Price badges, CTA stickers and flashy transitions were used by 0/30 best sellers: add them only if the owner asks.
+- Product visible in the first frame; first spoken line is the hook (0–3 s); CTA is spoken ("cek keranjang di bawah"). Price badges, CTA stickers and flashy transitions were used by 0/30 best sellers: add them only if the owner asks.
 - Text on screen stays small (Minimal preset, 1–2 word subtitles, or a 2-line "info" text at the top).
 - Variations for testing = change the hook and format, keep the body; 3 versions max per run (AI Director in the editor does this).
 - Automation on TikTok/Google accounts: mention ban/limit risk when a plan needs many generations or posts.

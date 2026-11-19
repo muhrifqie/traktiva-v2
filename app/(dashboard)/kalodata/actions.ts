@@ -9,7 +9,9 @@ import { accounts, kaloSessions, videoProjects } from "@/lib/db/schema";
 import { isCountry, SHOPEE_MARKETS, type CountryCode } from "@/lib/countries";
 import { getKv, kalo, kaloRange, setKv } from "@/lib/kalo";
 import { createProjectFolder, extractFrames, saveResult } from "@/lib/media";
-import { defaultOptions, presetById } from "@/lib/presets";
+import { defaultOptions, parseDuration, presetById } from "@/lib/presets";
+
+const medianSec = (xs: number[]) => { const v = xs.filter((x) => x > 0).sort((a, b) => a - b); return v.length ? Math.round(v[Math.floor(v.length / 2)]) : 0; };
 import { KaloClient, KaloError, parseKaloNumber, signupKalodata, type KaloCreator, type KaloHistoryPoint, type KaloProductInfo, type KaloProductTotal, type KaloShopeeProduct, type KaloTopProduct, type KaloTopVideo, type KaloVideo } from "@/lib/kalodata";
 import { addToShowcase } from "@/lib/platforms/tiktok-shop";
 import { mirrorShowcase } from "@/lib/showcase";
@@ -207,6 +209,11 @@ export async function kaloVideoUrl(videoId: string, country: string = "ID") {
  * - script: voice lines built from the product data and the top video's caption (speech-to-text comes later via Gemini)
  */
 export async function createVideoFromKalo(productId: string, country: string = "ID") {
+  redirect(`/video/${await createProjectFromKalo(productId, country)}`);
+}
+
+/** createVideoFromKalo without the redirect (Autopilot): returns the new project id. */
+export async function createProjectFromKalo(productId: string, country: string = "ID") {
   const id = z.string().regex(/^\d{10,22}$/).parse(productId);
   const cc: CountryCode = isCountry(country) ? country : "ID";
   const d = await kaloDetail(id, cc);
@@ -262,11 +269,11 @@ export async function createVideoFromKalo(productId: string, country: string = "
     { label: "Detail", imagePrompt: `Macro detail shot of ${prod} showing texture and quality, ${look}`, motionPrompt: `Slow pan across the product details. Voice: "Lihat detailnya, rapi banget."` },
     { label: "Pakai", imagePrompt: `A person using ${prod} in a real everyday moment at home, product clearly visible, ${look}`, motionPrompt: `The person uses the product naturally in one smooth action. Voice: "Dipakai tiap hari juga enak banget."` },
     // spoken CTA without invented urgency (0/30 best sellers used a CTA sticker; the CTA is said, not shown)
-    { label: "Ajakan", imagePrompt: `${prod} placed neatly with a hand pointing to it, clean background, ${look}`, motionPrompt: `Hand points at the product, then a thumbs up. Voice: "${price ? `Cuma ${price}, ` : ""}cek keranjang kuning ya!"` },
+    { label: "Ajakan", imagePrompt: `${prod} placed neatly with a hand pointing to it, clean background, ${look}`, motionPrompt: `Hand points at the product, then a thumbs up. Voice: "${price ? `Cuma ${price}, ` : ""}cek keranjang di bawah ya!"` },
   ].map((s, i) => ({ ...s, image: null, clip: null, styleRef: frames[i] ?? null }));
 
   const tags = (top?.description.match(/#[\p{L}\p{N}_]+/gu) ?? []).slice(0, 6).join(" ");
-  const caption = `${short} lagi rame banget! ${price ? `Cuma ${price}. ` : ""}Cek keranjang kuning ya 🛒\n\n${tags || "#racuntiktok #tiktokshop #fyp"}`;
+  const caption = `${short} lagi rame banget! ${price ? `Cuma ${price}. ` : ""}Cek keranjang di bawah ya 🛒\n\n${tags || "#racuntiktok #tiktokshop #fyp"}`;
   await db
     .update(videoProjects)
     .set({
@@ -275,8 +282,14 @@ export async function createVideoFromKalo(productId: string, country: string = "
       product,
       scenes,
       caption,
-      options: { ...defaultOptions(preset), refVideo: refVideo ?? "", refCaption: top?.description?.slice(0, 300) ?? "" },
+      options: {
+        ...defaultOptions(preset),
+        refVideo: refVideo ?? "",
+        refCaption: top?.description?.slice(0, 300) ?? "",
+        // median length of the product's 3 best-selling videos: the Gaya step suggests a format from it
+        refDuration: String(medianSec([...d.videos].sort((a, b) => parseKaloNumber(b.revenue) - parseKaloNumber(a.revenue)).slice(0, 3).map((v) => parseDuration(v.duration)))),
+      },
     })
     .where(eq(videoProjects.id, projectId));
-  redirect(`/video/${projectId}`);
+  return projectId;
 }

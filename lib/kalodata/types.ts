@@ -128,6 +128,7 @@ export interface KaloTopProduct {
   creator_num: number;
   commission_rate: string;
   launch_date?: string;
+  collect_day?: string; // first day KaloData tracked the product (YYYY-MM-DD)
   revenue_trend?: number[];
 }
 

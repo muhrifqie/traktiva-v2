@@ -10,7 +10,7 @@
 
 ## Say instead
 
-"bisa bantu …", "kerasa lebih …", "buat aku …", "hasil tiap orang bisa beda", "mumpung masih promo" (only with a real promo), "cek keranjang kuning ya".
+"bisa bantu …", "kerasa lebih …", "buat aku …", "hasil tiap orang bisa beda", "mumpung masih promo" (only with a real promo), "cek keranjang di bawah ya".
 
 ## Disclosure
 

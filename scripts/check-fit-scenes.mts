@@ -1,0 +1,18 @@
+import assert from "node:assert";
+import { fitScenes, parseDuration, suggestFromRef } from "../lib/presets";
+const s = (l: string) => ({ label: l, imagePrompt: l, motionPrompt: l });
+const base = ["A", "B", "C", "D"].map(s);
+assert.deepEqual(fitScenes(base, 0), base);
+assert.deepEqual(fitScenes(base, 2).map((x) => x.label), ["A", "D"]);
+assert.deepEqual(fitScenes(base, 1).map((x) => x.label), ["A"]);
+assert.deepEqual(fitScenes(base, 7).map((x) => x.label), ["A", "B", "C", "B 2", "C 2", "B 3", "D"]);
+assert.deepEqual(fitScenes(base.slice(0, 2), 4).map((x) => x.label), ["A", "A 2", "A 3", "B"]);
+assert.equal(fitScenes<ReturnType<typeof s> & { styleRef?: string }>([{ ...s("A"), styleRef: "x" }, s("B")], 3)[1].styleRef, "x");
+assert.equal(parseDuration("00:15"), 15);
+assert.equal(parseDuration("1:02:03"), 3723);
+assert.equal(parseDuration("15s"), 15);
+assert.deepEqual(suggestFromRef(9), { format: "short", clips: 1, clipSec: 10 });
+assert.deepEqual(suggestFromRef(30), { format: "short", clips: 5, clipSec: 6 });
+assert.equal(suggestFromRef(90)?.format, "long");
+assert.equal(suggestFromRef(0), null);
+console.log("presets ok");

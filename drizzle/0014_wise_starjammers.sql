@@ -1,0 +1,21 @@
+CREATE TABLE `upload_jobs` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`account_id` integer NOT NULL,
+	`project_id` integer,
+	`video` text NOT NULL,
+	`label` text,
+	`caption` text DEFAULT '' NOT NULL,
+	`product_id` text,
+	`product_title` text,
+	`hook` text,
+	`scheduled_at` integer NOT NULL,
+	`status` text DEFAULT 'queued' NOT NULL,
+	`progress` text,
+	`error` text,
+	`attempts` integer DEFAULT 0 NOT NULL,
+	`posted_at` integer,
+	`post_id` text,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	FOREIGN KEY (`account_id`) REFERENCES `accounts`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`project_id`) REFERENCES `video_projects`(`id`) ON UPDATE no action ON DELETE set null
+);

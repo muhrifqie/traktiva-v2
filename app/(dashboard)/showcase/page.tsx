@@ -100,6 +100,7 @@ export default async function ShowcasePage({ searchParams }: PageProps<"/showcas
               shopName: r.shopName,
               cover: r.cover,
               labels: r.labels,
+              hasDetail: !!r.detail,
             }))}
             neverSynced={!lastSync}
           />}

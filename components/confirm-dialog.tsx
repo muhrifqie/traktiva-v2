@@ -15,7 +15,7 @@ let show: ((r: Request) => void) | null = null;
 export function confirmDialog(opts: Options): Promise<boolean> {
   return new Promise((resolve) => {
     if (show) show({ ...opts, resolve });
-    else resolve(window.confirm(opts.description ? `${opts.title}\n\n${opts.description}` : opts.title)); // host not mounted yet
+    else resolve(false); // host not mounted yet: treat as "cancel" (never fall back to the browser's native dialog)
   });
 }
 

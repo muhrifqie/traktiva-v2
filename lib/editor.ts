@@ -6,13 +6,16 @@ import { promisify } from "node:util";
 import ffmpegPath from "ffmpeg-static";
 import type { VideoProject } from "@/lib/db/schema";
 import {
-  ACCENTS, ANIM_DUR, autoCaptions, captionsFromWords, CAPTION_ANIMS, CAPTION_FONTS, CAPTION_PRESETS, OUT_DUR, clamp, cutsOf, DEFAULT_CAPTION_STYLE, DEFAULT_FX, DEFAULT_SAFE, FX, needsNormalize, normalizeEdit, OVERLAY_KINDS, round2, TRANSITIONS, uid,
+  ACCENTS, ANIM_DUR, autoCaptions, captionsFromWords, CAPTION_ANIMS, CAPTION_FONTS, CAPTION_PRESETS, OUT_DUR, clamp, cutsOf, DEFAULT_CAPTION_STYLE, DEFAULT_FX, DEFAULT_SAFE, FX, exportSize, needsNormalize, normalizeEdit, OVERLAY_KINDS, round2, TRANSITIONS, uid,
   type CaptionAnim, type EditOverlay, type EditVoice, type ProjectEdit,
 } from "@/lib/edit";
 import { probeMedia, resolveMedia, writeMedia } from "@/lib/media";
 import { concat } from "@/lib/projects";
 import { isSilent } from "@/lib/presets";
 import { voiceLine } from "@/lib/voice";
+import { writingRules } from "@/lib/settings";
+import { applyRules, rulesPrompt } from "@/lib/writing";
+import { provenHooksPrompt } from "@/lib/insights";
 
 const run = promisify(execFile);
 const exists = (rel: string) => fs.stat(resolveMedia(rel)).then((s) => s.isFile(), () => false);
@@ -21,6 +24,16 @@ const exists = (rel: string) => fs.stat(resolveMedia(rel)).then((s) => s.isFile(
  * Editor state for a rendered project. The base video is the raw Flow clips joined WITHOUT the Cartesia voice
  * (so voice, captions and music stay separate, editable tracks). Built once; rebuilt when the clips change.
  */
+/**
+ * "Video Panjang": each scene's label (= its chapter title from the outline) as a small text at the top for the
+ * first 2.5 s of that scene. Re-running replaces only these auto titles (ids "bab-…").
+ */
+export function withChapters(p: VideoProject, e: ProjectEdit): ProjectEdit {
+  if (p.options.format !== "long" || e.clips.length < 2) return e;
+  const titles = e.clips.map((c, i) => ({ id: `bab-${i}`, kind: "info" as const, start: c.start, end: round2(Math.min(c.start + 2.5, c.start + c.dur)), text: c.label ?? `Bagian ${i + 1}`, x: 0.5, y: 0.1, size: 0.036, anim: "fade" as const }));
+  return { ...e, overlays: [...e.overlays.filter((o) => !o.id.startsWith("bab-")), ...titles] };
+}
+
 export async function prepareEdit(p: VideoProject): Promise<ProjectEdit> {
   if (p.scenes.some((s) => !s.clip)) throw new Error("Render semua klip dulu.");
   // a Cartesia clip is "<raw>-vo.mp4"; its raw clip and voice WAV (suara/<raw>.wav) are kept next to it
@@ -30,7 +43,7 @@ export async function prepareEdit(p: VideoProject): Promise<ProjectEdit> {
       const raw = vo ? s.clip!.replace(/-vo\.mp4$/, ".mp4") : s.clip!;
       const wav = `${p.folder}/suara/${path.basename(raw, ".mp4")}.wav`;
       const useRaw = vo && (await exists(raw)) && (await exists(wav));
-      return { src: useRaw ? raw : s.clip!, wav: useRaw ? wav : null, label: s.label, line: voiceLine(s.motionPrompt) };
+      return { src: useRaw ? raw : s.clip!, wav: useRaw ? wav : null, label: s.label, line: (l => l && applyRules(l, writingRules()))(voiceLine(s.motionPrompt)) };
     }),
   );
   const baseKey = parts.map((x) => x.src).join("|");
@@ -62,7 +75,8 @@ export async function prepareEdit(p: VideoProject): Promise<ProjectEdit> {
     ? voices.map((v) => ({ start: v.start, dur: v.dur / v.speed, text: v.text ?? "" }))
     : silent ? [] : parts.map((x, i) => ({ start: clips[i].start + 0.3, dur: Math.max(0.5, clips[i].dur - 0.8), text: x.line ?? "" }));
 
-  return {
+  // a fresh build (new or changed clips) gets the long-video chapter titles at the new clip times
+  return withChapters(p, {
     base,
     baseKey,
     duration: round2(info.seconds || t),
@@ -80,7 +94,7 @@ export async function prepareEdit(p: VideoProject): Promise<ProjectEdit> {
     voiceVolume: old?.voiceVolume ?? 1,
     bgm: old?.bgm ?? null,
     sfx: old?.sfx ?? [],
-  };
+  });
 }
 
 export type CaptionOverlay = { start: number; end: number; x: number; y: number; w: number; h: number; png: string; anim?: CaptionAnim; out?: boolean };
@@ -103,8 +117,12 @@ function fxFilter(e: ProjectEdit) {
 }
 
 /** Burn captions (PNG overlays drawn by the editor) + mix clip sound, voice-over and music → final.mp4 at -15 LUFS (best sellers sit around -17..-12). */
-export async function exportEdit(p: VideoProject, e: ProjectEdit, overlays: CaptionOverlay[]) {
+export async function exportEdit(p: VideoProject, src: ProjectEdit, overlays: CaptionOverlay[], name = "final") {
   if (!ffmpegPath) throw new Error("ffmpeg tidak tersedia di perangkat ini.");
+  // everything below works at the export size (1080p); the base video is upscaled once, captions arrive drawn at it
+  const size = exportSize(src);
+  const upscale = size.w !== src.width;
+  const e: ProjectEdit = { ...src, width: size.w, height: size.h };
   const D = e.duration;
   const args = ["-y", "-i", resolveMedia(e.base)];
   let n = 1;
@@ -125,9 +143,14 @@ export async function exportEdit(p: VideoProject, e: ProjectEdit, overlays: Capt
 
   const f: string[] = [];
   let v = "0:v";
+  if (upscale) {
+    // Lanczos upscale + a light sharpen (AI clips are soft); square pixels for players that read SAR
+    f.push(`[0:v]scale=${e.width}:${e.height}:flags=lanczos,unsharp=5:5:0.45:5:5:0,setsar=1[up]`);
+    v = "up";
+  }
   const fxChain = fxFilter(e);
   if (fxChain) {
-    f.push(`[0:v]${fxChain}[fx]`);
+    f.push(`[${v}]${fxChain}[fx]`);
     v = "fx";
   }
   overlays.forEach((o, i) => {
@@ -193,13 +216,16 @@ export async function exportEdit(p: VideoProject, e: ProjectEdit, overlays: Capt
   });
   f.push(`${mix.join("")}amix=inputs=${mix.length}:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95,loudnorm=I=-15:TP=-1.5:LRA=11,aresample=48000[aout]`);
 
-  const out = `${p.folder}/final.mp4`;
-  const tmp = resolveMedia(`${dir}/export.mp4`);
+  const out = `${p.folder}/${name}.mp4`;
+  const tmp = resolveMedia(`${dir}/export-${name}.mp4`);
   await run(ffmpegPath, [
     ...args,
     "-filter_complex", f.join(";"),
     "-map", v === "0:v" ? "0:v" : `[${v}]`, "-map", "[aout]", "-t", String(D),
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k",
+    // upload master for TikTok: H.264 High 4.2, ~8–14 Mbps at 1080p (TikTok re-encodes; a rich source keeps detail)
+    "-c:v", "libx264", "-preset", "slow", "-crf", "17", "-maxrate", "14M", "-bufsize", "28M", "-profile:v", "high", "-level", "4.2",
+    "-pix_fmt", "yuv420p", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
+    "-c:a", "aac", "-b:a", "192k",
     "-map_metadata", "-1", "-map_chapters", "-1", "-metadata:s:v:0", "handler_name=VideoHandler", "-metadata:s:a:0", "handler_name=SoundHandler",
     "-fflags", "+bitexact", "-flags:v", "+bitexact", "-flags:a", "+bitexact", "-movflags", "+faststart", tmp,
   ], { windowsHide: true, maxBuffer: 32 * 1024 * 1024 }).catch((err) => {
@@ -225,7 +251,8 @@ const DIRECTOR_ANGLES = [
  * as they are. Every value is clamped here. `director` = build a complete ready-to-post version.
  */
 export async function aiAdjustEdit(p: VideoProject, e: ProjectEdit, instruction: string, opts: { director?: boolean; angle?: number } = {}) {
-  const { askGemini, extractJson } = await import("@/lib/platforms/gemini");
+  const { extractJson } = await import("@/lib/platforms/gemini");
+  const { askWriter } = await import("@/lib/writer");
   const { geminiAccount } = await import("@/lib/prompt-writer");
   const g = await geminiAccount();
   const state = {
@@ -245,7 +272,7 @@ export async function aiAdjustEdit(p: VideoProject, e: ProjectEdit, instruction:
   const wish = instruction.replace(/"/g, "'").slice(0, 600);
   const task = opts.director
     ? `Act as the video's director: produce a complete, ready-to-post edit in the style of best-selling Indonesian TikTok affiliate videos.
-- What the data says: the product is shown from second 0, text on screen is small and quiet, 0 of 30 best sellers used price badges or CTA stickers, 0 used flashy transitions; the CTA ("cek keranjang kuning") is SPOKEN, so only add "harga"/"cta" stickers if the user asks for them.
+- What the data says: the product is shown from second 0, text on screen is small and quiet, 0 of 30 best sellers used price badges or CTA stickers, 0 used flashy transitions; the CTA ("cek keranjang di bawah") is SPOKEN, so only add "harga"/"cta" stickers if the user asks for them.
 - Rewrite captions to be punchy (still matching the voice timing).
 - ${DIRECTOR_ANGLES[(opts.angle ?? 0) % DIRECTOR_ANGLES.length]}
 Extra wishes from the user (Indonesian, may be empty): "${wish}"`
@@ -258,8 +285,9 @@ ${JSON.stringify(state)}
 ${task}
 
 Rules:
-- Captions are on-screen text in casual Indonesian, max ~5 words each, must not overlap, must stay inside 0..durationSec, and should match when the voice speaks.
-- captionStyle.preset is one of ${CAPTION_PRESETS.map((x) => x.id).join("|")} (minimal = small white text, what most best sellers use); captionStyle.font is one of ${CAPTION_FONTS.map((f) => f.id).join("|")}; captionStyle.anim is the entrance animation, one of ${CAPTION_ANIMS.map((a) => a.id).join("|")}; captionStyle.out true = fade out at the end; captionStyle.karaoke true = the spoken word lights up in captionStyle.accent (one of ${ACCENTS.join(", ")}); captionStyle.x / captionStyle.y are the horizontal / vertical center (0-1; text is kept inside the safe area "safe" automatically); captionStyle.size is font size / video width (0.04-0.09); captionStyle.upper true = UPPERCASE.
+${rulesPrompt(writingRules())}
+- Captions are on-screen text in casual Indonesian, max ~5 words each, must not overlap, must stay inside 0..durationSec, and should match when the voice speaks. Write numbers as digits the way Indonesian TikTok captions do: prices "Rp34.900" / "Rp34 ribuan" / "Rp1,5 juta", ratings "4,8", counts "5.000+ terjual", "50%"; no trailing period or comma.
+- captionStyle.preset is one of ${CAPTION_PRESETS.map((x) => x.id).join("|")} (minimal = small white text, what most best sellers use); captionStyle.font is one of ${CAPTION_FONTS.filter((f) => !f.hidden).map((f) => `${f.id} (${f.mood})`).join(", ")}; optional fine-tuning: captionStyle.stroke (outline 0-0.3 of font size), shadow (0-1), spacing (letter spacing em, -0.05-0.3), lineHeight (0.9-1.6), light (thinner weight); captionStyle.anim is the entrance animation, one of ${CAPTION_ANIMS.map((a) => a.id).join("|")}; captionStyle.out true = fade out at the end; captionStyle.karaoke true = the spoken word lights up in captionStyle.accent (one of ${ACCENTS.join(", ")}); captionStyle.x / captionStyle.y are the horizontal / vertical center (0-1; text is kept inside the safe area "safe" automatically); captionStyle.size is font size / video width (0.04-0.09); captionStyle.upper true = UPPERCASE.
 - overlays are stickers on their own track: kind is one of judul|harga|cta|info (info = small 2-line text at the top for the whole video, use \\n for the line break); x/y center 0-1; size 0.04-0.1; anim like captions. Keep them from covering the captions (different y).
 - fx.transition at each clip cut is one of ${TRANSITIONS.map((t) => t.id).join("|")}; fx.kenburns true = slow zoom on every clip.
 - You may move voices (start), change their volume (0-2) or speed (0.8-1.4). Keep voices from overlapping each other.
@@ -276,7 +304,7 @@ Output ONLY JSON with the same shape: {"captions":[...],"captionStyle":{...},"ov
     voiceVolume?: number;
     bgm?: { volume?: number; offset?: number; fade?: boolean };
     note?: string;
-  }>(await askGemini(g.sessionKey, prompt).then((raw) => (answerLog.last = raw)));
+  }>(await askWriter(g.sessionKey, prompt).then((r) => (answerLog.last = r.text)));
   if (!ans || typeof ans !== "object") throw new Error("Jawaban Gemini tidak terbaca. Coba lagi.");
 
   const D = e.duration;
@@ -287,7 +315,7 @@ Output ONLY JSON with the same shape: {"captions":[...],"captionStyle":{...},"ov
       .filter((c) => c && String(c.text ?? "").trim())
       .map((c) => {
         const start = round2(clamp(Number(c.start), 0, D - 0.2));
-        return { id: uid(), start, end: round2(clamp(Number(c.end), start + 0.2, D)), text: String(c.text).trim().slice(0, 120) };
+        return { id: uid(), start, end: round2(clamp(Number(c.end), start + 0.2, D)), text: applyRules(String(c.text).trim(), writingRules()).slice(0, 120) };
       })
       .sort((a, b) => a.start - b.start)
       .slice(0, 80);
@@ -321,7 +349,7 @@ Output ONLY JSON with the same shape: {"captions":[...],"captionStyle":{...},"ov
           kind: k.id,
           start,
           end: round2(clamp(Number(o.end ?? start + 2), start + 0.3, D)),
-          text: String(o.text).trim().slice(0, 60),
+          text: applyRules(String(o.text).trim(), writingRules()).slice(0, 60),
           x: round2(clamp(Number(o.x ?? 0.5), 0.1, 0.9)),
           y: round2(clamp(Number(o.y ?? k.y), 0.1, 0.9)),
           size: clamp(Number(o.size ?? k.size), 0.035, 0.12),
@@ -349,7 +377,8 @@ Output ONLY JSON with the same shape: {"captions":[...],"captionStyle":{...},"ov
 
 /** The spoken script for the whole video: Gemini writes it once, sized to the video at ~2.6 words per second. */
 export async function writeFullScript(p: VideoProject, e: ProjectEdit, wish = "") {
-  const { askGemini, extractJson } = await import("@/lib/platforms/gemini");
+  const { extractJson } = await import("@/lib/platforms/gemini");
+  const { askWriter } = await import("@/lib/writer");
   const { geminiAccount } = await import("@/lib/prompt-writer");
   const g = await geminiAccount();
   const words = Math.round(e.duration * 2.6);
@@ -361,12 +390,14 @@ Rules (from 30 best-selling Indonesian affiliate videos):
 - About ${words} words (brisk natural pace, ~2.6 words per second). Casual everyday Indonesian, light Jakarta slang, like talking to a friend.
 - First sentence = hook: a price anchor ("looknya kayak jutaan, padahal cuma ..."), a "stop doing X" line, a demo challenge ("kalian bisa gini ga?") or "lagi booming". Only quote prices that are in the product data.
 - Middle: concrete benefits you can see in the scenes.
-- End with a spoken call to action: "cek keranjang kuning" (or "link di kiri bawah"), with light urgency only if the data supports it. No invented discounts, stock limits, medical or absolute claims. Never use absolute words like "dijamin", "100%", "pasti", "paling" and never say "kehabisan"/"stok terbatas"/"sebelum habis" unless the product data says stock is limited; neutral urgency like "mumpung masih promo" only if a promo is in the data, otherwise just "cek keranjang kuning ya".
-- Write numbers the way they are spoken ("85 ribu", "4 koma 8").
+- End with the spoken call to action from the owner's rules below, with light urgency only if the data supports it. No invented discounts, stock limits, medical or absolute claims. Never use absolute words like "dijamin", "100%", "pasti", "paling" and never say "kehabisan"/"stok terbatas"/"sebelum habis" unless the product data says stock is limited; neutral urgency like "mumpung masih promo" only if a promo is in the data, otherwise just the plain call to action.
+- Write numbers with digits as they would appear on screen: prices "Rp34.900" (or "Rp34 ribuan" when rounding), ratings "4,8", counts "5.000+ terjual", "50%". They are spoken correctly automatically, never spell them out in words. Use the product price exactly as given.
+${rulesPrompt(writingRules())}
+${await provenHooksPrompt()}
 ${wish ? `Extra wishes: "${wish.replace(/"/g, "'").slice(0, 300)}"` : ""}
 Output ONLY JSON: {"script":"..."}`;
-  const ans = extractJson<{ script?: string }>(await askGemini(g.sessionKey, prompt));
-  const script = String(ans?.script ?? "").replace(/\s+/g, " ").trim();
+  const ans = extractJson<{ script?: string }>((await askWriter(g.sessionKey, prompt)).text);
+  const script = applyRules(String(ans?.script ?? "").replace(/\s+/g, " ").trim(), writingRules());
   if (script.split(" ").length < 5) throw new Error("Naskah dari Gemini kosong. Coba lagi.");
   return script;
 }
@@ -382,7 +413,7 @@ export async function fullVoiceOver(p: VideoProject, e: ProjectEdit, script: str
   const defaults = getSettings().voice ?? { provider: "flow" };
   const pv = projectVoice(p.options, defaults);
   if (!defaults.cartesiaKey || !pv.voiceId) throw new Error("Pilih suara Cartesia dulu (Pengaturan AI → Suara).");
-  const { wav, words: timed } = await synthesizeTimed(defaults.cartesiaKey, spoken(script), pv.voiceId, { speed: pv.speed });
+  const { wav, words: timed } = await synthesizeTimed(defaults.cartesiaKey, spoken(applyRules(script, writingRules())), pv.voiceId, { speed: pv.speed });
   const src = await writeMedia(`${p.folder}/suara/vo-utuh-${Date.now().toString(36)}.wav`, wav);
   const dur = (await probeMedia(src)).seconds;
   const at = 0.1;
@@ -424,7 +455,7 @@ export async function fitClipsToVoice(p: VideoProject, e: ProjectEdit): Promise<
   const parts: string[] = [];
   for (const [i, c] of e.clips.entries()) {
     const rel = `${dir}/fit-${i + 1}.mp4`;
-    await run(ffmpegPath, ["-y", "-i", resolveMedia(c.src), "-t", String(keep[i]), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", resolveMedia(rel)], { windowsHide: true });
+    await run(ffmpegPath, ["-y", "-i", resolveMedia(c.src), "-t", String(keep[i]), "-c:v", "libx264", "-preset", "fast", "-crf", "14", "-c:a", "aac", "-b:a", "192k", resolveMedia(rel)], { windowsHide: true });
     parts.push(resolveMedia(rel));
   }
   const base = `${dir}/base-fit.mp4`;
@@ -452,4 +483,48 @@ export async function fitClipsToVoice(p: VideoProject, e: ProjectEdit): Promise<
     sfx: e.sfx.map((x) => ({ ...x, start: map(x.start) })),
     beforeFit: before,
   };
+}
+
+// ---------------------------------------------------------------- hook A/B variants
+
+const HOOK_PATTERNS = [
+  "price anchor (looks expensive but the real price is low; only the price in the product data)",
+  "stop doing X / a relatable problem the viewer has",
+  "demo challenge or a surprising result (\"kalian bisa gini ga?\")",
+  "lagi booming / social proof (only numbers in the product data)",
+];
+
+/**
+ * Hook A/B test: the same video with only the opening line changed. The writer gives n new first sentences
+ * (one proven pattern each), each is voiced as a new one-take voice-over (Cartesia) with its own subtitles.
+ * Body, clips, style and music stay the same, so the test isolates the hook (the first 3 seconds).
+ */
+export async function hookVariants(p: VideoProject, e: ProjectEdit, n = 3) {
+  const script = e.voices.length === 1 ? (e.voices[0].text ?? "").trim() : "";
+  if (script.split(/\s+/).length < 8) throw new Error("Varian hook butuh voice-over utuh dulu (Audio → Voice-over utuh).");
+  const first = script.match(/^.+?[.!?](?:\s|$)/)?.[0] ?? script.split(/\s+/).slice(0, 10).join(" ");
+  const rest = script.slice(first.length).trim();
+  const { extractJson } = await import("@/lib/platforms/gemini");
+  const { askWriter } = await import("@/lib/writer");
+  const { geminiAccount } = await import("@/lib/prompt-writer");
+  const g = await geminiAccount();
+  const prompt = `This is the Indonesian voice-over of a TikTok Shop affiliate video for "${p.product.name}" (price: ${p.product.price || "-"}; details: ${(p.product.details || "-").slice(0, 400)}).
+Current opening line: "${first.trim()}"
+The rest (stays the same): "${rest.slice(0, 900)}"
+Write ${n} NEW opening lines for an A/B test, each using a different pattern from: ${HOOK_PATTERNS.map((x, i) => `${i + 1}) ${x}`).join("; ")}.
+Rules: casual everyday Indonesian like talking to a friend, max 12 words, spoken in under 3 seconds, must flow into the rest naturally, no invented discounts/stock/claims, numbers and prices with digits (Rp34.900, 4,8).
+${rulesPrompt(writingRules())}
+${await provenHooksPrompt()}
+Output ONLY JSON: {"hooks":[{"pattern":"<short Indonesian name of the pattern>","line":"..."}]}`;
+  const ans = extractJson<{ hooks?: { pattern?: string; line?: string }[] }>((await askWriter(g.sessionKey, prompt)).text);
+  const hooks = (ans?.hooks ?? []).map((h) => ({ pattern: String(h.pattern ?? "Hook").slice(0, 40), line: applyRules(String(h.line ?? "").trim(), writingRules()) })).filter((h) => h.line.split(/\s+/).length >= 3).slice(0, n);
+  if (!hooks.length) throw new Error("AI tidak memberi hook baru. Coba lagi.");
+  const words = Math.max(1, Math.min(6, Math.round(e.captions.reduce((a, c) => a + c.text.split(/\s+/).length, 0) / Math.max(1, e.captions.length))));
+  const out: { edit: ProjectEdit; note: string; hook: string }[] = [];
+  for (const h of hooks) {
+    // one after another: Cartesia + the writer profile are shared
+    const r = await fullVoiceOver(p, e, `${h.line} ${rest}`.trim(), words);
+    out.push({ edit: r.edit, note: `${h.pattern}: “${h.line}”`, hook: h.line });
+  }
+  return out;
 }

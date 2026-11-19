@@ -56,6 +56,7 @@ export async function pollGoogleConnect(loginId: string): Promise<ConnectPoll> {
     if (existing && existing.sessionKey !== s.sessionKey && isProfileKey(existing.sessionKey)) {
       await deleteProfile(existing.sessionKey).catch(() => {});
     }
+    void import("@/lib/ai-standby").then((m) => m.warmAiBrowsers()); // Gemini standby uses this profile again
     refresh();
     return { status: "done", email, credits: reg.credits };
   } catch (e) {
@@ -167,6 +168,59 @@ export async function previewCartesiaVoice(id: string) {
   const { getSettings, synthesize } = await voiceLib();
   const v = getSettings().voice;
   if (!v.cartesiaKey) throw new Error("Masukkan API key Cartesia dulu.");
-  const wav = await synthesize(v.cartesiaKey, "Halo! Ini contoh suaraku buat video jualan kamu. Cek keranjang kuning ya!", id, { speed: v.speed });
+  const wav = await synthesize(v.cartesiaKey, "Halo! Ini contoh suaraku buat video jualan kamu. Cek keranjang di bawah ya!", id, { speed: v.speed });
   return `data:audio/wav;base64,${wav.toString("base64")}`;
+}
+
+// ---------------------------------------------------------------- ChatGPT (writer)
+
+export async function startChatgptConnect() {
+  const { startChatgptLogin } = await import("@/lib/platforms/chatgpt");
+  const { getSettings } = await import("@/lib/settings");
+  const key = getSettings().chatgpt?.profileKey;
+  return startChatgptLogin(key && isProfileKey(key) ? key : undefined);
+}
+
+export async function pollChatgptConnect(loginId: string): Promise<{ status: "waiting" | "failed" | "cancelled" | "done"; email?: string | null; error?: string }> {
+  const { getChatgptLogin } = await import("@/lib/platforms/chatgpt");
+  const { updateSettings } = await import("@/lib/settings");
+  const s = getChatgptLogin(z.string().uuid().parse(loginId));
+  if (!s) return { status: "failed", error: "Sesi login tidak ditemukan. Coba lagi." };
+  if (s.status !== "done") return { status: s.status, error: s.error, email: s.email };
+  updateSettings({ chatgpt: { profileKey: s.profileKey, email: s.email, connectedAt: Date.now() } });
+  void import("@/lib/ai-standby").then((m) => m.warmAiBrowsers()); // park the fresh login right away
+  refresh();
+  return { status: "done", email: s.email };
+}
+
+export async function testChatgpt() {
+  const { askChatGPT } = await import("@/lib/platforms/chatgpt");
+  const { getSettings } = await import("@/lib/settings");
+  const key = getSettings().chatgpt?.profileKey;
+  if (!key) throw new Error("ChatGPT belum dihubungkan.");
+  const t0 = Date.now();
+  const answer = await askChatGPT(key, 'Balas HANYA dengan JSON ini tanpa penjelasan: {"ok":true}', 120_000);
+  return { ok: /"ok"\s*:\s*true/.test(answer), seconds: Math.round((Date.now() - t0) / 1000), answer: answer.slice(0, 120) };
+}
+
+export async function disconnectChatgpt() {
+  const { getSettings, updateSettings } = await import("@/lib/settings");
+  const key = getSettings().chatgpt?.profileKey;
+  updateSettings({ chatgpt: null });
+  if (key) await (await import("@/lib/browser/camoufox")).stopStandby(key);
+  if (key && isProfileKey(key)) await deleteProfile(key).catch(() => {});
+  refresh();
+}
+
+const Writing = z.object({
+  cta: z.string().trim().min(3).max(80),
+  replace: z.array(z.object({ from: z.string().trim().min(2).max(40), to: z.string().trim().max(40) })).max(12),
+  notes: z.string().trim().max(500),
+});
+
+/** Pengaturan AI → Aturan naskah: CTA, banned words (auto-swapped) and extra notes for every AI writer. */
+export async function saveWritingRules(input: z.input<typeof Writing>) {
+  const { updateSettings } = await import("@/lib/settings");
+  updateSettings({ writing: Writing.parse(input) });
+  revalidatePath("/pengaturan");
 }

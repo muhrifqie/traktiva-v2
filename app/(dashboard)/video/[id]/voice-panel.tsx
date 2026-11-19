@@ -130,7 +130,7 @@ export function VoicePanel({
             {state.voiceId && (
               <button
                 type="button"
-                onClick={() => play("sample", () => previewVoiceLine("Halo! Ini suaraku buat video kamu. Cek keranjang kuning ya!", state.voiceId!, state.speed))}
+                onClick={() => play("sample", () => previewVoiceLine("Halo! Ini suaraku buat video kamu. Cek keranjang di bawah ya!", state.voiceId!, state.speed))}
                 className="flex h-8 items-center gap-1 rounded-lg border bg-card px-2.5 text-xs font-medium hover:bg-accent"
               >
                 {loading === "sample" ? <Loader2 className="size-3.5 animate-spin" /> : playing === "sample" ? <Pause className="size-3.5" /> : <Play className="size-3.5" />} Contoh

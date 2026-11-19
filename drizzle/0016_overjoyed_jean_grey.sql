@@ -1,0 +1,1 @@
+ALTER TABLE `video_projects` ADD `archived` integer DEFAULT false NOT NULL;

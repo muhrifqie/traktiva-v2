@@ -99,6 +99,8 @@ async function lockProfile(dir: string, waitMs = 90_000) {
  */
 export async function launchProfile(key: string, { headless = false }: { headless?: boolean } = {}): Promise<BrowserContext> {
   const dir = profileDir(key);
+  // a standby browser holds this profile: close it first (e.g. a visible login window for the same account)
+  if (standby.has(key)) await stopStandby(key);
   if (busy.has(key)) throw new Error("Akun ini sedang dipakai proses lain. Tunggu sebentar.");
   busy.add(key);
   let unlock: (() => Promise<void>) | null = null;
@@ -132,6 +134,13 @@ export async function launchProfile(key: string, { headless = false }: { headles
 }
 
 export async function withProfile<T>(key: string, opts: { headless?: boolean }, fn: (ctx: BrowserContext) => Promise<T>): Promise<T> {
+  // standby browser for this profile: reuse it (no 5–10 s launch), one job at a time
+  const w = standby.get(key);
+  if (w && opts.headless !== false) {
+    const job = w.queue.then(() => fn(w.ctx));
+    w.queue = job.catch(() => {});
+    return job;
+  }
   const ctx = await launchProfile(key, opts);
   try {
     return await fn(ctx);
@@ -139,6 +148,51 @@ export async function withProfile<T>(key: string, opts: { headless?: boolean }, 
     await ctx.close().catch(() => {});
   }
 }
+
+// ---------------------------------------------------------------- standby browsers
+// The AI profiles (Gemini, ChatGPT) are opened headless when the app starts and stay parked on their page, so a
+// question costs only the request itself. Heavy, useless resources are blocked to keep them light.
+
+type Standby = { ctx: BrowserContext; url: string; queue: Promise<unknown> };
+const gs = globalThis as unknown as { __standby?: Map<string, Standby> };
+const standby = (gs.__standby ??= new Map());
+
+/** Analytics, ads and telemetry the AI pages load but never need. */
+const TRACKERS = /googletagmanager|google-analytics|doubleclick|googlesyndication|sentry\.io|datadoghq|segment\.(io|com)|intercom|statsig|featuregates|clarity\.ms|hotjar|facebook\.net|bat\.bing|cdn\.oaistatic\.com\/assets\/.*\.(woff2?|ttf)$/i;
+
+/** Skip images, media, fonts and trackers (pages still work: scripts, styles and API calls go through). */
+export async function lightenProfile(ctx: BrowserContext) {
+  await ctx.route("**/*", (route) => {
+    const req = route.request();
+    const type = req.resourceType();
+    if (type === "image" || type === "media" || type === "font" || TRACKERS.test(req.url())) return route.abort();
+    return route.continue();
+  });
+}
+
+/** Open a profile headless and keep it parked on `url` (idempotent; relaunches if it died). */
+export async function standbyProfile(key: string, url: string) {
+  const cur = standby.get(key);
+  if (cur && cur.ctx.pages().length) return cur.ctx;
+  const ctx = await launchProfile(key, { headless: true });
+  await lightenProfile(ctx);
+  const page = ctx.pages()[0] ?? (await ctx.newPage());
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 }).catch(() => {});
+  const entry: Standby = { ctx, url, queue: Promise.resolve() };
+  standby.set(key, entry);
+  ctx.on("close", () => standby.get(key) === entry && standby.delete(key));
+  return ctx;
+}
+
+export async function stopStandby(key: string) {
+  const w = standby.get(key);
+  if (!w) return;
+  standby.delete(key);
+  await w.queue.catch(() => {});
+  await w.ctx.close().catch(() => {});
+}
+
+export const standbyStatus = () => [...standby.entries()].map(([key, w]) => ({ key, url: w.url, pages: w.ctx.pages().length }));
 
 export async function deleteProfile(key: string) {
   if (busy.has(key)) throw new Error("Profil sedang dipakai, coba lagi nanti.");

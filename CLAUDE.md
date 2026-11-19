@@ -19,3 +19,4 @@ Penerus `C:\BOT\Traktiva\bot-autoupload` (Electron + HTML polos + file JSON). Fi
 - Kerja berat (Playwright, ffmpeg, ADB) dijalankan di server (server action / route / worker), jangan di komponen client
 - Fitur khusus desktop: lewat `electron/preload.js` → `window.desktop`. Mode web harus tetap jalan tanpa fitur itu
 - Script build menghapus `.next/standalone/data` supaya DB dev tidak ikut ke installer
+- Naskah & suara AI: CTA = "cek keranjang di bawah", **jangan pernah** "keranjang kuning" / "link di kiri bawah". Diatur di Pengaturan AI → Aturan naskah (`lib/writing.ts`, `settings.writing`); semua prompt penulis memakai `rulesPrompt()` dan hasilnya disaring `applyRules()`
