@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { BadgeCheck, ChevronsUpDown, Clapperboard, Clock, HardDrive, Info, Monitor, Settings, Users } from "lucide-react";
+import { BadgeCheck, ChevronsUpDown, Clapperboard, Clock, HardDrive, Info, KeyRound, Monitor, Settings, ShieldCheck, Users } from "lucide-react";
+import { confirmDialog } from "@/components/confirm-dialog";
 import { GoogleIcon } from "@/components/brand-icons";
 import { Logo } from "@/components/logo";
 import {
@@ -15,8 +16,9 @@ export type UserInfo = {
   videos: number;
   appVersion: string;
   platform: string;
-  // ponytail: license is a placeholder until the license server (docs/license-design.md) exists
-  license: { status: "dev" | "active" | "expired"; plan: string; expiresAt: string | null; daysLeft: number | null };
+  // from the license server heartbeat (lib/server-info.ts); "dev" when running without a license (npm run dev)
+  license: { status: "dev" | "active" | "expired"; plan: string; expiresAt: string | null; daysLeft: number | null; role: "admin" | "member" };
+  adminPanelUrl: string;
 };
 
 const LICENSE = {
@@ -35,6 +37,16 @@ function Avatar({ email, size = "size-8" }: { email: string | null; size?: strin
   ) : (
     <Logo className={`${size} shrink-0`} />
   );
+}
+
+async function changeLicense() {
+  if (!window.desktop?.changeLicense) return;
+  const ok = await confirmDialog({
+    title: "Ganti lisensi?",
+    description: "PC ini dilepas dari key sekarang (slotnya kosong lagi), lalu kamu masukkan key lain. Proyek dan akun di PC ini tetap aman.",
+    confirmLabel: "Ganti lisensi",
+  });
+  if (ok) await window.desktop.changeLicense();
 }
 
 /** Bottom-left of the sidebar: who is using the app + license; opens a detail panel. */
@@ -73,7 +85,10 @@ export function UserCard({ info }: { info: UserInfo }) {
         <div className="mx-3 rounded-lg border bg-muted/40 p-3">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-xs font-medium"><BadgeCheck className="size-3.5 text-brand-light" /> Lisensi</span>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${lic.cls}`}>{lic.label}</span>
+            <span className="flex gap-1">
+              {info.license.role === "admin" && <span className="rounded-full bg-[#f2c94c1f] px-2 py-0.5 text-[10px] font-semibold text-[#f2c94c]">Admin</span>}
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${lic.cls}`}>{lic.label}</span>
+            </span>
           </div>
           <dl className="mt-2 grid grid-cols-2 gap-y-1 text-[11px]">
             <dt className="text-muted-foreground">Paket</dt>
@@ -103,8 +118,12 @@ export function UserCard({ info }: { info: UserInfo }) {
 
         <DropdownMenuSeparator className="my-0" />
         <div className="p-1">
-          <DropdownMenuItem render={<Link href="/pengaturan" />}><Settings className="size-4" /> Pengaturan AI</DropdownMenuItem>
+          <DropdownMenuItem render={<Link href="/pengaturan" />}><Settings className="size-4" /> Pengaturan & lisensi</DropdownMenuItem>
           <DropdownMenuItem render={<Link href="/akun" />}><Users className="size-4" /> Kelola akun sosial</DropdownMenuItem>
+          {info.license.role === "admin" && (
+            <DropdownMenuItem render={<a href={info.adminPanelUrl} target="_blank" rel="noreferrer" />}><ShieldCheck className="size-4" /> Panel admin</DropdownMenuItem>
+          )}
+          {info.license.status !== "dev" && <DropdownMenuItem onClick={changeLicense}><KeyRound className="size-4" /> Ganti lisensi</DropdownMenuItem>}
         </div>
         <DropdownMenuSeparator className="my-0" />
         <div className="flex items-center gap-3 px-3 py-2 text-[11px] text-muted-foreground">

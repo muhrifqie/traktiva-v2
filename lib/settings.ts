@@ -2,6 +2,7 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import { DATA_DIR } from "@/lib/db";
+import { remoteFlag } from "@/lib/server-info";
 import type { EditTemplate } from "@/lib/edit";
 import { DEFAULT_WRITING, type WritingRules } from "@/lib/writing";
 
@@ -64,7 +65,12 @@ export function updateSettings(patch: Partial<Settings>) {
 export const writingRules = (): WritingRules => ({ ...DEFAULT_WRITING, ...getSettings().writing });
 
 /** How many Flow generations may run at the same time. */
-export const parallelLimit = () => SPEEDS.find((s) => s.id === getSettings().speed)?.parallel ?? 4;
+/** Flow slots from the speed setting, capped by the admin's remote flag `maxParallel` (panel → Setelan app) when set. */
+export const parallelLimit = () => {
+  const own = SPEEDS.find((s) => s.id === getSettings().speed)?.parallel ?? 4;
+  const cap = remoteFlag("maxParallel", 0);
+  return cap > 0 ? Math.min(own, cap) : own;
+};
 
 /**
  * Captcha browsers flow2api should keep: a captcha takes seconds while a generation takes minutes,

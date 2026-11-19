@@ -3,15 +3,16 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, KeyRound, Loader2, Mic, Pause, Play, Trash2 } from "lucide-react";
+import { CartesiaIcon, ElevenLabsIcon, VeoIcon } from "@/components/brand-icons";
 import { toast } from "sonner";
 import { chooseCartesiaVoice, previewCartesiaVoice, removeCartesiaKey, saveCartesiaKey, setVoiceProvider, setVoiceSpeed } from "./actions";
 
 type Voice = { id: string; name: string; description: string; gender: string | null };
 
 const PROVIDERS = [
-  { id: "flow", label: "Bawaan Flow", hint: "Suara langsung dari video AI. Gratis, tapi kadang kurang natural.", ready: true },
-  { id: "cartesia", label: "Cartesia", hint: "Suara manusiawi (Sonic 3.6), bahasa Indonesia natural. Pakai kredit Cartesia.", ready: true },
-  { id: "elevenlabs", label: "ElevenLabs", hint: "Segera hadir.", ready: false },
+  { id: "flow", label: "Bawaan Flow", icon: VeoIcon, hint: "Suara langsung dari video AI. Gratis, tapi kadang kurang natural.", ready: true },
+  { id: "cartesia", label: "Cartesia", icon: CartesiaIcon, hint: "Suara manusiawi (Sonic 3.6), bahasa Indonesia natural. Pakai kredit Cartesia.", ready: true },
+  { id: "elevenlabs", label: "ElevenLabs", icon: ElevenLabsIcon, hint: "Segera hadir.", ready: false },
 ] as const;
 const SPEEDS = [0.9, 1, 1.1, 1.2];
 
@@ -82,8 +83,9 @@ export function VoiceSetting({
               className={`flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed ${on ? "border-primary/50 bg-primary/10" : p.ready ? "bg-background hover:bg-accent" : "bg-background opacity-50"}`}
             >
               <span className="flex items-center gap-1.5 text-[13px] font-medium">
-                {on && <Check className="size-3.5 text-brand-light" />}
+                <p.icon className="size-4" />
                 {p.label}
+                {on && <Check className="size-3.5 text-brand-light" />}
                 {!p.ready && <span className="ml-auto rounded-full bg-muted px-1.5 text-[10px] text-muted-foreground">Segera</span>}
               </span>
               <span className="text-[11px] leading-snug text-muted-foreground">{p.hint}</span>

@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { Check, ChevronDown, Loader2, Mic, MicOff, Pause, Play, Volume2 } from "lucide-react";
+import { CartesiaIcon, ElevenLabsIcon, VeoIcon } from "@/components/brand-icons";
 import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { VoiceChoice } from "@/lib/voice";
@@ -11,10 +12,10 @@ import { previewVoiceLine, setProjectVoice } from "../project-actions";
 export type VoiceOption = { id: string; name: string; description: string; gender: string | null };
 export type ProjectVoiceState = { choice: VoiceChoice; voiceId: string | null; voiceName: string | null; speed: number };
 
-const CHOICES: { id: VoiceChoice | "elevenlabs"; label: string; icon: typeof Mic; ready: boolean; hint: string }[] = [
-  { id: "flow", label: "Bawaan Flow", icon: Mic, ready: true, hint: "Suara langsung dari video AI" },
-  { id: "cartesia", label: "Cartesia", icon: Volume2, ready: true, hint: "Suara manusiawi, dibuat terpisah lalu digabung" },
-  { id: "elevenlabs", label: "ElevenLabs", icon: Volume2, ready: false, hint: "Segera hadir" },
+const CHOICES: { id: VoiceChoice | "elevenlabs"; label: string; icon: (p: { className?: string }) => React.ReactNode; ready: boolean; hint: string }[] = [
+  { id: "flow", label: "Bawaan Flow", icon: VeoIcon, ready: true, hint: "Suara langsung dari video AI" },
+  { id: "cartesia", label: "Cartesia", icon: CartesiaIcon, ready: true, hint: "Suara manusiawi, dibuat terpisah lalu digabung" },
+  { id: "elevenlabs", label: "ElevenLabs", icon: ElevenLabsIcon, ready: false, hint: "Segera hadir" },
   { id: "off", label: "Tanpa suara", icon: MicOff, ready: true, hint: "Senyap, tambah musik sendiri" },
 ];
 const SPEEDS = [0.9, 1, 1.1, 1.2];

@@ -16,7 +16,7 @@ export const NAV = [
   { slug: "akun", title: "Akun Sosial", icon: Users, group: "Jualan & Akun", color: "#26b5ce", desc: "Kelola akun TikTok, Instagram, Facebook, YouTube, dan Shopee." },
   { slug: "profil", title: "Profil & Postingan", icon: UserCircle, group: "Jualan & Akun", color: "#ff3b6b", desc: "Lihat profil dan performa postingan tiap akun." },
   { slug: "jadwal", title: "Jadwal Upload", icon: CalendarClock, group: "Jualan & Akun", color: "#5e6ad2", desc: "Atur kapan video diunggah ke tiap akun." },
-  { slug: "pengaturan", title: "Pengaturan AI", icon: Settings, group: "Pengaturan", color: "#8b7cf6", desc: "Akun Google, kecepatan pembuatan, dan mesin AI." },
+  { slug: "pengaturan", title: "Pengaturan", icon: Settings, group: "Pengaturan", color: "#8b7cf6", desc: "Lisensi, akun Google, kecepatan pembuatan, dan mesin AI." },
 ] as const;
 
 export const NAV_GROUPS = ["Utama", "Riset", "Buat Konten", "Pustaka", "Jualan & Akun", "Pengaturan"] as const;

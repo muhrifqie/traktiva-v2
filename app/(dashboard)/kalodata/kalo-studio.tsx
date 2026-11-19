@@ -3,8 +3,9 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  BarChart3, CircleAlert, Download, ImageIcon, Play, Copy, ExternalLink, KeyRound, Loader2, Plus, RefreshCw, Sparkles, Store, Trash2, TrendingUp, UserPlus, Users, Video,
+  CircleAlert, Download, ImageIcon, Play, Copy, ExternalLink, KeyRound, Loader2, Plus, RefreshCw, Sparkles, Store, Trash2, TrendingUp, UserPlus, Users, Video,
 } from "lucide-react";
+import { KaloDataIcon } from "@/components/brand-icons";
 import { toast } from "sonner";
 import { CountryBadge, CountrySelect } from "@/components/country-select";
 import { SaveProductButton } from "@/components/save-product-button";
@@ -106,7 +107,7 @@ export function KaloStudio({
   if (!hasSession) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-10 text-center">
-        <BarChart3 className="size-7 text-muted-foreground" />
+        <KaloDataIcon className="size-8" />
         <p className="text-sm font-medium">Hubungkan KaloData dulu</p>
         <p className="max-w-md text-xs text-muted-foreground">KaloData memberi data penjualan produk TikTok Shop (GMV, tren harian, video & kreator terlaris). Tambahkan sesi lewat tombol Kelola sesi di kanan atas, bisa tempel cookie atau buat akun trial otomatis.</p>
       </div>
