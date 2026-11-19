@@ -39,7 +39,7 @@ Kuota diikat ke **akun (userId)**, dicek server-side. **Tidak bisa dipaksa** den
 
 Dua cara nambah throughput:
 
-1. **Rotasi multi-sesi** — isi beberapa cookie `SESSION` di `sessions[]`. Begitu satu sesi kena kuota, client otomatis pindah ke sesi berikut. Butuh beberapa akun Google + fingerprint beda per akun (Camoufox) kalau serius.
+1. **Rotasi multi-sesi** — isi beberapa cookie `SESSION` di `sessions[]`. Begitu satu sesi kena kuota, client otomatis pindah ke sesi berikut. Butuh beberapa akun Google + fingerprint beda per akun (mis. proxy/anti-detect browser) kalau serius.
 2. **Bayar / upgrade paket** — lebih aman, tanpa risiko ban.
 
 Jalur yang **tahan kuota filter**: `fullTextSearch` / `collectProducts` tetap jalan walau `FILTER.CUSTOM_TIMES` habis — tapi cuma mengembalikan nama produk + GMV 30 hari, bukan metrik lengkap.

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { desc, eq } from "drizzle-orm";
 import {
   ArrowRight, ArrowUpRight, CalendarClock, CircleAlert, Clapperboard, Coins, Film, Loader2, Plus, ShieldCheck, TrendingUp, Users,
@@ -11,6 +12,7 @@ import { accounts, accountStats, googleAccounts, PLATFORMS, videoProjects } from
 import { mediaUrl } from "@/lib/media-url";
 import { projectName } from "@/lib/presets";
 import { navBySlug, navColor } from "@/lib/nav";
+import { KaloInsight, KaloInsightSkeleton } from "./kalo-insight";
 
 export const dynamic = "force-dynamic";
 
@@ -204,6 +206,11 @@ export default async function BerandaPage() {
             })}
           </div>
         </Tile>
+
+        {/* what sells on TikTok Shop now (KaloData) */}
+        <Suspense fallback={<KaloInsightSkeleton />}>
+          <KaloInsight />
+        </Suspense>
 
         {/* schedule */}
         <Tile href="/jadwal" className="sm:col-span-2 lg:col-span-4">

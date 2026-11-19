@@ -4,7 +4,9 @@ import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { googleAccounts } from "@/lib/db/schema";
 import { loadFlow2ApiConfig } from "@/lib/flow2api";
-import { captchaBrowsersFor, getSettings, parallelLimit, SPEEDS } from "@/lib/settings";
+import { captchaBrowsersFor, getSettings, parallelLimit, SPEEDS, writingRules } from "@/lib/settings";
+import { WritingRulesCard } from "./writing-rules";
+import { ChatgptAccount } from "./chatgpt-account";
 import { GoogleAccounts } from "./google-accounts";
 import { SpeedSetting } from "./speed-setting";
 import { VoiceSetting } from "./voice-setting";
@@ -41,6 +43,10 @@ export default async function PengaturanPage() {
             lastSync: a.lastSyncAt ? fmt.format(a.lastSyncAt) : null,
           }))}
         />
+
+        <ChatgptAccount email={getSettings().chatgpt?.email ?? null} connectedAt={getSettings().chatgpt ? fmt.format(new Date(getSettings().chatgpt!.connectedAt)) : null} />
+
+        <WritingRulesCard initial={writingRules()} />
 
         <SpeedSetting
           speeds={SPEEDS.map((x) => ({ ...x }))}

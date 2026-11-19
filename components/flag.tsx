@@ -70,6 +70,119 @@ const FLAGS: Record<string, React.ReactNode> = {
       <path d="M15 0v20M0 10h30" stroke="#c8102e" strokeWidth="3.4" />
     </>
   ),
+  JP: (
+    <>
+      <rect width="30" height="20" fill="#fff" />
+      <circle cx="15" cy="10" r="6" fill="#bc002d" />
+    </>
+  ),
+  BR: (
+    <>
+      <rect width="30" height="20" fill="#009739" />
+      <path d="M15 2.5L27 10 15 17.5 3 10z" fill="#fedd00" />
+      <circle cx="15" cy="10" r="4.4" fill="#012169" />
+    </>
+  ),
+  MX: (
+    <>
+      <rect width="10" height="20" fill="#006847" />
+      <rect x="10" width="10" height="20" fill="#fff" />
+      <rect x="20" width="10" height="20" fill="#ce1126" />
+      <circle cx="15" cy="10" r="2.2" fill="#8c5a2b" />
+    </>
+  ),
+  DE: (
+    <>
+      <rect width="30" height="20" fill="#000" />
+      <rect y="6.67" width="30" height="6.67" fill="#dd0000" />
+      <rect y="13.33" width="30" height="6.67" fill="#ffce00" />
+    </>
+  ),
+  FR: (
+    <>
+      <rect width="10" height="20" fill="#0055a4" />
+      <rect x="10" width="10" height="20" fill="#fff" />
+      <rect x="20" width="10" height="20" fill="#ef4135" />
+    </>
+  ),
+  ES: (
+    <>
+      <rect width="30" height="20" fill="#c60b1e" />
+      <rect y="5" width="30" height="10" fill="#ffc400" />
+    </>
+  ),
+  IT: (
+    <>
+      <rect width="10" height="20" fill="#009246" />
+      <rect x="10" width="10" height="20" fill="#fff" />
+      <rect x="20" width="10" height="20" fill="#ce2b37" />
+    </>
+  ),
+  NL: (
+    <>
+      <rect width="30" height="20" fill="#ae1c28" />
+      <rect y="6.67" width="30" height="6.67" fill="#fff" />
+      <rect y="13.33" width="30" height="6.67" fill="#21468b" />
+    </>
+  ),
+  BE: (
+    <>
+      <rect width="10" height="20" fill="#000" />
+      <rect x="10" width="10" height="20" fill="#fdda24" />
+      <rect x="20" width="10" height="20" fill="#ef3340" />
+    </>
+  ),
+  AT: (
+    <>
+      <rect width="30" height="20" fill="#ed2939" />
+      <rect y="6.67" width="30" height="6.67" fill="#fff" />
+      <rect y="13.33" width="30" height="6.67" fill="#ed2939" />
+    </>
+  ),
+  IE: (
+    <>
+      <rect width="10" height="20" fill="#169b62" />
+      <rect x="10" width="10" height="20" fill="#fff" />
+      <rect x="20" width="10" height="20" fill="#ff883e" />
+    </>
+  ),
+  PT: (
+    <>
+      <rect width="30" height="20" fill="#ff0000" />
+      <rect width="12" height="20" fill="#006600" />
+      <circle cx="12" cy="10" r="3.6" fill="#ffcc00" />
+    </>
+  ),
+  GR: (
+    <>
+      {Array.from({ length: 9 }, (_, i) => (
+        <rect key={i} y={(i * 20) / 9} width="30" height={20 / 9} fill={i % 2 ? "#fff" : "#0d5eaf"} />
+      ))}
+      <rect width="11.1" height="11.1" fill="#0d5eaf" />
+      <rect x="4.44" width="2.22" height="11.1" fill="#fff" />
+      <rect y="4.44" width="11.1" height="2.22" fill="#fff" />
+    </>
+  ),
+  PL: (
+    <>
+      <rect width="30" height="10" fill="#fff" />
+      <rect y="10" width="30" height="10" fill="#dc143c" />
+    </>
+  ),
+  CZ: (
+    <>
+      <rect width="30" height="10" fill="#fff" />
+      <rect y="10" width="30" height="10" fill="#d7141a" />
+      <path d="M0 0l15 10L0 20z" fill="#11457e" />
+    </>
+  ),
+  HU: (
+    <>
+      <rect width="30" height="20" fill="#ce2939" />
+      <rect y="6.67" width="30" height="6.67" fill="#fff" />
+      <rect y="13.33" width="30" height="6.67" fill="#477050" />
+    </>
+  ),
 };
 
 export function Flag({ code, className = "h-3.5 w-5" }: { code: string; className?: string }) {

@@ -1,5 +1,8 @@
 import {
   KaloCreator,
+  KaloShopeeProduct,
+  KaloTopProduct,
+  KaloTopVideo,
   KaloEnvelope,
   KaloError,
   KaloFailureCause,
@@ -252,6 +255,35 @@ export class KaloClient {
   /** Cari ID kategori dari kata kunci (buat dipakai di productList.cateIds). */
   async searchCategory(keyword: string): Promise<{ id: number; name: string; score: number }[]> {
     return this.request("POST", "/category/searchByKeyword", { keyword });
+  }
+
+  /** Overview ranking: produk terlaris satu negara (halaman Explore → Top Products). */
+  async productTops(range: DateRange, pageSize = 20, pageNo = 1): Promise<KaloTopProduct[]> {
+    return this.request("POST", "/overview/rank/queryProductTops", { ...range, pageNo, pageSize });
+  }
+
+  /** Overview ranking: video jualan terlaris satu negara (lintas produk). */
+  async videoTops(range: DateRange, pageSize = 20, pageNo = 1): Promise<KaloTopVideo[]> {
+    return this.request("POST", "/overview/rank/queryVideoTops", { ...range, pageNo, pageSize });
+  }
+
+  /** Periode data Shopee yang tersedia (mingguan; "L1W" = minggu terakhir). */
+  async shopeeRanges(): Promise<{ label: string; value: string; weekStart: string; weekEnd: string }[]> {
+    return this.request("GET", "/shopee/dataRange");
+  }
+
+  /** Kategori Shopee level 1. */
+  async shopeeCategories(): Promise<{ id: string; label: string }[]> {
+    return this.request("POST", "/shopee/categories/initFirstTree");
+  }
+
+  /** Produk Shopee terlaris (negara = header country). */
+  async shopeeProducts(opts: { dataRange?: string; keyword?: string; cateIds?: string[]; pageSize?: number; sortField?: "unitsSold" | "revenue" } = {}): Promise<KaloShopeeProduct[]> {
+    const { dataRange = "L1W", keyword = "", cateIds = [], pageSize = 10, sortField = "unitsSold" } = opts;
+    const r = await this.request<{ data: KaloShopeeProduct[] }>("POST", "/shopee/product/pageList", {
+      cateIds, dataRange, keyword, pageNo: 1, pageSize, sort: { field: sortField, type: "DESC" }, searchWay: "VAGUE",
+    });
+    return r.data ?? [];
   }
 
   // ----------------------------------------------------------------- internal

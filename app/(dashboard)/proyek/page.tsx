@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { desc } from "drizzle-orm";
-import { FolderKanban } from "lucide-react";
+import { FolderKanban, Plane } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { videoProjects } from "@/lib/db/schema";
@@ -16,22 +16,29 @@ const FILTERS = [
   { id: "running", label: "Sedang dibuat" },
   { id: "done", label: "Video jadi" },
   { id: "failed", label: "Perlu dicek" },
+  { id: "arsip", label: "Arsip" },
 ] as const;
 
 export default async function ProyekPage({ searchParams }: PageProps<"/proyek">) {
   const sp = await searchParams;
   const filter = FILTERS.find((f) => f.id === sp.status)?.id ?? "semua";
-  const all = await db.select().from(videoProjects).orderBy(desc(videoProjects.updatedAt));
-  const count = (id: string) => (id === "semua" ? all.length : all.filter((p) => p.status === id).length);
-  const shown = filter === "semua" ? all : all.filter((p) => p.status === filter);
+  const every = await db.select().from(videoProjects).orderBy(desc(videoProjects.updatedAt));
+  // archived projects only show in their own tab
+  const all = every.filter((p) => !p.archived);
+  const archived = every.filter((p) => p.archived);
+  const count = (id: string) => (id === "arsip" ? archived.length : id === "semua" ? all.length : all.filter((p) => p.status === id).length);
+  const shown = filter === "arsip" ? archived : filter === "semua" ? all : all.filter((p) => p.status === filter);
 
   return (
     <>
       <PageHeader slug="proyek">
+        <Link href="/proyek/autopilot" className="flex h-9 items-center gap-1.5 rounded-lg border bg-card px-3.5 text-[13px] font-medium hover:bg-accent" title="Pilih produk laris, AI membuatkan videonya otomatis">
+          <Plane className="size-4 text-[#f2994a]" /> Autopilot
+        </Link>
         <NewProjectButton />
       </PageHeader>
 
-      {all.length === 0 ? (
+      {every.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-10 text-center">
           <FolderKanban className="size-7 text-muted-foreground" />
           <p className="text-sm font-medium">Belum ada proyek</p>
@@ -54,6 +61,7 @@ export default async function ProyekPage({ searchParams }: PageProps<"/proyek">)
           </nav>
           {shown.length ? (
             <ProjectList
+              archive={filter === "arsip"}
               projects={shown.map((p) => ({
                 id: p.id,
                 name: projectName(p),
@@ -69,7 +77,7 @@ export default async function ProyekPage({ searchParams }: PageProps<"/proyek">)
               }))}
             />
           ) : (
-            <p className="rounded-xl border border-dashed p-8 text-center text-xs text-muted-foreground">Tidak ada proyek dengan status ini.</p>
+            <p className="rounded-xl border border-dashed p-8 text-center text-xs text-muted-foreground">{filter === "arsip" ? "Arsip kosong. Pilih beberapa proyek lalu Arsipkan supaya daftar tetap rapi." : "Tidak ada proyek dengan status ini."}</p>
           )}
         </div>
       )}

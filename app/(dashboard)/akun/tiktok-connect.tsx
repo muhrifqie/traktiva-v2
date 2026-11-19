@@ -12,7 +12,7 @@ import { pollTikTokLogin, startTikTokLogin, syncTikTokAccount } from "./actions"
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Opens a Camoufox login window (server side), polls until the user logs in, then pulls the profile.
+ * Opens a Chrome login window (server side), polls until the user logs in, then pulls the profile.
  * accountId = re-login an existing account on its own browser profile.
  */
 export async function connectTikTok(accountId?: number, onStep?: (msg: string) => void) {

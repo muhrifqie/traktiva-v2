@@ -118,6 +118,55 @@ export interface KaloVideo {
 }
 
 /** Satu kreator yang menjual produk (POST /product/detail/creator/queryList). */
+/** Satu baris ranking produk (POST /overview/rank/queryProductTops). Angka uang sudah diformat sesuai header currency. */
+export interface KaloTopProduct {
+  id: string;
+  product_title: string;
+  revenue: string;
+  sale: number;
+  unit_price: string;
+  creator_num: number;
+  commission_rate: string;
+  launch_date?: string;
+  collect_day?: string; // first day KaloData tracked the product (YYYY-MM-DD)
+  revenue_trend?: number[];
+}
+
+/** Satu baris ranking video (POST /overview/rank/queryVideoTops). */
+export interface KaloTopVideo {
+  id: string;
+  description: string;
+  duration: string;
+  original_duration?: number;
+  revenue: string;
+  views: number;
+  sale: number;
+  handle?: string;
+  follower_count?: number;
+  ad?: number; // 1 = dipromosikan (iklan)
+  ad_revenue_ratio?: string;
+  ai_video?: number;
+  product_id?: string;
+  product_title?: string;
+}
+
+/** Satu produk Shopee terlaris (POST /shopee/product/pageList). */
+export interface KaloShopeeProduct {
+  pid: string;
+  imageUrl: string;
+  productName: string;
+  shopName: string;
+  shopLocation?: string;
+  historicalSold: string;
+  revenue: string;
+  rating: number;
+  ratingCount: string;
+  price: string;
+  cateNames: string[];
+  productUrl: string;
+  unitsSold?: string;
+}
+
 export interface KaloCreator {
   id: string;
   nickname: string;

@@ -67,11 +67,11 @@ export const accountPosts = sqliteTable(
 );
 
 
-// Google accounts logged in through Camoufox; their Flow session is registered in flow2api for API generation.
+// Google accounts logged in through Chrome; their Flow session is registered in flow2api for API generation.
 export const googleAccounts = sqliteTable("google_accounts", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   email: text("email").notNull().unique(),
-  sessionKey: text("session_key").notNull(), // Camoufox profile (cfx_...) holding the Google login
+  sessionKey: text("session_key").notNull(), // Chrome profile (cfx_...) holding the Google login
   flowTokenId: integer("flow_token_id"), // token id inside flow2api
   credits: integer("credits"),
   status: text("status", { enum: ["active", "need_login", "error"] }).notNull().default("active"),
@@ -122,8 +122,9 @@ export type ProjectScene = {
   queuedAt?: number | null; // ms epoch
   startedAt?: number | null;
   finishedAt?: number | null;
+  check?: { ok: boolean; note: string } | null; // Gemini QC: does the generated image match the product photos?
 };
-export type ProjectProduct = { name: string; details: string; price: string; photos: string[] };
+export type ProjectProduct = { name: string; details: string; price: string; photos: string[]; look?: string | null }; // look: what the product looks like, read from the photos by Gemini
 
 export const videoProjects = sqliteTable("video_projects", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -141,6 +142,7 @@ export const videoProjects = sqliteTable("video_projects", {
   finalPath: text("final_path"),
   caption: text("caption"),
   edit: text("edit", { mode: "json" }).$type<ProjectEdit>(), // timeline editor state (captions, voice, music)
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false), // hidden from the project list (tab "Arsip")
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
 });
@@ -167,9 +169,29 @@ export const showcaseProducts = sqliteTable(
     labels: text("labels", { mode: "json" }).$type<string[]>().notNull(),
     position: integer("position").notNull().default(0), // order in the showcase
     syncedAt: integer("synced_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+    // full product page (photos, description, variants, sold, rating), read when the product is opened; AI material
+    detail: text("detail", { mode: "json" }).$type<ProductDetail>(),
+    detailAt: integer("detail_at", { mode: "timestamp" }),
   },
   (t) => [uniqueIndex("showcase_products_account_product").on(t.accountId, t.productId)],
 );
+
+export type ProductDetail = {
+  title: string;
+  images: string[]; // MEDIA_DIR-relative cached photos (max 8)
+  description: string; // seller's description, plain text
+  price: string; // e.g. "Rp23.713" (lowest variant)
+  originalPrice: string | null;
+  discount: string | null;
+  sold: number | null;
+  rating: number | null;
+  reviews: number | null;
+  shop: { name: string; rating: number | null; products: number | null } | null;
+  variants: { name: string; values: string[] }[];
+  stock: number | null; // sum over variants
+  shipping: string | null; // e.g. "Gratis ongkir · Next-day delivery"
+  category: string | null;
+};
 
 export type ShowcaseProductRow = typeof showcaseProducts.$inferSelect;
 
@@ -215,7 +237,7 @@ export const savedProducts = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     productId: text("product_id").notNull(), // TikTok Shop product id
     country: text("country").notNull().default("ID"),
-    source: text("source", { enum: ["tiktok", "kalodata", "manual"] }).notNull(),
+    source: text("source", { enum: ["tiktok", "kalodata", "shopee", "manual"] }).notNull(),
     title: text("title").notNull(),
     image: text("image"), // remote cover URL (Kalodata/TikTok CDN)
     price: text("price"),
@@ -228,3 +250,27 @@ export const savedProducts = sqliteTable(
 );
 
 export type SavedProduct = typeof savedProducts.$inferSelect;
+
+// Scheduled TikTok uploads (Jadwal Upload). The runner (lib/uploads.ts) posts due jobs one at a time through
+// TikTok Studio web in the account's own Chrome profile. hook/label feed the "what works" stats (lib/insights.ts).
+export const uploadJobs = sqliteTable("upload_jobs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  accountId: integer("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => videoProjects.id, { onDelete: "set null" }),
+  video: text("video").notNull(), // MEDIA_DIR-relative mp4 (final.mp4 or final-A.mp4 …)
+  label: text("label"), // e.g. "Varian A"
+  caption: text("caption").notNull().default(""),
+  productId: text("product_id"), // TikTok Shop product to link (keranjang); null = no product link
+  productTitle: text("product_title"),
+  hook: text("hook"), // opening line of the video (for the performance stats)
+  scheduledAt: integer("scheduled_at", { mode: "timestamp" }).notNull(),
+  status: text("status", { enum: ["queued", "uploading", "done", "failed", "cancelled"] }).notNull().default("queued"),
+  progress: text("progress"),
+  error: text("error"),
+  attempts: integer("attempts").notNull().default(0),
+  postedAt: integer("posted_at", { mode: "timestamp" }),
+  postId: text("post_id"), // TikTok video id once matched from the profile sync
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+});
+
+export type UploadJob = typeof uploadJobs.$inferSelect;

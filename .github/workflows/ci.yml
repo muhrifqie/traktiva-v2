@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches: [main, dev]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck & lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # the app's own binaries are not needed to typecheck: skip the big downloads
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # route types (PageProps etc.) come from Next's generator, not from the repo
+      - run: npx next typegen
+      - run: npx tsc --noEmit
+      - run: npm run lint

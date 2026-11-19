@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { eq } from "drizzle-orm";
-import { withProfile } from "@/lib/browser/camoufox";
+import { withProfile } from "@/lib/browser/chrome";
 import { db } from "@/lib/db";
 import { accounts } from "@/lib/db/schema";
 

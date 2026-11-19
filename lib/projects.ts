@@ -9,9 +9,11 @@ import { videoProjects, type ProjectScene, type VideoProject } from "@/lib/db/sc
 import { generateFlowImage, generateFlowVideo, type Progress } from "@/lib/flow2api";
 import { synthesize } from "@/lib/cartesia";
 import { mediaDataUrl, mixVoiceOver, resolveMedia, saveResult, writeMedia } from "@/lib/media";
-import { getSettings } from "@/lib/settings";
+import { getSettings, writingRules } from "@/lib/settings";
+import { applyRules } from "@/lib/writing";
 import { projectVoice, spoken, voiceLine, withoutVoice } from "@/lib/voice";
 import { isSilent } from "@/lib/presets";
+import { checkSceneImages } from "@/lib/prompt-writer";
 import { withSlot } from "@/lib/video";
 
 // Project pipeline: product photos → one image per scene (Nano Banana) → one clip per scene image
@@ -154,9 +156,42 @@ async function runImages(id: number, only?: number) {
     onStage("Menyimpan gambar...", 97);
     // new name each time so the browser never shows a cached older take
     const image = await saveResult(url, `${p.folder}/gambar/adegan-${i + 1}-${now().toString(36)}`, ".png");
-    return { image, own: false, clip: null };
+    return { image, own: false, clip: null, check: null };
   });
   await store.flush();
+  // QC: Gemini compares the new images with the product photos before anyone spends a clip render on them
+  const made = targets.filter((i) => store.scenes[i].state === "done" && store.scenes[i].image);
+  if (made.length) {
+    await save(id, { progress: "Gemini mengecek gambar dengan foto produk..." });
+    const fresh = await load(id);
+    const checks = fresh ? await checkSceneImages({ ...fresh, scenes: store.scenes }, made).catch(() => new Map()) : new Map();
+    for (const [i, c] of checks) store.patch(i, { check: c });
+    await store.flush();
+
+    // auto-fix once: a scene whose product doesn't match is redrawn from the product photos only (no style frame),
+    // with the checker's note as the correction, then checked again. Costs one extra image per failed scene.
+    const bad = made.filter((i) => checks.get(i)?.ok === false);
+    if (bad.length && refs.length) {
+      await save(id, { progress: `Memperbaiki ${bad.length} gambar yang produknya beda dari foto...` });
+      const fixStore = sceneStore(id, store.scenes, "Gambar", bad);
+      await eachScene(fixStore, bad, async (i, onStage) => {
+        const note = checks.get(i)?.note ?? "";
+        const fix = `${fixStore.scenes[i].imagePrompt} ${IMAGE_GUARD} CORRECTION: the previous attempt got the product wrong (${note.slice(0, 200)}). Copy the product EXACTLY from the reference photos: same shape, parts, colour variant and logo; exactly one product.`;
+        const url = await withRetry(() => generateFlowImage(fix, refs.slice(0, 3), onStage), onStage);
+        const image = await saveResult(url, `${p.folder}/gambar/adegan-${i + 1}-fix-${now().toString(36)}`, ".png");
+        return { image, own: false, clip: null, check: null };
+      });
+      await fixStore.flush();
+      const fixed = bad.filter((i) => fixStore.scenes[i].state === "done");
+      if (fixed.length) {
+        await save(id, { progress: "Gemini mengecek ulang gambar yang diperbaiki..." });
+        const again = await load(id);
+        const second = again ? await checkSceneImages({ ...again, scenes: fixStore.scenes }, fixed).catch(() => new Map()) : new Map();
+        for (const [i, c] of second) fixStore.patch(i, { check: c.ok ? c : { ok: false, note: `${c.note} (sudah diperbaiki 1x; coba "Pakai foto asli")` } });
+        await fixStore.flush();
+      }
+    }
+  }
   await save(id, {
     status: failed ? "failed" : "draft",
     progress: null,
@@ -189,7 +224,7 @@ async function runRender(id: number) {
     const raw = await saveResult(url, `${p.folder}/klip/adegan-${i + 1}-${stamp}`, ".mp4");
     if (!cartesia || !line) return { clip: raw };
     onStage("Membuat suara (Cartesia)...", 97);
-    const wav = await writeMedia(`${p.folder}/suara/adegan-${i + 1}-${stamp}.wav`, await withRetry(() => synthesize(cartesia.key, spoken(line), cartesia.voiceId, { speed: cartesia.speed }), onStage, 3));
+    const wav = await writeMedia(`${p.folder}/suara/adegan-${i + 1}-${stamp}.wav`, await withRetry(() => synthesize(cartesia.key, spoken(applyRules(line, writingRules())), cartesia.voiceId, { speed: cartesia.speed }), onStage, 3));
     onStage("Menggabung suara ke klip...", 98);
     return { clip: await mixVoiceOver(raw, wav, `${p.folder}/klip/adegan-${i + 1}-${stamp}-vo.mp4`) };
   });
@@ -210,8 +245,9 @@ export async function concat(files: string[], out: string, silent: boolean) {
   try {
     await run(ffmpegPath, [
       "-y", "-f", "concat", "-safe", "0", "-i", list,
-      "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
-      ...(silent ? ["-an"] : ["-c:a", "aac", "-b:a", "160k"]),
+      // near-lossless: this file is the editor's base and gets encoded again on export (avoid losing detail twice)
+      "-c:v", "libx264", "-preset", "fast", "-crf", "14", "-pix_fmt", "yuv420p",
+      ...(silent ? ["-an"] : ["-c:a", "aac", "-b:a", "192k"]),
       // clean export: drop container/stream tags carried over from the source clips (vendor handler names,
       // encoder strings, creation times, chapters) — like a normal "export" from a video editor
       "-map_metadata", "-1", "-map_chapters", "-1",

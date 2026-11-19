@@ -9,6 +9,7 @@ import { mediaUrl } from "@/lib/media-url";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import { confirmDialog } from "@/components/confirm-dialog";
 import { addShowcaseProducts, createProjectFromProduct, removeShowcaseProducts, setShowcaseAutoSync, syncShowcase } from "./actions";
+import { ProductDetailDialog } from "./product-detail";
 
 type Product = {
   id: number;
@@ -23,6 +24,7 @@ type Product = {
   shopName: string | null;
   cover: string | null;
   labels: string[];
+  hasDetail: boolean;
 };
 type Concept = { id: string; title: string; bestFor: string };
 
@@ -57,6 +59,7 @@ export function SyncButton({ accountId }: { accountId: number }) {
 export function ShowcaseGrid({ accountId, products, concepts, neverSynced }: { accountId: number; products: Product[]; concepts: Concept[]; neverSynced: boolean }) {
   const [q, setQ] = usePersistentState("showcase:q", "");
   const [making, setMaking] = useState<Product | null>(null);
+  const [viewing, setViewing] = useState<Product | null>(null);
   const k = q.trim().toLowerCase();
   const shown = k ? products.filter((p) => `${p.title} ${p.shopName ?? ""} ${p.productId}`.toLowerCase().includes(k)) : products;
 
@@ -85,7 +88,7 @@ export function ShowcaseGrid({ accountId, products, concepts, neverSynced }: { a
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
         {shown.map((p) => (
           <article key={p.id} className="group flex flex-col overflow-hidden rounded-xl border bg-card transition-colors hover:border-ring/40">
-            <div className="relative aspect-square overflow-hidden bg-muted">
+            <button type="button" onClick={() => setViewing(p)} aria-label={`Detail ${p.title}`} className="relative block aspect-square overflow-hidden bg-muted">
               {p.cover ? (
                 <img src={mediaUrl(p.cover)} alt="" loading="lazy" className="size-full object-cover transition-transform duration-500 group-hover:scale-105" />
               ) : (
@@ -101,9 +104,13 @@ export function ShowcaseGrid({ accountId, products, concepts, neverSynced }: { a
                 {p.hidden && <span className="rounded bg-black/70 px-1.5 py-px text-[10px] text-white">Disembunyikan</span>}
                 {!p.inStock && <span className="rounded bg-black/70 px-1.5 py-px text-[10px] text-white">Stok habis</span>}
               </div>
-            </div>
+              <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 pt-6 pb-1.5 text-left text-[11px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
+                {p.hasDetail ? "Lihat detail" : "Lihat detail lengkap"}
+              </span>
+              {p.hasDetail && <span className="absolute right-2 bottom-2 rounded bg-black/70 px-1.5 py-px text-[10px] text-white group-hover:opacity-0" title="Detail lengkap tersimpan, dipakai AI">Detail ✓</span>}
+            </button>
             <div className="flex flex-1 flex-col gap-1 p-2.5">
-              <p className="line-clamp-2 text-xs leading-snug font-medium" title={p.title}>{p.title}</p>
+              <button type="button" onClick={() => setViewing(p)} className="line-clamp-2 text-left text-xs leading-snug font-medium hover:underline" title={p.title}>{p.title}</button>
               <p className="truncate text-[11px] text-muted-foreground">{p.shopName ?? "—"}</p>
               <p className="flex items-baseline gap-1.5">
                 <span className="text-[13px] font-semibold">{p.price}</span>
@@ -147,6 +154,7 @@ export function ShowcaseGrid({ accountId, products, concepts, neverSynced }: { a
         ))}
       </div>
 
+      <ProductDetailDialog product={viewing} onClose={() => setViewing(null)} onMakeVideo={() => { setMaking(viewing); setViewing(null); }} />
       <ConceptPicker product={making} concepts={concepts} onClose={() => setMaking(null)} />
     </div>
   );

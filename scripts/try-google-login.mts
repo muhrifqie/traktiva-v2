@@ -2,7 +2,7 @@
 // for a signed-out profile, and cancelling ends cleanly. No real credentials involved.
 // Usage: npx tsx --conditions=react-server scripts/try-google-login.mts
 import assert from "node:assert/strict";
-import { deleteProfile } from "@/lib/browser/camoufox";
+import { deleteProfile } from "@/lib/browser/chrome";
 import { cancelGoogleLogin, getGoogleLogin, startGoogleLogin } from "@/lib/platforms/google";
 
 const { loginId, sessionKey } = await startGoogleLogin();

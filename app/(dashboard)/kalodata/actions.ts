@@ -6,15 +6,17 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { accounts, kaloSessions, videoProjects } from "@/lib/db/schema";
-import { isCountry, type CountryCode } from "@/lib/countries";
+import { isCountry, SHOPEE_MARKETS, type CountryCode } from "@/lib/countries";
 import { getKv, kalo, kaloRange, setKv } from "@/lib/kalo";
 import { createProjectFolder, extractFrames, saveResult } from "@/lib/media";
-import { defaultOptions, presetById } from "@/lib/presets";
-import { KaloClient, KaloError, parseKaloNumber, signupKalodata, type KaloCreator, type KaloHistoryPoint, type KaloProductInfo, type KaloProductTotal, type KaloVideo } from "@/lib/kalodata";
+import { defaultOptions, parseDuration, presetById } from "@/lib/presets";
+
+const medianSec = (xs: number[]) => { const v = xs.filter((x) => x > 0).sort((a, b) => a - b); return v.length ? Math.round(v[Math.floor(v.length / 2)]) : 0; };
+import { KaloClient, KaloError, parseKaloNumber, signupKalodata, type KaloCreator, type KaloHistoryPoint, type KaloProductInfo, type KaloProductTotal, type KaloShopeeProduct, type KaloTopProduct, type KaloTopVideo, type KaloVideo } from "@/lib/kalodata";
 import { addToShowcase } from "@/lib/platforms/tiktok-shop";
 import { mirrorShowcase } from "@/lib/showcase";
 
-const refresh = () => revalidatePath("/riset");
+const refresh = () => revalidatePath("/riset", "layout");
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 // ---------------------------------------------------------------- sessions
@@ -141,6 +143,57 @@ export async function kaloToShowcase(productId: string) {
   return { ...results[0], account: acc.username };
 }
 
+// ---------------------------------------------------------------- market rankings (no keyword needed)
+
+const asCountry = (c: string): CountryCode => (isCountry(c) ? c : "ID");
+
+/** Best-selling TikTok Shop products of one market, last 30 days, 20 per page. Cached 6 h per page. */
+export async function kaloTopProducts(country: string, page = 1, refreshNow = false) {
+  const cc = asCountry(country);
+  const pg = z.number().int().min(1).max(10).parse(page);
+  const key = `kalo:tops:product:${cc}:p${pg}`;
+  const hit = refreshNow ? null : await getKv<KaloTopProduct[]>(key, 6 * 3600_000);
+  if (hit) return { rows: hit.data, cached: true, at: hit.capturedAt.getTime() };
+  const range = await kaloRange(cc);
+  const rows = await kalo((c) => c.productTops(range, 20, pg), cc);
+  await setKv(key, rows);
+  return { rows, cached: false, at: Date.now() };
+}
+
+/** Best-selling videos of one market (across products), last 30 days, 20 per page. Cached 6 h per page. */
+export async function kaloTopVideos(country: string, page = 1, refreshNow = false) {
+  const cc = asCountry(country);
+  const pg = z.number().int().min(1).max(10).parse(page);
+  const key = `kalo:tops:video:${cc}:p${pg}`;
+  const hit = refreshNow ? null : await getKv<KaloTopVideo[]>(key, 6 * 3600_000);
+  if (hit) return { rows: hit.data, cached: true, at: hit.capturedAt.getTime() };
+  const range = await kaloRange(cc);
+  const rows = await kalo((c) => c.videoTops(range, 20, pg), cc);
+  await setKv(key, rows);
+  return { rows, cached: false, at: Date.now() };
+}
+
+const shopeeCountry = (c: string): CountryCode => ((SHOPEE_MARKETS as readonly string[]).includes(c) ? (c as CountryCode) : "ID");
+
+const ShopeeQuery = z.object({
+  keyword: z.string().trim().max(80).default(""),
+  dataRange: z.string().regex(/^(L1W|\d{6})$/).default("L1W"),
+  categoryId: z.string().regex(/^\d{1,12}$/).nullish(),
+  sort: z.enum(["unitsSold", "revenue"]).default("unitsSold"),
+});
+
+/** Shopee best sellers (KaloData only covers ID, TH and VN). Cached 6 h per filter combination. */
+export async function kaloShopeeTops(country: string, query: z.input<typeof ShopeeQuery> = {}, refreshNow = false) {
+  const cc = shopeeCountry(country);
+  const q = ShopeeQuery.parse(query);
+  const key = `kalo:tops:shopee:${cc}:${q.dataRange}:${q.categoryId ?? "all"}:${q.sort}:${q.keyword.toLowerCase()}`;
+  const hit = refreshNow ? null : await getKv<KaloShopeeProduct[]>(key, 6 * 3600_000);
+  if (hit) return { rows: hit.data, cached: true, at: hit.capturedAt.getTime(), country: cc };
+  const rows = await kalo((c) => c.shopeeProducts({ keyword: q.keyword, dataRange: q.dataRange, cateIds: q.categoryId ? [q.categoryId] : [], sortField: q.sort, pageSize: 10 }), cc);
+  await setKv(key, rows);
+  return { rows, cached: false, at: Date.now(), country: cc };
+}
+
 /** Playable MP4 of a TikTok video via Kalodata's mirror (link expires; fetched on demand). */
 export async function kaloVideoUrl(videoId: string, country: string = "ID") {
   const id = z.string().regex(/^\d{10,22}$/).parse(videoId);
@@ -156,6 +209,11 @@ export async function kaloVideoUrl(videoId: string, country: string = "ID") {
  * - script: voice lines built from the product data and the top video's caption (speech-to-text comes later via Gemini)
  */
 export async function createVideoFromKalo(productId: string, country: string = "ID") {
+  redirect(`/video/${await createProjectFromKalo(productId, country)}`);
+}
+
+/** createVideoFromKalo without the redirect (Autopilot): returns the new project id. */
+export async function createProjectFromKalo(productId: string, country: string = "ID") {
   const id = z.string().regex(/^\d{10,22}$/).parse(productId);
   const cc: CountryCode = isCountry(country) ? country : "ID";
   const d = await kaloDetail(id, cc);
@@ -208,12 +266,14 @@ export async function createVideoFromKalo(productId: string, country: string = "
   const scenes = [
     { label: "Hook", imagePrompt: `Close-up of ${prod} held up to the camera, eye-catching first frame, ${look}`, motionPrompt: `Quick push-in on the product. A friendly Indonesian voice says: "Ini dia yang lagi viral, ${short}!"` },
     { label: "Demo", imagePrompt: `Hands showing ${prod} in use, natural home setting, ${look}`, motionPrompt: `Hands demonstrate the product naturally. Voice: "${d.info?.product_rating ? `Rating ${String(d.info.product_rating).replace(".", " koma ")}, ` : ""}udah ${soldSpoken || "ribuan orang"} yang beli bulan ini."` },
-    { label: "Detail", imagePrompt: `Macro detail shot of ${prod} showing texture and quality, ${look}`, motionPrompt: `Slow pan across the product details. Voice: "Lihat detailnya, rapi banget dan nyaman dipakai."` },
-    { label: "Ajakan", imagePrompt: `${prod} placed neatly with a hand pointing to it, clean background, ${look}`, motionPrompt: `Hand points at the product, then a thumbs up. Voice: "${price ? `Cuma ${price}, ` : ""}klik keranjang kuning sebelum kehabisan!"` },
+    { label: "Detail", imagePrompt: `Macro detail shot of ${prod} showing texture and quality, ${look}`, motionPrompt: `Slow pan across the product details. Voice: "Lihat detailnya, rapi banget."` },
+    { label: "Pakai", imagePrompt: `A person using ${prod} in a real everyday moment at home, product clearly visible, ${look}`, motionPrompt: `The person uses the product naturally in one smooth action. Voice: "Dipakai tiap hari juga enak banget."` },
+    // spoken CTA without invented urgency (0/30 best sellers used a CTA sticker; the CTA is said, not shown)
+    { label: "Ajakan", imagePrompt: `${prod} placed neatly with a hand pointing to it, clean background, ${look}`, motionPrompt: `Hand points at the product, then a thumbs up. Voice: "${price ? `Cuma ${price}, ` : ""}cek keranjang di bawah ya!"` },
   ].map((s, i) => ({ ...s, image: null, clip: null, styleRef: frames[i] ?? null }));
 
   const tags = (top?.description.match(/#[\p{L}\p{N}_]+/gu) ?? []).slice(0, 6).join(" ");
-  const caption = `${short} lagi rame banget! ${price ? `Cuma ${price}. ` : ""}Cek keranjang kuning sebelum kehabisan 🛒\n\n${tags || "#racuntiktok #tiktokshop #fyp"}`;
+  const caption = `${short} lagi rame banget! ${price ? `Cuma ${price}. ` : ""}Cek keranjang di bawah ya 🛒\n\n${tags || "#racuntiktok #tiktokshop #fyp"}`;
   await db
     .update(videoProjects)
     .set({
@@ -222,8 +282,14 @@ export async function createVideoFromKalo(productId: string, country: string = "
       product,
       scenes,
       caption,
-      options: { ...defaultOptions(preset), refVideo: refVideo ?? "", refCaption: top?.description?.slice(0, 300) ?? "" },
+      options: {
+        ...defaultOptions(preset),
+        refVideo: refVideo ?? "",
+        refCaption: top?.description?.slice(0, 300) ?? "",
+        // median length of the product's 3 best-selling videos: the Gaya step suggests a format from it
+        refDuration: String(medianSec([...d.videos].sort((a, b) => parseKaloNumber(b.revenue) - parseKaloNumber(a.revenue)).slice(0, 3).map((v) => parseDuration(v.duration)))),
+      },
     })
     .where(eq(videoProjects.id, projectId));
-  redirect(`/video/${projectId}`);
+  return projectId;
 }

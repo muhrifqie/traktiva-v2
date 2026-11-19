@@ -1,9 +1,9 @@
 import "server-only";
 import type { BrowserContext, Page } from "playwright-core";
-import { launchProfile, newProfileKey, withProfile } from "@/lib/browser/camoufox";
+import { launchProfile, newProfileKey, withProfile } from "@/lib/browser/chrome";
 import type { BrowserCookie } from "@/lib/flow2api";
 
-// Google account login on its own Camoufox profile (one browser profile per account). That profile is the
+// Google account login on its own Chrome profile (one browser profile per account). That profile is the
 // single source of the account's session: Flow cookies (video) now, Gemini cookies (text) later. The
 // browser is only used to log in and refresh cookies; all generation goes through APIs.
 //
@@ -86,7 +86,7 @@ type LoginState = {
 const g = globalThis as unknown as { __googleLogins?: Map<string, LoginState> };
 const logins = (g.__googleLogins ??= new Map());
 
-/** Visible Camoufox window straight on Google's sign-in page (continues to Flow). Poll with getGoogleLogin(id). */
+/** Visible Chrome window straight on Google's sign-in page (continues to Flow). Poll with getGoogleLogin(id). */
 export async function startGoogleLogin(sessionKey?: string) {
   const key = sessionKey ?? newProfileKey();
   const id = crypto.randomUUID();
