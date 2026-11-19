@@ -1,8 +1,8 @@
 import "server-only";
 import type { Page } from "playwright-core";
-import { withProfile } from "@/lib/browser/camoufox";
+import { withProfile } from "@/lib/browser/chrome";
 
-// Post one video through TikTok Studio web (tiktok.com/tiktokstudio/upload) in the account's own Camoufox profile,
+// Post one video through TikTok Studio web (tiktok.com/tiktokstudio/upload) in the account's own Chrome profile,
 // driven like a person would: attach file → wait for the upload → caption → product link (keranjang) → Post.
 // Ported from V1 (bot-autoupload tiktokUploader.js, raw CDP) to Playwright. Automating uploads is against TikTok's
 // terms and can get an account limited: the scheduler keeps a gap between posts per account.
@@ -114,7 +114,7 @@ async function writeCaption(page: Page, caption: string) {
   const lines = caption.trim().split("\n");
   for (const [i, line] of lines.entries()) {
     if (i) await page.keyboard.press("Enter");
-    await page.keyboard.type(line, { delay: 8 }); // insertText fails in Firefox (Camoufox) on this editor
+    await page.keyboard.type(line, { delay: 8 }); // typed key by key: this editor ignores insertText in some browsers
     // a typed #hashtag opens a suggestion list; Escape closes it without picking one
     if (/#\S+$/.test(line)) await page.keyboard.press("Escape").catch(() => {});
   }

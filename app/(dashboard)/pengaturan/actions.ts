@@ -3,13 +3,13 @@
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { deleteProfile, isProfileKey } from "@/lib/browser/camoufox";
+import { deleteProfile, isProfileKey } from "@/lib/browser/chrome";
 import { db } from "@/lib/db";
 import { googleAccounts } from "@/lib/db/schema";
 import { deleteFlowSession, refreshFlowCredits, upsertFlowSession } from "@/lib/flow2api";
 import { cancelGoogleLogin, getGoogleLogin, refreshGoogleSession, startGoogleLogin } from "@/lib/platforms/google";
 
-// Google accounts are the only AI setting: one Camoufox profile per account holds the Google login,
+// Google accounts are the only AI setting: one Chrome profile per account holds the Google login,
 // from which Flow (video) and later Gemini (text) cookies are taken. No API keys anywhere.
 
 const Id = z.number().int().positive();
@@ -207,7 +207,7 @@ export async function disconnectChatgpt() {
   const { getSettings, updateSettings } = await import("@/lib/settings");
   const key = getSettings().chatgpt?.profileKey;
   updateSettings({ chatgpt: null });
-  if (key) await (await import("@/lib/browser/camoufox")).stopStandby(key);
+  if (key) await (await import("@/lib/browser/chrome")).stopStandby(key);
   if (key && isProfileKey(key)) await deleteProfile(key).catch(() => {});
   refresh();
 }

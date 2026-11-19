@@ -19,7 +19,7 @@ Server actions Studio: `app/(dashboard)/video/project-actions.ts` (semua aksi pr
 ## Alur pembuatan video
 1. **Proyek** (`video_projects`): `product` (nama, harga, keunggulan/fakta untuk AI, foto), `presetId` (konsep, `lib/presets.ts`), `options`, `clipSec`, `scenes[]`, `edit`.
 2. **Storyboard**: `buildStoryboard()` menyusun adegan dari template konsep (`fitScenes` menyesuaikan jumlah). Video Pendek = 1 adegan; Video Panjang = 6–12 adegan + kerangka bab.
-3. **Penulis AI**: `lib/prompt-writer.ts` (`writeScenes`, `writeOutline`, `describeProduct`) → `lib/writer.ts` (ChatGPT kalau diset, fallback Gemini) → `lib/platforms/{chatgpt,gemini}.ts` (browser Camoufox, siaga di `lib/ai-standby.ts`).
+3. **Penulis AI**: `lib/prompt-writer.ts` (`writeScenes`, `writeOutline`, `describeProduct`) → `lib/writer.ts` (ChatGPT kalau diset, fallback Gemini) → `lib/platforms/{chatgpt,gemini}.ts` (browser Chrome, siaga di `lib/ai-standby.ts`).
 4. **Gambar & klip**: `lib/projects.ts` (`queueImages`, `queueRender`) → `lib/flow2api.ts` (flow2api lokal = Google Flow). Paralelisme dibatasi slot global `withSlot` (`lib/video.ts`, setelan Kecepatan). QC gambar oleh Gemini + perbaikan otomatis sekali.
 5. **Edit**: `lib/editor.ts` (`prepareEdit`, voice-over satu tarikan Cartesia `lib/cartesia.ts`, `exportEdit` ffmpeg 1080p). Model timeline & caption: `lib/edit.ts`. Overlay digambar di browser (`lib/render-overlays.ts`).
 6. **Otomatis penuh**: `autoFinish()` di `lib/autopilot.ts` menjalankan langkah 3–5 tanpa klik. Dipakai Autopilot dan tombol "Buat video sekarang" (`quickMake`, semua versi jalan paralel, status di memori proses server).
@@ -27,7 +27,7 @@ Server actions Studio: `app/(dashboard)/video/project-actions.ts` (semua aksi pr
 ## Upload & akun
 - TikTok Studio upload: `lib/platforms/tiktok-upload.ts` (caption, produk keranjang, dry-run). Runner terjadwal: `lib/uploads.ts` (dimulai di `instrumentation-node.ts`).
 - Etalase TikTok Shop: `lib/platforms/tiktok-shop.ts` (panggilan bertanda tangan dari dalam halaman Streamer Desktop; detail produk dibuka lewat halaman etalase) + cermin lokal `lib/showcase.ts`.
-- Browser otomasi: `lib/browser/camoufox.ts` (`withProfile`, satu profil per akun, kunci lintas proses).
+- Browser otomasi: `lib/browser/chrome.ts`: Chrome terpasang dijalankan biasa dengan `--user-data-dir` per akun lalu disambung `connectOverCDP` (`withProfile`, kunci lintas proses, headless untuk kerja latar).
 - KaloData: `lib/kalodata/` (klien API, lihat `lib/kalodata/README.md`), cache di `lib/kalo.ts`.
 
 ## Data

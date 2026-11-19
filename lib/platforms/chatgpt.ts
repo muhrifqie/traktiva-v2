@@ -1,8 +1,8 @@
 import "server-only";
 import type { BrowserContext, Page } from "playwright-core";
-import { launchProfile, newProfileKey, withProfile } from "@/lib/browser/camoufox";
+import { launchProfile, newProfileKey, withProfile } from "@/lib/browser/chrome";
 
-// ChatGPT (chatgpt.com) through an account signed in to its own Camoufox profile — the writer in the
+// ChatGPT (chatgpt.com) through an account signed in to its own Chrome profile — the writer in the
 // ChatGPT + Gemini + Flow combo (Gemini looks, ChatGPT writes, Flow generates). No API key: the page is driven like
 // a person would (type, send, read the answer). The internal backend API is avoided on purpose: it needs rotating
 // anti-bot tokens. Owner's own account; automation is against OpenAI's terms and may get it limited.
@@ -27,7 +27,7 @@ type LoginState = { status: "waiting" | "done" | "failed" | "cancelled"; email: 
 const g = globalThis as unknown as { __chatgptLogins?: Map<string, LoginState> };
 const logins = (g.__chatgptLogins ??= new Map());
 
-/** Visible Camoufox window on chatgpt.com: the owner signs in (any method). Poll with getChatgptLogin(id). */
+/** Visible Chrome window on chatgpt.com: the owner signs in (any method). Poll with getChatgptLogin(id). */
 export async function startChatgptLogin(profileKey?: string) {
   const key = profileKey ?? newProfileKey();
   const id = crypto.randomUUID();

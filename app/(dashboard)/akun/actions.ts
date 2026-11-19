@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { accountPosts, accounts, accountStats } from "@/lib/db/schema";
-import { deleteProfile, isProfileKey } from "@/lib/browser/camoufox";
+import { deleteProfile, isProfileKey } from "@/lib/browser/chrome";
 import * as tiktok from "@/lib/platforms/tiktok";
 
 // Accounts are only created by a real platform login (username/uid read from the session), never typed in by hand.
@@ -69,7 +69,7 @@ async function saveTikTokLogin(sessionKey: string, who: tiktok.TikTokIdentity) {
   return { id, created: true };
 }
 
-/** Start a TikTok login in a visible Camoufox window. accountId = re-login that account on its own profile. */
+/** Start a TikTok login in a visible Chrome window. accountId = re-login that account on its own profile. */
 export async function startTikTokLogin(accountId?: number) {
   let key: string | undefined;
   if (accountId) {

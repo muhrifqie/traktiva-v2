@@ -24,7 +24,7 @@ type VoiceSettings = {
   cartesiaVoiceName?: string;
   speed?: number; // 0.6–1.5
 };
-/** ChatGPT web account (its own Camoufox profile) used as the writer; null = Gemini writes. */
+/** ChatGPT web account (its own Chrome profile) used as the writer; null = Gemini writes. */
 export type ChatgptSettings = { profileKey: string; email: string | null; connectedAt: number };
 type Settings = { speed: SpeedId; showcaseSyncMinutes: number /* 0 = off */; voice: VoiceSettings; editTemplates?: EditTemplate[]; chatgpt?: ChatgptSettings | null; writing?: WritingRules };
 const DEFAULTS: Settings = { speed: "normal", showcaseSyncMinutes: 60, voice: { provider: "flow" } };

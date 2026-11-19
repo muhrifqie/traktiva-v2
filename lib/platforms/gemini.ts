@@ -1,8 +1,8 @@
 import "server-only";
 import type { Page } from "playwright-core";
-import { withProfile } from "@/lib/browser/camoufox";
+import { withProfile } from "@/lib/browser/chrome";
 
-// Gemini (gemini.google.com) through a Google account already logged in to a Camoufox profile.
+// Gemini (gemini.google.com) through a Google account already logged in to a Chrome profile.
 // No API key: the page's own session tokens are read from WIZ_global_data and the chat endpoint is
 // called from inside the page, exactly like the Gemini web app does.
 
@@ -40,8 +40,8 @@ const TOKEN_TTL = 15 * 60 * 1000;
 const gt = globalThis as unknown as { __geminiTokens?: Map<string, { wiz: Wiz; at: number }> };
 const tokens = (gt.__geminiTokens ??= new Map());
 
-/** Load the Gemini app and read the session tokens from its HTML (Camoufox runs scripts in an isolated world, so
- * window.WIZ_global_data is invisible). Cached per profile for TOKEN_TTL. */
+/** Load the Gemini app and read the session tokens from its HTML (works whatever world page scripts run in).
+ * Cached per profile for TOKEN_TTL. */
 async function openGemini(page: Page, sessionKey: string): Promise<Wiz> {
   await page.goto(APP, { waitUntil: "domcontentloaded", timeout: 45_000 });
   if (/accounts\.google\.com/.test(page.url())) throw new Error("Akun Google ini belum login ke Gemini. Login ulang di Pengaturan AI.");

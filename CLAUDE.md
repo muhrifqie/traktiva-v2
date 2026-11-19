@@ -21,7 +21,7 @@ Dikerjakan berdua (Rifq & Azzam): baca **Kerja tim** sebelum membuat branch, mig
 
 ## Aturan produk
 - Menu di `lib/nav.ts`. Menu tanpa folder `app/(dashboard)/<slug>/` otomatis tampil sebagai placeholder.
-- Kerja berat (Playwright/Camoufox, ffmpeg, ADB, Flow) jalan di server (server action / route / runner), komponen client hanya memanggilnya.
+- Kerja berat (Chrome/Playwright, ffmpeg, ADB, Flow) jalan di server (server action / route / runner), komponen client hanya memanggilnya.
 - Fitur khusus desktop lewat `electron/preload.js` → `window.desktop`; mode web tetap jalan tanpa itu.
 - Naskah & suara AI: CTA = "cek keranjang di bawah". Frasa "keranjang kuning" / "link di kiri bawah" dilarang. Aturan di Pengaturan AI → Aturan naskah (`lib/writing.ts`); setiap prompt penulis memakai `rulesPrompt()` dan hasilnya disaring `applyRules()`. Angka ditulis sebagai digit (`lib/angka.ts`).
 - Konfirmasi pakai `confirmDialog()` (`components/confirm-dialog.tsx`), bukan `window.confirm/alert`. Preview media pakai `openLightbox()`.
@@ -34,8 +34,8 @@ Dikerjakan berdua (Rifq & Azzam): baca **Kerja tim** sebelum membuat branch, mig
 
 ## Gotcha
 - `page.evaluate` yang dijalankan lewat `tsx` (scripts/): esbuild menyisipkan `__name` ke fungsi bernama → pakai arrow function anonim di dalam evaluate.
-- `waitForFunction` macet di Camoufox headless; baca DOM lewat `locator(...).textContent()`.
-- Profil Camoufox dikunci lintas proses (`withProfile`); jangan buka profil yang sama paralel, panggilannya akan antre.
+- Browser otomasi = Chrome yang terpasang di PC (fallback Edge), satu profil per akun, disambung lewat CDP (`lib/browser/chrome.ts`). Profil dikunci lintas proses (`withProfile`); membuka profil yang sama paralel membuat panggilannya antre. Cek cepat: `npx tsx --conditions=react-server scripts/try-chrome.mts`.
+- Baca DOM di headless lewat `locator(...).textContent()` (lebih andal dari `waitForFunction`).
 - Lint react-hooks: tanpa `Date.now()` saat render (`useState(() => Date.now())`), tanpa `setState` sinkron di effect (pakai `useSyncExternalStore` / reset saat render), fungsi bernama `use…` dianggap hook.
 - Nomor langkah proyek di DB tetap 1–6 (runner menulis 4/5/6); UI memetakannya ke 3 tab (`viewOf` di `wizard.tsx`).
 - `video_projects.options` = map string (maks 3000 karakter per nilai). Kunci penting: `format`, `clips`, `finals`, `versions`/`versionOf`, `written`, `outline`, `showcaseId`.

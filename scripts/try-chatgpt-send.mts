@@ -1,6 +1,6 @@
 // Dev check: send one message on the ChatGPT standby page and dump what the page shows afterwards.
 // Usage: npx tsx --conditions=react-server scripts/try-chatgpt-send.mts [plain]   (plain = no resource blocking)
-import { launchProfile, standbyProfile, withProfile } from "@/lib/browser/camoufox";
+import { launchProfile, standbyProfile, withProfile } from "@/lib/browser/chrome";
 import { CHAT_URL } from "@/lib/platforms/chatgpt";
 import { getSettings } from "@/lib/settings";
 

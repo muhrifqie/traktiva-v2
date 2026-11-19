@@ -67,11 +67,11 @@ export const accountPosts = sqliteTable(
 );
 
 
-// Google accounts logged in through Camoufox; their Flow session is registered in flow2api for API generation.
+// Google accounts logged in through Chrome; their Flow session is registered in flow2api for API generation.
 export const googleAccounts = sqliteTable("google_accounts", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   email: text("email").notNull().unique(),
-  sessionKey: text("session_key").notNull(), // Camoufox profile (cfx_...) holding the Google login
+  sessionKey: text("session_key").notNull(), // Chrome profile (cfx_...) holding the Google login
   flowTokenId: integer("flow_token_id"), // token id inside flow2api
   credits: integer("credits"),
   status: text("status", { enum: ["active", "need_login", "error"] }).notNull().default("active"),
@@ -252,7 +252,7 @@ export const savedProducts = sqliteTable(
 export type SavedProduct = typeof savedProducts.$inferSelect;
 
 // Scheduled TikTok uploads (Jadwal Upload). The runner (lib/uploads.ts) posts due jobs one at a time through
-// TikTok Studio web in the account's own Camoufox profile. hook/label feed the "what works" stats (lib/insights.ts).
+// TikTok Studio web in the account's own Chrome profile. hook/label feed the "what works" stats (lib/insights.ts).
 export const uploadJobs = sqliteTable("upload_jobs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   accountId: integer("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),

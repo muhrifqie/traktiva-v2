@@ -1,6 +1,6 @@
 import "server-only";
 import { eq } from "drizzle-orm";
-import { standbyProfile, standbyStatus } from "@/lib/browser/camoufox";
+import { standbyProfile, standbyStatus } from "@/lib/browser/chrome";
 import { db } from "@/lib/db";
 import { googleAccounts } from "@/lib/db/schema";
 import { CHAT_URL } from "@/lib/platforms/chatgpt";

@@ -1,9 +1,9 @@
 import "server-only";
 import type { Page } from "playwright-core";
-import { withProfile } from "@/lib/browser/camoufox";
+import { withProfile } from "@/lib/browser/chrome";
 
 // TikTok Shop "Streamer Desktop" (shop.tiktok.com/streamer) read & write through the account's own logged-in
-// Camoufox profile. All endpoints below were found by capturing the real page (2026-11-18):
+// Chrome profile. All endpoints below were found by capturing the real page (2026-11-18):
 //   GET  /api/v1/streamer_desktop/search_product/list    showcase list (size, offset)
 //   POST /api/v1/streamer_desktop/product_link/check     {origin:2, urls:[...]} → product preview
 //   POST /api/v1/streamer_desktop/showcase_product/add   {product_info:[{product_id, source_from:2, main_plan_id:"", isv_id:""}]}

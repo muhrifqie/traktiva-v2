@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
   // product photos are uploaded through a server action
   experimental: { serverActions: { bodySizeLimit: "30mb" } },
   // native/browser-driving packages must stay real node_modules, not bundled
-  serverExternalPackages: ["@libsql/client", "libsql", "camoufox-js", "playwright-core", "better-sqlite3", "fingerprint-generator", "ffmpeg-static"],
+  serverExternalPackages: ["@libsql/client", "libsql", "playwright-core", "better-sqlite3", "ffmpeg-static"],
   turbopack: {
     rules: {
       "*.css": {

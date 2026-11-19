@@ -1,8 +1,8 @@
 import "server-only";
 import type { BrowserContext, Page } from "playwright-core";
-import { launchProfile, newProfileKey, withProfile } from "@/lib/browser/camoufox";
+import { launchProfile, newProfileKey, withProfile } from "@/lib/browser/chrome";
 
-// TikTok automation on Camoufox profiles: login, session check, profile + video sync.
+// TikTok automation on Chrome profiles: login, session check, profile + video sync.
 // ⚠️ Every action here touches a real TikTok account: keep it human-paced, one profile per account.
 
 const SESSION_COOKIES = new Set(["sessionid", "sessionid_ss", "sid_tt"]);
@@ -50,7 +50,7 @@ type LoginState = {
 const g = globalThis as unknown as { __tiktokLogins?: Map<string, LoginState> };
 const logins = (g.__tiktokLogins ??= new Map());
 
-/** Opens a visible Camoufox window on the TikTok login page. Returns a login id to poll. */
+/** Opens a visible Chrome window on the TikTok login page. Returns a login id to poll. */
 export async function startLogin(sessionKey?: string) {
   const key = sessionKey ?? newProfileKey();
   const id = crypto.randomUUID();
@@ -197,7 +197,7 @@ async function readUserDetail(page: Page) {
 }
 
 /**
- * Opens the account's profile page in its own Camoufox profile (headless, no window) and captures
+ * Opens the account's profile page in its own Chrome profile (headless, no window) and captures
  * profile + video + playlist data. Headless renders fine once the profile is logged in; an anonymous
  * profile gets a blank page, which is why only logged-in accounts can sync.
  */
