@@ -1,17 +1,33 @@
 "use client";
 
+import { useState, useTransition } from "react";
 import Link from "next/link";
-import { BadgeCheck, ChevronsUpDown, Clapperboard, Clock, HardDrive, Info, Monitor, Settings, Users } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { BadgeCheck, Check, ChevronsUpDown, Clapperboard, HardDrive, Info, Loader2, LogIn, Monitor, Plus, Settings, Users } from "lucide-react";
+import { toast } from "sonner";
+import { selectAccount } from "@/app/(dashboard)/akun/actions";
 import { GoogleIcon } from "@/components/brand-icons";
 import { Logo } from "@/components/logo";
+import { PlatformIcon } from "@/components/platform-icon";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { PLATFORM } from "@/lib/platforms";
+
+export type SocialAccount = {
+  id: number;
+  platform: keyof typeof PLATFORM;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  status: "active" | "disabled" | "need_login";
+};
 
 export type UserInfo = {
   email: string | null; // primary Google account (the app has no separate user login yet)
   googleAccounts: number;
   socialAccounts: number;
+  social: { selected: SocialAccount | null; list: SocialAccount[] }; // the account the user works with (sidebar)
   videos: number;
   appVersion: string;
   platform: string;
@@ -27,6 +43,26 @@ const LICENSE = {
 
 const OS: Record<string, string> = { win32: "Windows", darwin: "macOS", linux: "Linux" };
 
+/** Profile photo of a social account (initial as fallback), with its platform mark in the corner. */
+function SocialAvatar({ account, size = "size-8" }: { account: SocialAccount; size?: string }) {
+  const [broken, setBroken] = useState(false);
+  return (
+    <span className={`relative ${size} shrink-0`}>
+      {account.avatarUrl && !broken ? (
+        // eslint-disable-next-line @next/next/no-img-element -- platform CDN avatars
+        <img src={account.avatarUrl} alt="" referrerPolicy="no-referrer" onError={() => setBroken(true)} className="size-full rounded-full border object-cover" />
+      ) : (
+        <span className="grid size-full place-items-center rounded-full bg-muted text-[13px] font-semibold uppercase">{(account.displayName || account.username)[0]}</span>
+      )}
+      <span className="absolute -right-0.5 -bottom-0.5 grid size-3.5 place-items-center rounded-full bg-sidebar ring-1 ring-sidebar">
+        <PlatformIcon platform={account.platform} className="size-2.5" />
+      </span>
+    </span>
+  );
+}
+
+const accountName = (a: SocialAccount) => a.displayName || `@${a.username}`;
+
 function Avatar({ email, size = "size-8" }: { email: string | null; size?: string }) {
   return email ? (
     <span className={`grid ${size} shrink-0 place-items-center rounded-lg bg-primary text-[13px] font-semibold uppercase text-primary-foreground`}>
@@ -39,27 +75,71 @@ function Avatar({ email, size = "size-8" }: { email: string | null; size?: strin
 
 /** Bottom-left of the sidebar: who is using the app + license; opens a detail panel. */
 export function UserCard({ info }: { info: UserInfo }) {
+  const router = useRouter();
+  const [switching, startSwitch] = useTransition();
   const lic = LICENSE[info.license.status];
   const name = info.email ? info.email.split("@")[0] : "Pengguna Traktiva";
-  const licLine = info.license.daysLeft != null ? `${info.license.daysLeft} hari lagi` : lic.label;
+  const { selected, list } = info.social;
+
+  // no social account yet: the card is just the way to log one in
+  if (!selected) {
+    return (
+      <Link href="/akun" className="flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring">
+        <span className="grid size-8 shrink-0 place-items-center rounded-full border border-dashed text-muted-foreground"><LogIn className="size-4" /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-medium">Silakan login</span>
+          <span className="block truncate text-[11px] text-muted-foreground">Hubungkan akun sosmed</span>
+        </span>
+      </Link>
+    );
+  }
+
+  const pick = (id: number) =>
+    startSwitch(async () => {
+      try {
+        await selectAccount(id);
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Gagal mengganti akun");
+      }
+    });
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         className="flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[popup-open]:bg-sidebar-accent group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0"
-        aria-label="Info pengguna dan lisensi"
+        aria-label="Akun sosmed yang dipakai"
       >
-        <Avatar email={info.email} />
+        <SocialAvatar account={selected} />
         <span className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
-          <span className="block truncate text-[13px] font-medium">{name}</span>
-          <span className="flex items-center gap-1 truncate text-[11px] text-muted-foreground">
-            <Clock className="size-3" /> {licLine}
+          <span className="block truncate text-[13px] font-medium">{accountName(selected)}</span>
+          <span className={`block truncate text-[11px] ${selected.status === "need_login" ? "text-amber-500" : "text-muted-foreground"}`}>
+            {selected.status === "need_login" ? "Perlu login ulang" : `${PLATFORM[selected.platform].label} · @${selected.username}`}
           </span>
         </span>
-        <ChevronsUpDown className="size-3.5 text-muted-foreground group-data-[collapsible=icon]:hidden" />
+        {switching ? <Loader2 className="size-3.5 animate-spin text-muted-foreground" /> : <ChevronsUpDown className="size-3.5 text-muted-foreground group-data-[collapsible=icon]:hidden" />}
       </DropdownMenuTrigger>
 
       <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-72 p-0">
+        <div className="p-1">
+          <p className="px-2 pt-1.5 pb-1 text-[11px] font-medium text-muted-foreground">Akun sosmed</p>
+          {list.map((a) => (
+            <DropdownMenuItem key={a.id} disabled={switching} onClick={() => a.id !== selected.id && pick(a.id)} className="gap-2.5">
+              <SocialAvatar account={a} size="size-6" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px]">{accountName(a)}</span>
+                <span className={`block truncate text-[11px] ${a.status === "need_login" ? "text-amber-500" : "text-muted-foreground"}`}>
+                  {a.status === "need_login" ? "Perlu login ulang" : `@${a.username}`}
+                </span>
+              </span>
+              {a.id === selected.id && <Check className="size-4 text-brand-light" />}
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuItem render={<Link href="/akun" />} className="gap-2.5 text-muted-foreground">
+            <span className="grid size-6 place-items-center rounded-full border border-dashed"><Plus className="size-3.5" /></span> Tambah akun
+          </DropdownMenuItem>
+        </div>
+        <DropdownMenuSeparator className="my-0" />
         <div className="flex items-center gap-3 p-3">
           <Avatar email={info.email} size="size-10" />
           <div className="min-w-0">
@@ -91,8 +171,8 @@ export function UserCard({ info }: { info: UserInfo }) {
         <div className="grid grid-cols-3 gap-2 p-3">
           {[
             { icon: <GoogleIcon className="size-3.5" />, n: info.googleAccounts, label: "Google" },
-            { icon: <Users className="size-3.5 text-[#2fa868]" />, n: info.socialAccounts, label: "Sosial" },
-            { icon: <Clapperboard className="size-3.5 text-[#f2994a]" />, n: info.videos, label: "Video" },
+            { icon: <Users className="size-3.5 text-black dark:text-white" />, n: info.socialAccounts, label: "Sosial" },
+            { icon: <Clapperboard className="size-3.5 text-black dark:text-white" />, n: info.videos, label: "Video" },
           ].map((s) => (
             <div key={s.label} className="rounded-lg border p-2 text-center">
               <div className="flex items-center justify-center gap-1">{s.icon}<span className="text-sm font-semibold tabular-nums">{s.n}</span></div>

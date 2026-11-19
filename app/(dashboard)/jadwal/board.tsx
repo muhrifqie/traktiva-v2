@@ -173,7 +173,7 @@ export function JadwalBoard({
       {/* new schedule */}
       <section className={`${card} space-y-3 self-start`}>
         <div className="flex items-center gap-2">
-          <span className="grid size-7 place-items-center rounded-lg bg-[#5e6ad21a] text-[#7b86f0]"><CalendarClock className="size-4" /></span>
+          <span className="grid size-7 place-items-center rounded-lg bg-muted text-black dark:text-white"><CalendarClock className="size-4" /></span>
           <h2 className="text-[13px] font-semibold">Jadwalkan video</h2>
         </div>
         {!videos.length ? (
@@ -273,7 +273,7 @@ export function JadwalBoard({
         {/* recommendations */}
         <section className={`${card} space-y-3`}>
           <div className="flex items-center gap-2">
-            <span className="grid size-7 place-items-center rounded-lg bg-[#f2c94c1a] text-[#f2c94c]"><Lightbulb className="size-4" /></span>
+            <span className="grid size-7 place-items-center rounded-lg bg-muted text-black dark:text-white"><Lightbulb className="size-4" /></span>
             <div className="min-w-0 flex-1">
               <h2 className="text-[13px] font-semibold">Rekomendasi</h2>
               <p className="text-[11px] text-muted-foreground">{tip?.fromHistory ? "Dihitung dari jam posting & views akunmu sendiri." : "Akun ini belum punya cukup riwayat; pakai jam ramai TikTok Indonesia dulu."}</p>
@@ -419,7 +419,7 @@ function Insights({ data }: { data: HookInsights }) {
   return (
     <section className={`${card} space-y-3`}>
       <div className="flex items-center gap-2">
-        <span className="grid size-7 place-items-center rounded-lg bg-[#ff3b6b1a] text-[#ff3b6b]"><TrendingUp className="size-4" /></span>
+        <span className="grid size-7 place-items-center rounded-lg bg-muted text-black dark:text-white"><TrendingUp className="size-4" /></span>
         <div className="min-w-0 flex-1">
           <h2 className="text-[13px] font-semibold">Yang paling laku di akunmu</h2>
           <p className="text-[11px] text-muted-foreground">Dari statistik postingan (sinkron di Profil & Postingan). AI penulis memakai ini sebagai contoh hook yang terbukti.</p>

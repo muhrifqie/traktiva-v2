@@ -15,6 +15,8 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "dist/**",
+    // local runtime data (DB, browser profiles with Chrome's own JS); never committed
+    "data/**",
   ]),
 ]);
 
