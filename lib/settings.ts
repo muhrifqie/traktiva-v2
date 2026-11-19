@@ -84,9 +84,8 @@ export function noteActiveGoogleAccounts(n: number) {
   g.__activeGoogle = n;
 }
 
-/** How many Flow generations may run at the same time. */
 /**
- * Flow slots: automatic from the PC (RAM/CPU) and the active Google accounts, then capped by the admin's remote
+ * How many Flow generations may run at the same time. Flow slots: automatic from the PC (RAM/CPU) and the active Google accounts, then capped by the admin's remote
  * flag `maxParallel` (license panel → Setelan app) when it is set.
  */
 export const parallelLimit = () => {
@@ -100,4 +99,6 @@ export const parallelLimit = () => {
  * generation takes minutes, so one browser serves up to ~4 running jobs; a normal laptop keeps just one.
  * flow2api caps this at 20.
  */
-export const captchaBrowsersFor = (parallel: number) => Math.min(20, Math.max(1, Math.ceil(parallel / 4)));
+export const captchaBrowsersFor = (parallel: number) =>
+  // 4+ jobs share the browsers: keep a second one, so one stuck captcha window does not hold every job
+  Math.min(20, Math.max(parallel >= 4 ? 2 : 1, Math.ceil(parallel / 4)));

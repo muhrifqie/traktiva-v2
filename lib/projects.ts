@@ -234,7 +234,11 @@ async function runRender(id: number) {
   await save(id, { progress: "Menggabungkan klip..." });
   const finalPath = `${p.folder}/final.mp4`;
   await concat(store.scenes.map((s) => resolveMedia(s.clip!)), resolveMedia(finalPath), silent);
-  await save(id, { status: "done", progress: null, error: null, finalPath, step: 6 });
+  // final.mp4 is the raw 720p join again (no captions/voice-over): an earlier export no longer exists, so Jadwal and
+  // the Hasil tab must not offer it as ready to post. Read the current edit (the editor may have saved during render).
+  const [cur] = await db.select({ edit: videoProjects.edit }).from(videoProjects).where(eq(videoProjects.id, id));
+  const edit = cur?.edit?.exportedAt ? { ...cur.edit, exportedAt: null } : undefined;
+  await save(id, { status: "done", progress: null, error: null, finalPath, step: 6, ...(edit ? { edit } : {}) });
   void syncAllFlowCredits().catch(() => {}); // the clips used Flow credits: show the new balance without a manual sync
 }
 

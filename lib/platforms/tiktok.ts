@@ -160,6 +160,7 @@ export type TikTokProfile = {
   videoCount: number;
   videos: TikTokVideo[];
   allVideos: boolean; // TikTok said there are no more posts: `videos` is the account's whole public list
+  pagesFailed: number; // post-list answers that could not be read: the list may have holes, so nothing is pruned
   playlists: { id: string; name: string; videoCount: number; cover: string | null }[];
 };
 
@@ -216,6 +217,7 @@ const IMG_EXT: Record<string, string> = { "image/jpeg": ".jpg", "image/png": ".p
  * unchanged, in the owner's own post list, so this is the only sign of it).
  */
 async function saveCover(ctx: BrowserContext, id: string, urls: string[]) {
+  if (!/^d{1,30}$/.test(id)) return { rel: null, gone: false }; // TikTok ids are digits; never let one shape a file path
   let notFound = 0;
   for (const url of urls) {
     try {
@@ -227,7 +229,8 @@ async function saveCover(ctx: BrowserContext, id: string, urls: string[]) {
       // next link
     }
   }
-  return { rel: null, gone: urls.length > 0 && notFound === urls.length };
+  // gone only when 2+ different links agree: a single 404 can be a CDN hiccup, and "gone" deletes the stored post
+  return { rel: null, gone: notFound >= 2 && notFound === urls.length };
 }
 
 /**
@@ -284,6 +287,7 @@ export async function syncProfile(sessionKey: string, username: string, { maxVid
     const videos = new Map<string, TikTokVideo>();
     let hasMore = true;
     let pages = 0;
+    let pagesFailed = 0;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw TikTok payloads
     let playlists: any[] = [];
 
@@ -291,7 +295,10 @@ export async function syncProfile(sessionKey: string, username: string, { maxVid
       const url = res.url();
       if (!/\/api\/(post\/item_list|user\/playlist)\//.test(url)) return;
       const j = await res.json().catch(() => null);
-      if (!j) return;
+      if (!j) {
+        if (url.includes("/post/item_list/")) pagesFailed++;
+        return;
+      }
       if (url.includes("/post/item_list/")) {
         for (const it of j.itemList ?? []) videos.set(String(it.id), mapVideo(it));
         hasMore = !!j.hasMore;
@@ -335,6 +342,7 @@ export async function syncProfile(sessionKey: string, username: string, { maxVid
       videoCount: num(st.videoCount),
       videos: list.filter((v) => !v.removed), // removed posts are left out, so the app drops them too
       allVideos: pages > 0 && !hasMore,
+      pagesFailed,
       playlists: playlists.map((p) => ({
         id: String(p.mixId ?? p.id ?? ""),
         name: String(p.name ?? p.mixName ?? ""),

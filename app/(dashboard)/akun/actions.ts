@@ -193,7 +193,8 @@ export async function syncTikTokAccount(id: number) {
       .values({ accountId: a.id, externalId: v.id, ...row })
       .onConflictDoUpdate({ target: [accountPosts.accountId, accountPosts.externalId], set: row });
   }
-  const removed = await pruneDeletedPosts(a.id, p.videos, p.allVideos);
+  // a post-list page that could not be read leaves holes: prune nothing this time (the next sync retries)
+  const removed = p.pagesFailed ? 0 : await pruneDeletedPosts(a.id, p.videos, p.allVideos);
 
   refresh();
   return { videos: p.videos.length, removed, followers: p.followers, playlists: p.playlists.length };

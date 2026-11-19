@@ -25,13 +25,27 @@ export function QuickResult({ p, onEdit }: { p: Project; onEdit: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const started = useRef<number | null>(null);
+  const waiting = useRef<ReturnType<typeof setInterval> | null>(null);
+  // stop polling once the other run finished (or when leaving the tab)
+  useEffect(() => () => void (waiting.current && clearInterval(waiting.current)), []);
+  useEffect(() => {
+    if (exported && waiting.current) clearInterval(waiting.current);
+  }, [exported]);
 
   useEffect(() => {
     if (exported || started.current === attempt) return; // dev StrictMode mounts twice: one export per attempt
     started.current = attempt;
     void (async () => {
       try {
-        const edit = await prepareQuickEdit(p.id);
+        const r = await prepareQuickEdit(p.id);
+        if (r.busy) {
+          // another tab/window (or "Buat video sekarang") is making this video: wait for it, never export twice
+          setStage(2);
+          const timer = setInterval(() => router.refresh(), 4000);
+          waiting.current = timer;
+          return;
+        }
+        const edit = r.edit;
         setStage(1);
         const overlays = await renderOverlays(edit);
         setStage(2);

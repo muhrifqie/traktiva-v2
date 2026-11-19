@@ -135,13 +135,22 @@ async function ensureRunning(cfg: Flow2ApiConfig) {
   await gs.__flowStart;
 }
 
+/**
+ * The automatic speed is capped by the active Google accounts: recount them and let queued jobs start at once when
+ * the limit went up (called on every generation and right after a Google login/removal).
+ */
+export async function refreshFlowLimit() {
+  const [{ n }] = await db.select({ n: count() }).from(googleAccounts).where(eq(googleAccounts.status, "active"));
+  noteActiveGoogleAccounts(n);
+  const { drainSlots } = await import("@/lib/video"); // lazy: lib/video imports settings, keep this module light
+  drainSlots();
+}
+
 export async function requireFlow2Api() {
   const cfg = loadFlow2ApiConfig();
   if (!cfg) throw new Error("Mesin video belum terpasang di perangkat ini.");
   await ensureRunning(cfg);
-  // the automatic speed is capped by active Google accounts: keep that count current
-  const [{ n }] = await db.select({ n: count() }).from(googleAccounts).where(eq(googleAccounts.status, "active"));
-  noteActiveGoogleAccounts(n);
+  await refreshFlowLimit();
   const want = captchaBrowsersFor(parallelLimit());
   if (gs.__flowCapacity?.want !== want) {
     gs.__flowCapacity = {

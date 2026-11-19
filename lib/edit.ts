@@ -67,6 +67,7 @@ export type ProjectEdit = {
   sfx: EditSfx[];
   beforeFit?: Omit<ProjectEdit, "beforeFit"> | null; // state before "Pas-kan klip ke suara" (to undo it)
   exportedAt?: number | null;
+  autoTried?: boolean; // Video Pendek: voice + captions were generated once (do not pay for the AI again on every visit)
 };
 
 export const DEFAULT_CAPTION_STYLE: CaptionStyle = { preset: "tiktok", x: 0.5, y: 0.7, size: 0.062, upper: false, anim: "pop", karaoke: false, accent: "#ffe03d", font: "tiktok", color: null, box: null, out: false };

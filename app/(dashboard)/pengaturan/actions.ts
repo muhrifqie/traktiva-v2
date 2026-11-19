@@ -6,7 +6,7 @@ import { z } from "zod";
 import { deleteProfile, isProfileKey } from "@/lib/browser/chrome";
 import { db } from "@/lib/db";
 import { googleAccounts } from "@/lib/db/schema";
-import { deleteFlowSession, refreshFlowCredits, upsertFlowSession } from "@/lib/flow2api";
+import { deleteFlowSession, refreshFlowCredits, refreshFlowLimit, upsertFlowSession } from "@/lib/flow2api";
 import { cancelGoogleLogin, getGoogleLogin, refreshGoogleSession, startGoogleLogin } from "@/lib/platforms/google";
 
 // Google accounts are the only AI setting: one Chrome profile per account holds the Google login,
@@ -52,6 +52,7 @@ export async function pollGoogleConnect(loginId: string): Promise<ConnectPoll> {
     }
     const values = { email, sessionKey: s.sessionKey, flowTokenId: reg.id, credits: reg.credits, status: "active" as const, lastError: null, lastSyncAt: new Date() };
     await db.insert(googleAccounts).values(values).onConflictDoUpdate({ target: googleAccounts.email, set: values });
+    void refreshFlowLimit().catch(() => {}); // one more account can carry more parallel jobs: start queued ones now
     // Same Google account re-added from a fresh profile: the old browser profile is now unused.
     if (existing && existing.sessionKey !== s.sessionKey && isProfileKey(existing.sessionKey)) {
       await deleteProfile(existing.sessionKey).catch(() => {});
@@ -96,6 +97,7 @@ export async function deleteGoogleAccount(id: number) {
   if (!a) return;
   if (a.flowTokenId) await deleteFlowSession(a.flowTokenId).catch(() => {});
   await db.delete(googleAccounts).where(eq(googleAccounts.id, a.id));
+  void refreshFlowLimit().catch(() => {});
   if (isProfileKey(a.sessionKey)) await deleteProfile(a.sessionKey).catch(() => {});
   refresh();
 }
