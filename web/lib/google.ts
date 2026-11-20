@@ -40,6 +40,17 @@ export function googleStart(next: string) {
   return { url: url.toString(), cookie: JSON.stringify({ state, verifier, next: safeNext(next) }) };
 }
 
+/**
+ * Public origin for redirects. Behind nginx, Next sees its own bind address (localhost:3821) in req.url,
+ * so use SITE_URL, else the host/proto nginx forwards.
+ */
+export function publicOrigin(h: Headers) {
+  if (siteUrl()) return siteUrl();
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3821";
+  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
 /** Only same-site paths after login (no open redirect). */
 export const safeNext = (n: unknown) => (typeof n === "string" && /^\/(?!\/)[\w\-/?=&.%]*$/.test(n) ? n : "/akun");
 

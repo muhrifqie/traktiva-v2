@@ -1,10 +1,10 @@
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
-import { GOOGLE_STATE_COOKIE, googleEnabled, googleStart } from "@/lib/google";
+import { GOOGLE_STATE_COOKIE, googleEnabled, googleStart, publicOrigin } from "@/lib/google";
 
 /** "Masuk dengan Google": remember state + PKCE verifier for 10 minutes, then hand over to Google. */
 export async function GET(req: NextRequest) {
-  if (!googleEnabled()) return NextResponse.redirect(new URL("/masuk?error=google-off", req.url));
+  if (!googleEnabled()) return NextResponse.redirect(new URL("/masuk?error=google-off", publicOrigin(req.headers)));
   const { url, cookie } = googleStart(req.nextUrl.searchParams.get("next") ?? "/akun");
   (await cookies()).set(GOOGLE_STATE_COOKIE, cookie, {
     httpOnly: true,

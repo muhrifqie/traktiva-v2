@@ -32,6 +32,15 @@ Server lisensi app desktop Traktiva V2 (aktivasi key, sesi, heartbeat). Desain: 
 - **Peran**: `member` (pembeli) / `admin` (tim: label Admin + pintasan Panel admin di app; panel tetap butuh login). Buat: centang "Lisensi admin" atau `node admin.mjs create --role admin`. Ubah: detail lisensi → Peran.
 - **Ganti lisensi** (sidebar app → kartu lisensi): app melepas slot PC-nya sendiri (`POST /v1/release`, ditandatangani kunci perangkat), lalu minta key baru. Layar terkunci juga punya "Pakai key lain".
 
+## Akun member (sejak 2026-11-20)
+- Pembeli daftar di `/daftar` (email + password, atau Google), masuk di `/masuk`, lalu **klaim key** di `/akun`. App desktop tetap aktivasi pakai key.
+- Data: tabel `users`, `user_sessions` (sesi 30 hari), `licenses.user_id` (pemilik), `licenses.self_reset_at`. Kode: `members.mjs` (dipanggil web lewat API internal, header `x-member-session`).
+- Pembeli boleh **lepas 1 PC per lisensi per 7 hari** sendiri; lebih dari itu lewat admin (detail lisensi → Reset). Log: "Perangkat direset … (oleh pembeli)".
+- Admin: email pemilik tampil di daftar/detail lisensi (cari pakai email), tombol "Lepas dari akun" kalau key salah akun / pindah tangan.
+- Batas percobaan: 10× salah per IP (daftar/masuk) atau per akun (klaim key) → jeda 15 menit.
+- **Lupa password**: belum ada kirim email. Pembeli masuk pakai Google, atau admin bantu (sementara).
+- **Login Google** (butuh domain; IP tidak diterima Google): Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web application), Authorized redirect URI `https://<domain>/api/auth/google/callback`. Isi di `/srv/traktiva-web/ecosystem.config.cjs` (env): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SITE_URL=https://<domain>`, lalu `pm2 delete traktiva-web && pm2 start ecosystem.config.cjs && pm2 save`. Tombol "Masuk dengan Google" muncul otomatis.
+
 ## Admin (CLI, di server)
 ```bash
 cd /srv/traktiva-license && alias trk='node --disable-warning=ExperimentalWarning admin.mjs'
@@ -46,7 +55,7 @@ trk extend <licenseId> <hari>
 
 ## Operasional
 - Cek: `curl -sk https://43.156.15.173:8443/health` → `{"ok":true,...}` · `pm2 logs traktiva-license --lines 50`
-- Deploy server lisensi: salin `lib.mjs server.mjs admin.mjs internal-api.mjs test.mjs` ke folder ini, jalankan `./backup.sh`, `node test.mjs` (self-test di folder sementara), lalu `pm2 restart traktiva-license traktiva-license-internal` (data tidak tersentuh; tabel baru dibuat otomatis).
+- Deploy server lisensi: salin `lib.mjs server.mjs admin.mjs internal-api.mjs members.mjs test.mjs` ke folder ini, jalankan `./backup.sh`, `node test.mjs` (self-test di folder sementara), lalu `pm2 restart traktiva-license traktiva-license-internal` (data tidak tersentuh; tabel baru dibuat otomatis).
 - Deploy panel: di PC `cd web && npm run build`, gabungkan `.next/standalone` + `.next/static` (→ `.next/static`) + `public`, ganti isi `/srv/traktiva-web` (jaga `ecosystem.config.cjs`), lalu `pm2 restart traktiva-web --update-env`.
 - Rollback panel lama (vanilla, masih ada di folder ini): `pm2 delete traktiva-web && pm2 start admin-web.mjs --name traktiva-license-admin`.
 - **Jangan pernah** hapus/ganti `secrets.json` atau sertifikat: kunci publik server dan sidik jari sertifikat tertanam di setiap installer. Mengganti salah satunya = semua app terpasang tidak bisa login sampai update.
