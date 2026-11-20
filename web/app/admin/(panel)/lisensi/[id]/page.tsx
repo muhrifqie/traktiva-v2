@@ -27,6 +27,7 @@ export default async function LicenseDetail({ params }: { params: Promise<{ id: 
     ["Perangkat", `${l.used} dari ${l.max_devices}`],
     ["Dibuat", fmtTime(l.created_at)],
     ["Catatan", l.note ?? "—"],
+    ["Akun pemilik", l.owner ?? "Belum diklaim"],
   ];
 
   return (

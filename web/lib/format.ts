@@ -32,7 +32,9 @@ const EVENT: Record<string, [string, "ok" | "bad" | "warn" | ""]> = {
   session_bad_signature: ["Tanda tangan palsu", "bad"], admin_login: ["Admin masuk", ""], admin_login_failed: ["Login admin gagal", "bad"],
   plans_updated: ["Paket diubah", ""], admin_token_issued: ["Token admin dibuat", ""], admin_password_reset: ["Password admin direset", "warn"], admin_password_changed: ["Password diganti", ""],
   announcement_created: ["Pengumuman tayang", "ok"], announcement_on: ["Pengumuman ditayangkan", ""], announcement_off: ["Pengumuman dimatikan", ""], announcement_delete: ["Pengumuman dihapus", "warn"],
-  release_created: ["Rilis diumumkan", "ok"], release_deleted: ["Rilis dihapus", "warn"], site_updated: ["Kontak diubah", ""], remote_updated: ["Setelan app diubah", ""], buyer_login: ["Pembeli masuk web", ""], device_changed: ["Hardware berubah, ditolak", "bad"], device_released: ["Perangkat dilepas (ganti lisensi)", ""], hwid_updated: ["Kunci hardware diubah", ""], admin_removed: ["Admin dihapus", "warn"],
+  release_created: ["Rilis diumumkan", "ok"], release_deleted: ["Rilis dihapus", "warn"], site_updated: ["Kontak diubah", ""], remote_updated: ["Setelan app diubah", ""], buyer_login: ["Pembeli masuk web", ""], device_changed: ["Hardware berubah, ditolak", "bad"], device_released: ["Perangkat dilepas (ganti lisensi)", ""],
+  member_registered: ["Member daftar", "ok"], member_login: ["Member masuk", ""], member_login_failed: ["Login member gagal", "bad"], member_google_linked: ["Google ditautkan", ""],
+  member_password_changed: ["Member ganti password", ""], license_claimed: ["Key diklaim ke akun", "ok"], license_unclaimed: ["Key dilepas dari akun", "warn"], hwid_updated: ["Kunci hardware diubah", ""], admin_removed: ["Admin dihapus", "warn"],
 };
 const FAIL: Record<string, string> = { invalid_key: "key salah", device_limit: "batas perangkat penuh", suspended: "lisensi ditangguhkan", revoked: "lisensi dicabut", expired: "kedaluwarsa" };
 

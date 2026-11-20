@@ -1,12 +1,11 @@
 import Link from "next/link";
-import { cookies } from "next/headers";
-import { BUYER_COOKIE } from "@/lib/license-api";
+import { hasMemberCookie } from "@/lib/license-api";
 
 export const dynamic = "force-dynamic";
 
 /** Public site chrome: sticky nav + substantial footer. Content lives on the .site dark green canvas. */
 export default async function SiteLayout({ children }: { children: React.ReactNode }) {
-  const signedIn = !!(await cookies()).get(BUYER_COOKIE)?.value;
+  const signedIn = await hasMemberCookie();
   return (
     <div className="site min-h-screen">
       <header className="sticky top-0 z-50 border-b border-white/5 bg-[var(--site-canvas)]/85 backdrop-blur">
@@ -23,10 +22,15 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
             <Link href="/#faq" className="hover:text-white">FAQ</Link>
           </div>
           <div className="ml-auto flex items-center gap-3">
-            <Link href={signedIn ? "/akun" : "/masuk"} className="text-[15px] text-[var(--site-body)] hover:text-white">
-              {signedIn ? "Akun saya" : "Masuk"}
-            </Link>
-            <Link href="/#harga" className="site-pill site-sm">Beli lisensi</Link>
+            {signedIn ? (
+              <Link href="/akun" className="site-pill site-sm">Akun saya</Link>
+            ) : (
+              <>
+                <Link href="/masuk" className="text-[15px] text-[var(--site-body)] hover:text-white">Masuk</Link>
+                <Link href="/daftar" className="hidden text-[15px] text-[var(--site-body)] hover:text-white sm:inline">Daftar</Link>
+                <Link href="/#harga" className="site-pill site-sm">Beli lisensi</Link>
+              </>
+            )}
           </div>
         </nav>
       </header>
@@ -48,8 +52,9 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
           </div>
           <div className="grid content-start gap-3 text-[15px]">
             <p className="font-medium">Pembeli</p>
-            <Link href="/masuk" className="text-[var(--site-muted)] hover:text-white">Masuk dengan key</Link>
-            <Link href="/akun" className="text-[var(--site-muted)] hover:text-white">Download & lisensi</Link>
+            <Link href="/masuk" className="text-[var(--site-muted)] hover:text-white">Masuk</Link>
+            <Link href="/daftar" className="text-[var(--site-muted)] hover:text-white">Daftar akun</Link>
+            <Link href="/akun" className="text-[var(--site-muted)] hover:text-white">Lisensi & download</Link>
           </div>
         </div>
         <div className="mx-auto max-w-[1260px] border-t border-white/8 px-5 py-6 text-[13px] text-[var(--site-muted)] md:px-8">

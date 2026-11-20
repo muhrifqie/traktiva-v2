@@ -89,13 +89,38 @@ try {
     assert.equal(info.announcements[0].title, "Maintenance malam ini");
     assert.deepEqual([info.latest.version, info.latest.mandatory, info.remote.maxParallel], ["1.2.0", 1, 3]);
 
-    // buyer website: key login → own license only
-    assert.equal((await ipost("/internal/buyer/login", { key: "TRK-AAAA-BBBB-CCCC-DDDD", ip: "2.2.2.2" })).ok, false);
-    const buyer = await ipost("/internal/buyer/login", { key: key.toLowerCase(), ip: "2.2.2.2" });
-    assert.ok(buyer.ok, JSON.stringify(buyer));
-    const me = await fetch(ib + "/internal/buyer/me", { headers: { authorization: `Bearer ${svc}`, "x-buyer-session": buyer.session } }).then((r) => r.json());
-    assert.deepEqual([me.license.id, me.devices.length, me.latest.version], [1, 1, "1.2.0"]);
-    assert.equal(me.license.key_hash, undefined); // never leaks the hash
+    // member accounts: register, wrong password, claim a key, others cannot claim it, self reset with a 7-day cooldown
+    const mpost = (p, body, session) =>
+      fetch(ib + p, { method: "POST", headers: { authorization: `Bearer ${svc}`, "content-type": "application/json", ...(session && { "x-member-session": session }) }, body: JSON.stringify(body) }).then((r) => r.json());
+    const mget = (p, session) => fetch(ib + p, { headers: { authorization: `Bearer ${svc}`, "x-member-session": session } }).then((r) => r.json());
+    assert.equal((await mpost("/internal/member/register", { email: "bad", password: "12345678" })).ok, false);
+    assert.equal((await mpost("/internal/member/register", { email: "budi@tes.id", password: "pendek" })).ok, false);
+    const reg = await mpost("/internal/member/register", { email: "Budi@Tes.id", name: "Budi", password: "rahasia123", ip: "3.3.3.3" });
+    assert.ok(reg.ok, JSON.stringify(reg));
+    assert.equal((await mpost("/internal/member/register", { email: "budi@tes.id", password: "rahasia123" })).ok, false); // duplicate (case-insensitive)
+    assert.equal((await mpost("/internal/member/login", { email: "budi@tes.id", password: "salah12345", ip: "3.3.3.3" })).ok, false);
+    const mlog = await mpost("/internal/member/login", { email: "BUDI@tes.id", password: "rahasia123", ip: "3.3.3.3" });
+    assert.ok(mlog.ok);
+    assert.equal((await mpost("/internal/member/claim", { key: "TRK-AAAA-BBBB-CCCC-DDDD" }, mlog.session)).ok, false);
+    assert.ok((await mpost("/internal/member/claim", { key: key.toLowerCase() }, mlog.session)).ok);
+    assert.equal((await mpost("/internal/member/claim", { key }, mlog.session)).already, true);
+    const me = await mget("/internal/member/me", mlog.session);
+    assert.deepEqual([me.user.email, me.licenses.length, me.licenses[0].id, me.licenses[0].devices.length, me.latest.version], ["budi@tes.id", 1, 1, 1, "1.2.0"]);
+    assert.equal(me.licenses[0].key_hash, undefined); // never leaks the hash
+    const other = await mpost("/internal/member/register", { email: "sari@tes.id", password: "rahasia123", ip: "4.4.4.4" });
+    assert.match((await mpost("/internal/member/claim", { key }, other.session)).message, /akun lain/);
+    assert.equal((await mpost(`/internal/member/devices/${me.licenses[0].devices[0].id}/reset`, {}, other.session)).ok, false); // not hers
+    assert.ok((await mpost(`/internal/member/devices/${me.licenses[0].devices[0].id}/reset`, {}, mlog.session)).ok);
+    const pc3 = device();
+    const act3 = await post("/v1/activate", { key, devicePub: pc3.pub, deviceHash: pc3.hash });
+    assert.ok(act3.ok, JSON.stringify(act3)); // the freed slot is usable again
+    assert.match((await mpost(`/internal/member/devices/${act3.deviceId}/reset`, {}, mlog.session)).message, /7 hari|hari lagi/); // cooldown
+    // Google: same verified email links to the existing account; unverified is refused
+    assert.equal((await mpost("/internal/member/google", { sub: "1234567890", email: "budi@tes.id", emailVerified: false })).ok, false);
+    const g = await mpost("/internal/member/google", { sub: "1234567890", email: "budi@tes.id", emailVerified: true, name: "Budi G" });
+    assert.ok(g.ok);
+    assert.equal((await mget("/internal/member/me", g.session)).user.google, true);
+    assert.equal((await mget("/internal/member/me", "palsu")).ok, false);
 
     // hardware lock + admin role + "ganti lisensi"
     const adminKey = admin("create", "--plan", "lifetime", "--devices", "2", "--role", "admin", "--note", "owner").split(" ")[0];

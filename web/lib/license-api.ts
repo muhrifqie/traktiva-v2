@@ -14,6 +14,7 @@ export type Release = { id: number; version: string; url: string; notes: string;
 export type Site = { whatsapp?: string };
 export type License = {
   id: number; key_hint: string; plan: string; max_devices: number; status: "active" | "suspended" | "revoked"; role: "member" | "admin";
+  owner: string | null; // email of the member account that claimed this key
   expires_at: number | null; note: string | null; created_at: number; used: number; last_seen: number | null;
 };
 export type Device = { id: string; name: string | null; app_version: string | null; last_ip: string | null; status: "active" | "reset"; created_at: number; last_seen: number | null; hw_locked?: number };
@@ -74,12 +75,19 @@ export async function asAdmin<T>(path: string, opts: { method?: "GET" | "POST"; 
 
 // ---------------------------------------------------------------- public site + buyer area (no admin session)
 
-export const BUYER_COOKIE = "trk_buyer";
+export const MEMBER_COOKIE = "trk_member";
 export type PublicInfo = { plans: Plan[]; site: Site; latest: { version: string; created_at: number } | null };
 export type BuyerAnnouncement = { id: number; title: string; body: string; level: "info" | "warn" | "critical"; created_at: number };
-export type BuyerView = {
-  license: { id: number; key_hint: string; plan: string; status: License["status"]; expires_at: number | null; max_devices: number; used: number; created_at: number };
-  devices: { name: string | null; app_version: string | null; created_at: number; last_seen: number | null }[];
+export type MemberDevice = { id: string; name: string | null; app_version: string | null; created_at: number; last_seen: number | null; hw_locked: number };
+export type MemberLicense = {
+  id: number; key_hint: string; plan: string; planLabel: string; role: "admin" | "member"; status: License["status"];
+  expires_at: number | null; max_devices: number; used: number; created_at: number;
+  canResetAt: number | null; // null = this license may free a PC now (self-service, once per 7 days)
+  devices: MemberDevice[];
+};
+export type MemberView = {
+  user: { id: number; email: string; name: string | null; avatar: string | null; hasPassword: boolean; google: boolean; created_at: number };
+  licenses: MemberLicense[];
   plans: Plan[];
   site: Site;
   announcements: BuyerAnnouncement[];
@@ -95,13 +103,18 @@ export async function publicInfo(): Promise<PublicInfo | null> {
   }
 }
 
-/** The logged-in buyer's license, or a redirect to /masuk. */
-export async function requireBuyer(): Promise<BuyerView> {
-  const session = (await cookies()).get(BUYER_COOKIE)?.value;
-  if (!session) redirect("/masuk");
-  let view: BuyerView | null = null;
+/** Call a member endpoint with this visitor's session (no session → ApiError 401). */
+export async function asMember<T>(path: string, opts: { method?: "GET" | "POST"; body?: unknown } = {}) {
+  const session = (await cookies()).get(MEMBER_COOKIE)?.value;
+  if (!session) throw new ApiError("Sesi habis. Masuk lagi.", 401);
+  return licenseApi<T>(path, { ...opts, headers: { "x-member-session": session } });
+}
+
+/** The signed-in member with their licenses, or a redirect to /masuk. */
+export async function requireMember(): Promise<MemberView> {
+  let view: MemberView | null = null;
   try {
-    view = await licenseApiWith<BuyerView>("/internal/buyer/me", { "x-buyer-session": session });
+    view = await asMember<MemberView>("/internal/member/me");
   } catch (e) {
     if (!(e instanceof ApiError && e.status === 401)) throw e;
   }
@@ -109,13 +122,13 @@ export async function requireBuyer(): Promise<BuyerView> {
   return view;
 }
 
-async function licenseApiWith<T>(path: string, headers: Record<string, string>): Promise<T> {
-  const res = await fetch(BASE + path, { cache: "no-store", headers: { authorization: `Bearer ${TOKEN}`, ...headers }, signal: AbortSignal.timeout(15_000) }).catch(() => {
-    throw new ApiError("Server lisensi tidak bisa dihubungi.", 503);
-  });
-  const json = (await res.json().catch(() => ({ ok: false, message: "Jawaban server tidak valid." }))) as { ok: boolean; message?: string } & T;
-  if (!json.ok) throw new ApiError(json.message ?? "Gagal", res.status);
-  return json;
+/** Signed in? (cheap: cookie only, for the nav) */
+export const hasMemberCookie = async () => !!(await cookies()).get(MEMBER_COOKIE)?.value;
+
+/** Really signed in (session still valid on the server)? Used by /masuk and /daftar to skip the form. */
+export async function memberSignedIn() {
+  if (!(await hasMemberCookie())) return false;
+  return asMember("/internal/member/me").then(() => true, () => false);
 }
 
 /** wa.me link with a prefilled message; null when no number is set in Pengaturan. */

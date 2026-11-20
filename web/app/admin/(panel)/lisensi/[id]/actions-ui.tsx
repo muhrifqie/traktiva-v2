@@ -103,6 +103,15 @@ export function LicenseActions({ license: l }: { license: License }) {
         <Button variant="outline" onClick={save} disabled={saving}>{saving ? <Loader2 className="animate-spin" /> : <Save />} Simpan</Button>
       </section>
       <section className="grid gap-2 rounded-xl border bg-card p-4">
+        <p className="text-sm font-semibold">Akun pemilik</p>
+        <p className="text-xs text-muted-foreground">{l.owner ? <>Diklaim oleh <b className="text-foreground">{l.owner}</b>. Lepas kalau pembeli salah akun atau key berpindah tangan.</> : "Belum diklaim ke akun member mana pun."}</p>
+        {l.owner && (
+          <Button variant="outline" onClick={() => c.open({ title: "Lepas dari akun?", body: `Key tidak lagi muncul di akun ${l.owner}. Pemilik baru bisa mengklaimnya lagi pakai key yang sama.`, label: "Lepas dari akun", danger: true, run: () => updateLicense(l.id, { action: "unclaim" }) })}>
+            Lepas dari akun
+          </Button>
+        )}
+      </section>
+      <section className="grid gap-2 rounded-xl border bg-card p-4">
         <p className="text-sm font-semibold">Peran</p>
         <p className="text-xs text-muted-foreground">{l.role === "admin" ? "Admin: label Admin + pintasan Panel admin di app." : "Member: pembeli biasa."}</p>
         <Button variant="outline" onClick={() => c.open({

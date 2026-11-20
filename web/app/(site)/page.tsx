@@ -80,10 +80,11 @@ const CAPABILITIES = [
 
 const FAQ = [
   ["Butuh PC seperti apa?", "Windows 10/11 dengan Google Chrome terpasang dan internet stabil. Pembuatan video berjalan di server AI, jadi PC biasa sudah cukup."],
-  ["Satu key bisa dipakai di berapa PC?", "Sesuai paket (umumnya 1 PC). Ganti PC? Minta reset perangkat lewat WhatsApp, key-nya tetap sama."],
+  ["Satu key bisa dipakai di berapa PC?", "Sesuai paket (umumnya 1 PC). Satu akun bisa menyimpan banyak key, misalnya untuk beberapa PC atau tim."],
   ["Aman untuk akun TikTok saya?", "Traktiva memakai Chrome dan akun kamu sendiri dengan jeda wajar, tanpa trik melewati verifikasi. Tetap ada risiko limit dari platform kalau mengunggah terlalu banyak; mulai pelan dan naikkan bertahap."],
   ["Apa yang dibutuhkan selain key?", "Akun TikTok Shop affiliate, akun Google untuk pembuatan video, dan (opsional) kunci suara AI. Semua dipasang dari dalam app."],
   ["Kalau ada update?", "App memberi tahu otomatis saat versi baru tersedia. Link download selalu ada di halaman Akun."],
+  ["Ganti PC atau upgrade hardware?", "Key terkunci ke hardware PC (termasuk RAM & disk). Lepas PC lama sendiri dari halaman Akun (1× per 7 hari), lalu aktifkan di PC baru. Lebih dari itu, hubungi kami."],
 ];
 
 function PlanCard({ p, href }: { p: Plan; href: string | null }) {
@@ -178,8 +179,8 @@ export default async function Landing() {
           <ol className="divide-y divide-white/15">
             {[
               ["Beli key lisensi", "Pilih paket, bayar lewat WhatsApp, key langsung dikirim."],
-              ["Download & pasang", "Installer Windows dari halaman Akun. Masukkan key saat app pertama kali dibuka."],
-              ["Hubungkan akun, buat video", "Login TikTok & Google di dalam app, pilih produk, tekan Buat video."],
+              ["Daftar & tambahkan key", "Buat akun pakai email atau Google, masukkan key sekali. Download installer dari halaman Akun."],
+              ["Aktifkan, lalu buat video", "Masukkan key saat app pertama dibuka, login TikTok & Google di dalam app, tekan Buat video."],
             ].map(([t, d], i) => (
               <li key={t} className="grid grid-cols-[56px_1fr] gap-2 py-7 first:pt-0">
                 <span className="text-[22px] text-[var(--site-signal)] tabular-nums">{String(i + 1).padStart(2, "0")}</span>
@@ -235,7 +236,7 @@ export default async function Landing() {
         <h2 className="mx-auto mt-5 max-w-3xl px-5 text-[36px] leading-[1.08] font-[330] tracking-[-0.02em] md:text-[60px]">Etalase kamu sudah penuh produk. Saatnya penuh video.</h2>
         <div className="mt-9 flex flex-wrap justify-center gap-3 px-5">
           <a href="#harga" className="site-pill">Beli lisensi</a>
-          <a href="/masuk" className="site-pill-outline"><Captions className="size-4" /> Sudah punya key</a>
+          <a href="/daftar" className="site-pill-outline"><Captions className="size-4" /> Sudah punya key? Daftar</a>
         </div>
       </section>
     </main>

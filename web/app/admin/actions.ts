@@ -68,6 +68,7 @@ const LicenseAction = z.discriminatedUnion("action", [
   z.object({ action: z.literal("extend"), days: z.number().int().min(1).max(3650) }),
   z.object({ action: z.literal("lifetime") }),
   z.object({ action: z.literal("role"), role: z.enum(["member", "admin"]) }),
+  z.object({ action: z.literal("unclaim") }),
   z.object({ action: z.literal("edit"), note: z.string().max(200), devices: z.coerce.number().int().min(1).max(20) }),
 ]);
 

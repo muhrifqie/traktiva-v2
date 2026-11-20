@@ -31,7 +31,7 @@ export default async function Licenses({ searchParams }: { searchParams: Promise
         <form className="relative w-full max-w-xs">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           {status && <input type="hidden" name="status" value={status} />}
-          <Input name="q" defaultValue={q} placeholder="Cari catatan, 4 huruf akhir key, #id, perangkat" className="pl-8" />
+          <Input name="q" defaultValue={q} placeholder="Cari catatan, email, 4 huruf akhir key, #id, perangkat" className="pl-8" />
         </form>
         <nav className="flex flex-wrap gap-1">
           {FILTERS.map(([s, label]) => (
@@ -59,7 +59,10 @@ export default async function Licenses({ searchParams }: { searchParams: Promise
                   <Link href={`/admin/lisensi/${l.id}`} className="after:absolute after:inset-0">#{l.id} …{l.key_hint}</Link>
                   {l.role === "admin" && <span className="ml-2 rounded-full bg-amber-300/12 px-1.5 py-px font-sans text-[10px] font-semibold text-amber-200">Admin</span>}
                 </td>
-                <td className="max-w-56 truncate text-muted-foreground">{l.note ?? "—"}</td>
+                <td className="max-w-56 truncate text-muted-foreground">
+                  {l.note ?? "—"}
+                  {l.owner && <span className="block truncate text-[11px]">{l.owner}</span>}
+                </td>
                 <td>{planName(l.plan)}</td>
                 <td><StateBadge state={licenseState(l, now)} /></td>
                 <td className="whitespace-nowrap">{fmtDate(l.expires_at)}</td>
