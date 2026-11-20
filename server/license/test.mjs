@@ -134,6 +134,10 @@ try {
     };
     const same = await loginHw(hw);
     assert.equal(same.payload.role, "admin");
+    // Windows' MachineGuid is not part of the lock (spoofers/cleaners change it): a different guid still signs in,
+    // also for devices activated while the guid was still stored
+    assert.ok((await loginHw({ ...hw, guid: "9".repeat(24) })).ok);
+    assert.ok((await loginHw({ ...hw, guid: undefined })).ok);
     const moreRam = { ...hw, ram: "f".repeat(24) };
     const locked = await loginHw(moreRam);
     assert.equal(locked.error, "device_changed");
