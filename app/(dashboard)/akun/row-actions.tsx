@@ -36,7 +36,7 @@ export function AccountActions({ id, platform, username, hasSession, needsLogin 
       const t = toast.loading(`Membuka login @${username}...`);
       try {
         const s = await connectTikTok(id, (msg) => toast.loading(msg, { id: t }));
-        toast.success(`Sesi @${s.username} diperbarui`, { id: t });
+        toast.success(`Sesi @${s.username} diperbarui${s.showcaseCount != null ? ` · ${s.showcaseCount} produk etalase` : ""}`, { id: t });
       } catch (e) {
         toast.dismiss(t);
         throw e;

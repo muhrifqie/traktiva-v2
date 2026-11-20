@@ -3,8 +3,9 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  BarChart3, CircleAlert, Download, ImageIcon, Play, Copy, ExternalLink, KeyRound, Loader2, Plus, RefreshCw, Sparkles, Store, Trash2, TrendingUp, UserPlus, Users, Video,
+  CircleAlert, Download, ImageIcon, Play, Copy, ExternalLink, KeyRound, Loader2, Plus, RefreshCw, Sparkles, Store, Trash2, TrendingUp, UserPlus, Users, Video,
 } from "lucide-react";
+import { KaloDataIcon } from "@/components/brand-icons";
 import { toast } from "sonner";
 import { CountryBadge, CountrySelect } from "@/components/country-select";
 import { SaveProductButton } from "@/components/save-product-button";
@@ -12,7 +13,7 @@ import { countryOf } from "@/lib/countries";
 import { MarketTops } from "./market-tops";
 import { savedFilter } from "../riset/saved-list";
 import { getDetail, intentProps } from "./detail-cache";
-import { EmptyBox, iconBtn, ListBox, ListMeta, pillBtn, ProductRow, RisetToolbar } from "./riset-ui";
+import { EmptyBox, iconBtn, ListBox, pillBtn, ProductRow, RefreshButton, RefreshSlot, RisetToolbar } from "./riset-ui";
 import type { KaloProductInfo } from "@/lib/kalodata";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -58,6 +59,7 @@ export function KaloStudio({
     u.searchParams.set("tab", t);
     window.history.replaceState(null, "", u);
   };
+  const [refreshSlot, setRefreshSlot] = useState<HTMLDivElement | null>(null);
   const [detail, setDetailState] = useState<KaloHit | null>(() => (initialDetailId ? initialResults?.find((r) => r.id === initialDetailId) ?? null : null));
   // the open product lives in the URL (?produk=), so a refresh reopens it
   const setDetail = (h: KaloHit | null) => {
@@ -106,7 +108,7 @@ export function KaloStudio({
   if (!hasSession) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-10 text-center">
-        <BarChart3 className="size-7 text-muted-foreground" />
+        <KaloDataIcon className="size-8" />
         <p className="text-sm font-medium">Hubungkan KaloData dulu</p>
         <p className="max-w-md text-xs text-muted-foreground">KaloData memberi data penjualan produk TikTok Shop (GMV, tren harian, video & kreator terlaris). Tambahkan sesi lewat tombol Kelola sesi di kanan atas, bisa tempel cookie atau buat akun trial otomatis.</p>
       </div>
@@ -122,8 +124,10 @@ export function KaloStudio({
   };
 
   return (
+    <RefreshSlot.Provider value={refreshSlot}>
     <div className="flex-1 space-y-3">
       <RisetToolbar<TikTokTab>
+        refreshSlot={setRefreshSlot}
         tabs={[
           { id: "produk", label: "Top produk" },
           { id: "video", label: "Video terlaris" },
@@ -156,15 +160,7 @@ export function KaloStudio({
         <MarketTops mode={mode} country={country} savedKeys={savedKeys} onDetail={setDetail} />
       ) : (
         <div className="space-y-3">
-          <ListMeta country={cc} onRefresh={meta ? () => search(meta.keywords.join(", "), cc) : undefined} pending={pending}>
-            {results ? (
-              <>
-                <b className="text-foreground">{results.length}</b> produk dari kata kunci “{meta?.keywords.join(", ")}” · estimasi GMV 30 hari{meta?.cached ? " · cache" : ""} · Detail memakai kuota harian
-              </>
-            ) : (
-              "Ketik kata kunci di kolom cari kanan atas, lalu Enter."
-            )}
-          </ListMeta>
+          <RefreshButton onRefresh={meta ? () => search(meta.keywords.join(", "), cc) : undefined} pending={pending} />
           {!results ? (
             <EmptyBox>{pending ? <><Loader2 className="size-4 animate-spin" /> Mencari di KaloData...</> : "Belum ada pencarian."}</EmptyBox>
           ) : (
@@ -209,6 +205,7 @@ export function KaloStudio({
 
       <DetailDialog hit={detail} country={meta?.country ?? country} savedKeys={savedKeys} onClose={() => setDetail(null)} />
     </div>
+    </RefreshSlot.Provider>
   );
 }
 

@@ -1,0 +1,218 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --color-brand: var(--brand);
+  --color-brand-light: var(--brand-light);
+  --color-status-done: var(--status-done);
+  --color-status-progress: var(--status-progress);
+  --color-status-urgent: var(--status-urgent);
+  --color-status-ok: var(--status-ok);
+  --color-status-error: var(--status-error);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Traktiva light: white work panel on soft green-gray chrome, same brand green */
+:root {
+  --radius: 0.5rem;
+  --header-height: 3rem;
+  --statusbar-height: 1.625rem;
+  --titlebar-height: 0px; /* desktop app sets it (html.is-desktop) */
+  --brand: #106e3a;
+  --brand-light: #127a42; /* brand used as text/icon on light surfaces */
+  --background: #ffffff; /* inset work panel */
+  --foreground: #101a14;
+  --card: #fbfcfb;
+  --card-foreground: #101a14;
+  --popover: #ffffff;
+  --popover-foreground: #101a14;
+  --primary: #106e3a;
+  --primary-foreground: #ffffff;
+  --secondary: #eff3f0;
+  --secondary-foreground: #101a14;
+  --muted: #f2f5f3;
+  --muted-foreground: #5b6a60;
+  --accent: #ebf0ec;
+  --accent-foreground: #101a14;
+  --destructive: #d23b3b;
+  --border: rgb(16 48 28 / 0.1);
+  --input: rgb(16 48 28 / 0.15);
+  --ring: #106e3a;
+  --chart-1: #106e3a;
+  --chart-2: #2f7fd6;
+  --chart-3: #c08a12;
+  --chart-4: #d66a1f;
+  --chart-5: #5b6a60;
+  --sidebar: #f1f4f2; /* outer chrome: navbar + sidebar */
+  --sidebar-foreground: #2b3830;
+  --sidebar-primary: #106e3a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e3e9e5;
+  --sidebar-accent-foreground: #101a14;
+  --sidebar-border: rgb(16 48 28 / 0.08);
+  --sidebar-ring: #106e3a;
+  --status-done: #138a4a;
+  --status-progress: #b07612; /* darker amber so it reads on white */
+  --status-urgent: #c2540c;
+  --status-ok: #138a4a;
+  --status-error: #d23b3b;
+}
+
+/* Traktiva dark: green-tinted near-black, brand green #106e3a for primary actions only */
+.dark {
+  --brand: #106e3a;
+  --brand-light: #2fa868; /* brand on dark text/icons, focus ring */
+  --background: #0e110f; /* inset work panel */
+  --foreground: #e7ebe8;
+  --card: #121613;
+  --card-foreground: #e7ebe8;
+  --popover: #161a17;
+  --popover-foreground: #e7ebe8;
+  --primary: #106e3a;
+  --primary-foreground: #ffffff;
+  --secondary: #1a1f1b;
+  --secondary-foreground: #e7ebe8;
+  --muted: #141815;
+  --muted-foreground: #879189;
+  --accent: #1a1f1b;
+  --accent-foreground: #f4f7f5;
+  --destructive: #eb5757;
+  --border: rgb(220 255 235 / 0.07);
+  --input: rgb(220 255 235 / 0.1);
+  --ring: #2fa868;
+  --chart-1: #2fa868;
+  --chart-2: #4ea7fc;
+  --chart-3: #f2c94c;
+  --chart-4: #f2994a;
+  --chart-5: #879189;
+  --sidebar: #090b0a; /* outer chrome around the inset panel */
+  --sidebar-foreground: #d3dbd5;
+  --sidebar-primary: #106e3a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #161b17;
+  --sidebar-accent-foreground: #f4f7f5;
+  --sidebar-border: rgb(220 255 235 / 0.07);
+  --sidebar-ring: #2fa868;
+  /* status signals: only for state icons/dots, never as surfaces */
+  --status-done: #2fa868;
+  --status-progress: #f2c94c;
+  --status-urgent: #f2994a;
+  --status-ok: #2fa868;
+  --status-error: #eb5757;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+/* Frameless Electron window: the app bar is the drag handle; anything clickable inside stays clickable. */
+.app-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+.app-drag :is(a, button, input, select, textarea, [role="button"], [role="radio"], [role="radiogroup"]) {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Frameless Electron window: thin title bar above the navbar (see components/title-bar.tsx). */
+html.is-desktop {
+  --titlebar-height: 2rem;
+}
+/* the title bar is in the HTML from the first paint; CSS alone decides if it shows (no pop-in on reload) */
+.titlebar {
+  display: none;
+}
+html.is-desktop .titlebar {
+  display: flex;
+}
+
+
+/* Public site (landing, /masuk, /akun). Dark green "ambition" direction: near-black green canvas, light large type,
+   white pill actions; --site-signal is ONLY for numbers, step markers, thin rules and tiny labels (never a button fill). */
+.site {
+  --site-canvas: #030a07;
+  --site-pine: #061a12;
+  --site-stage: #07150f;
+  --site-glow: #0f3d26;
+  --site-card: #111a16;
+  --site-edge: #16342a;
+  --site-signal: #4be08a;
+  --site-body: #9bb3a8;
+  --site-muted: #6f7f78;
+  background: var(--site-canvas);
+  color: #fff;
+  font-feature-settings: "ss01";
+}
+.site h1, .site h2, .site h3 { text-wrap: balance; }
+.site p { text-wrap: pretty; }
+.site-pill {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 52px; padding: 0 24px; border-radius: 9999px; border: 2px solid transparent;
+  background: #fff; color: #000; font-size: 17px; font-weight: 550;
+  transition: background-color .15s cubic-bezier(.4,0,.2,1), border-color .15s cubic-bezier(.4,0,.2,1);
+}
+.site-pill:hover { background: #d4d4d8; }
+.site-pill:focus-visible, .site-pill-outline:focus-visible { outline: 2px solid var(--site-signal); outline-offset: 2px; }
+.site-pill-outline {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 52px; padding: 0 24px; border-radius: 9999px; border: 2px solid #fff;
+  color: #fff; font-size: 17px; font-weight: 550; transition: border-color .15s cubic-bezier(.4,0,.2,1);
+}
+.site-pill-outline:hover { border-color: #a1a1aa; }
+.site-sm { height: 40px; padding: 0 18px; font-size: 15px; }
+.site-stage { background: linear-gradient(290deg, var(--site-stage) 55%, var(--site-glow) 100%); border-radius: 16px; overflow: hidden; }
+.site-chapter { border-radius: 48px 48px 0 0; }
+@keyframes site-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+.site-float { animation: site-float 6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .site-float { animation: none; } }

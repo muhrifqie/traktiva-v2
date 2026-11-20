@@ -9,11 +9,10 @@ import { SHOPEE_MARKETS } from "@/lib/countries";
 import type { KaloShopeeProduct } from "@/lib/kalodata";
 import { kaloShopeeTops } from "./actions";
 import { savedFilter } from "../riset/saved-list";
-import { EmptyBox, iconBtn, ListBox, ListMeta, ProductRow, RisetToolbar } from "./riset-ui";
+import { EmptyBox, iconBtn, ListBox, ProductRow, RefreshButton, RefreshSlot, RisetToolbar } from "./riset-ui";
 
 export type ShopeeTab = "produk" | "tersimpan";
 
-const time = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" });
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Gagal");
 
 /**
@@ -32,6 +31,7 @@ export function ShopeeStudio({
     window.history.replaceState(null, "", u);
   };
   const [country, setCountry] = useState<string>("ID");
+  const [refreshSlot, setRefreshSlot] = useState<HTMLDivElement | null>(null);
   const [filter, setFilter] = useState("");
   const [savedQ, setSavedQ] = useState("");
   const [data, setData] = useState<{ rows: KaloShopeeProduct[]; at: number; cached: boolean; country: string } | null>(null);
@@ -57,8 +57,10 @@ export function ShopeeStudio({
   const rows = (data?.country === country ? data.rows : []).filter((r) => !k || `${r.productName} ${r.shopName} ${r.cateNames?.join(" ")}`.toLowerCase().includes(k));
 
   return (
+    <RefreshSlot.Provider value={refreshSlot}>
     <div className="flex-1 space-y-3">
       <RisetToolbar<ShopeeTab>
+        refreshSlot={setRefreshSlot}
         tabs={[{ id: "produk", label: "Top produk" }, { id: "tersimpan", label: "Tersimpan", badge: savedCount || null }]}
         active={tab}
         onTab={setTab}
@@ -77,10 +79,7 @@ export function ShopeeStudio({
         <EmptyBox>Hubungkan KaloData dulu lewat tombol Kelola sesi di kanan atas.</EmptyBox>
       ) : (
         <div className="space-y-3">
-          <ListMeta country={country} onRefresh={() => load(country, true)} pending={pending}>
-            {data?.country === country ? <b className="text-foreground">{rows.length}</b> : null} produk Shopee terlaris minggu lalu
-            {data?.country === country && <> · {data.cached ? "cache" : "baru"} {time.format(data.at)}</>}
-          </ListMeta>
+          <RefreshButton onRefresh={() => load(country, true)} pending={pending} />
           <p className="flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-muted-foreground">
             <CircleAlert className="mt-px size-3.5 shrink-0 text-amber-500" />
             Akun trial KaloData hanya dapat 10 produk Shopee teratas; kategori, kata kunci, periode, dan halaman berikutnya baru jalan di paket berbayar. Data Shopee hanya ada untuk Indonesia, Thailand, dan Vietnam.
@@ -117,5 +116,6 @@ export function ShopeeStudio({
         </div>
       )}
     </div>
+    </RefreshSlot.Provider>
   );
 }

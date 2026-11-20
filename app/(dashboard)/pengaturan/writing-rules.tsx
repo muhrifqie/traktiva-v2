@@ -30,7 +30,7 @@ export function WritingRulesCard({ initial }: { initial: WritingRules }) {
   return (
     <section className="space-y-4 rounded-xl border bg-card p-4">
       <div className="flex items-start gap-2">
-        <span className="grid size-7 place-items-center rounded-lg bg-[#f2994a1a] text-[#f2994a]"><NotebookPen className="size-4" /></span>
+        <span className="grid size-7 place-items-center rounded-lg bg-muted text-black dark:text-white"><NotebookPen className="size-4" /></span>
         <div className="min-w-0 flex-1">
           <h2 className="text-[13px] font-semibold">Aturan naskah AI</h2>
           <p className="text-xs text-muted-foreground">Berlaku untuk semua yang ditulis & diucapkan AI: naskah voice-over, kalimat tiap adegan, caption, stiker, dan AI Director.</p>

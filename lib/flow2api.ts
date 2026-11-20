@@ -2,23 +2,95 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { captchaBrowsersFor, parallelLimit } from "@/lib/settings";
+import { randomBytes } from "node:crypto";
+import { count, eq } from "drizzle-orm";
+import { DATA_DIR, db } from "@/lib/db";
+import { googleAccounts } from "@/lib/db/schema";
+import { captchaBrowsersFor, noteActiveGoogleAccounts, parallelLimit } from "@/lib/settings";
 
 // Client for a local flow2api instance (https://github.com/TheSmallHanCat/flow2api, MIT):
 // admin API to register Google/Flow sessions, OpenAI-compatible API to generate.
-// Users never configure it: Traktiva reads flow2api's own config and starts it when needed.
+// Users never configure it: Traktiva sets it up, starts it when needed and talks to it on 127.0.0.1.
 
 export type Flow2ApiConfig = { baseUrl: string; apiKey: string; adminUser: string; adminPass: string };
 
-// ponytail: dev install path; the packaged app will ship flow2api (or its TS port) as a sidecar and set FLOW2API_DIR
-const FLOW2API_DIR = process.env.FLOW2API_DIR || "C:\\BOT\\flow2api";
+/**
+ * Where flow2api lives and how to start it:
+ * - "sidecar": the PyInstaller build shipped with the app (sidecar/flow2api/build.ps1). The bundle is copied into
+ *   DATA_DIR/flow2api once per version, because flow2api keeps config/, data/ and tmp/ next to its own code.
+ * - "source": a flow2api checkout with its own Python venv (dev; FLOW2API_DIR or the legacy C:\BOT\flow2api).
+ */
+type Runtime = { mode: "sidecar" | "source"; root: string; config: string; exe: string; args: string[]; bundle?: string };
 
-/** Read connection details from env (overrides) or flow2api's config/setting.toml. */
-export function loadFlow2ApiConfig(): Flow2ApiConfig | null {
-  let toml = "";
+const LEGACY_SOURCE = "C:\\BOT\\flow2api";
+const SIDECAR_PORT = 38127; // fixed local port of Traktiva's own flow2api (the dev source install keeps 8000)
+
+function runtime(): Runtime | null {
+  // pythonw.exe has no console: with python.exe, Windows Terminal (the Windows 11 default) ignores windowsHide
+  // and leaves a terminal window open for as long as flow2api runs
+  const python = (dir: string) => {
+    const scripts = path.join(/* turbopackIgnore: true */ dir, ".venv", "Scripts");
+    return [path.join(scripts, "pythonw.exe"), path.join(scripts, "python.exe")].find((p) => fs.existsSync(p)) ?? path.join(scripts, "python.exe");
+  };
+  const source = (dir: string): Runtime => ({ mode: "source", root: dir, config: path.join(/* turbopackIgnore: true */ dir, "config", "setting.toml"), exe: python(dir), args: ["main.py"] });
+  if (process.env.FLOW2API_DIR) return source(process.env.FLOW2API_DIR);
+  const devBuild = path.join(/* turbopackIgnore: true */ process.cwd(), "dist-sidecar", "flow2api");
+  const bundle = process.env.TRAKTIVA_FLOW2API_BUNDLE || (fs.existsSync(path.join(devBuild, "flow2api.exe")) ? devBuild : null);
+  if (bundle) {
+    const root = path.join(/* turbopackIgnore: true */ DATA_DIR, "flow2api");
+    return { mode: "sidecar", root, bundle, config: path.join(root, "_internal", "config", "setting.toml"), exe: path.join(root, "flow2api.exe"), args: [] };
+  }
+  if (fs.existsSync(path.join(/* turbopackIgnore: true */ LEGACY_SOURCE, ".venv"))) return source(LEGACY_SOURCE);
+  return null;
+}
+
+const readText = (file: string) => {
   try {
-    toml = fs.readFileSync(path.join(FLOW2API_DIR, "config", "setting.toml"), "utf8");
-  } catch {}
+    return fs.readFileSync(file, "utf8").trim();
+  } catch {
+    return "";
+  }
+};
+
+/** Sidecar: copy a new bundle version into the data folder (its data/ and setting.toml are never in the bundle, so they survive). */
+function syncSidecar(rt: Runtime) {
+  if (rt.mode !== "sidecar" || !rt.bundle) return;
+  const want = readText(path.join(rt.bundle, "VERSION")) || "dev";
+  if (fs.existsSync(rt.exe) && readText(path.join(rt.root, "VERSION")) === want) return;
+  fs.mkdirSync(rt.root, { recursive: true });
+  fs.cpSync(rt.bundle, rt.root, { recursive: true, force: true });
+}
+
+/** Sidecar: first run writes setting.toml from flow2api's own example with a random API key / admin login. */
+function ensureSidecarConfig(rt: Runtime) {
+  if (rt.mode !== "sidecar" || fs.existsSync(rt.config)) return;
+  const example = readText(path.join(path.dirname(rt.config), "setting_example.toml"));
+  if (!example) throw new Error("Mesin video rusak (config contoh tidak ada). Pasang ulang aplikasi.");
+  const set = (toml: string, key: string, value: string) => toml.replace(new RegExp(`^(${key}\\s*=\\s*)[^#\\n]*`, "m"), `$1${value} `);
+  const secret = () => randomBytes(18).toString("base64url");
+  let toml = example;
+  toml = set(toml, "api_key", `"${secret()}"`);
+  toml = set(toml, "admin_username", `"traktiva"`);
+  toml = set(toml, "admin_password", `"${secret()}"`);
+  toml = set(toml, "host", `"127.0.0.1"`); // local only, never on the LAN
+  toml = set(toml, "port", String(SIDECAR_PORT));
+  toml = set(toml, "captcha_method", `"browser"`);
+  toml = set(toml, "browser_headless", "true");
+  fs.writeFileSync(rt.config, toml);
+}
+
+/** Read connection details from env (overrides) or flow2api's config/setting.toml (created for the sidecar). */
+export function loadFlow2ApiConfig(): Flow2ApiConfig | null {
+  const rt = runtime();
+  if (rt) {
+    try {
+      syncSidecar(rt);
+      ensureSidecarConfig(rt);
+    } catch (e) {
+      console.warn("[flow2api] sidecar setup failed:", e instanceof Error ? e.message : e);
+    }
+  }
+  const toml = rt ? readText(rt.config) : "";
   const val = (key: string) => toml.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]*)"`, "m"))?.[1];
   const port = toml.match(/^\s*port\s*=\s*(\d+)/m)?.[1] ?? "8000";
   const host = val("host") === "0.0.0.0" || !val("host") ? "127.0.0.1" : val("host");
@@ -37,22 +109,24 @@ const healthy = (cfg: Flow2ApiConfig) =>
 // One start attempt at a time across concurrent callers.
 const gs = globalThis as unknown as { __flowStart?: Promise<void> | null; __flowCapacity?: { want: number; done: Promise<void> } };
 
-/** Start flow2api from its install folder if it isn't answering yet (detached, logs to flow2api.log). */
+/** Start flow2api if it isn't answering yet (detached, logs to flow2api.log next to it). */
 async function ensureRunning(cfg: Flow2ApiConfig) {
   if (await healthy(cfg)) return;
   gs.__flowStart ??= (async () => {
-    const python = path.join(FLOW2API_DIR, ".venv", "Scripts", "python.exe");
-    if (!fs.existsSync(python)) throw new Error("Mesin video belum terpasang di perangkat ini.");
-    const log = fs.openSync(path.join(FLOW2API_DIR, "flow2api.log"), "a");
-    const child = spawn(python, ["main.py"], {
-      cwd: FLOW2API_DIR,
+    const rt = runtime();
+    if (!rt || !fs.existsSync(rt.exe)) throw new Error("Mesin video belum terpasang di perangkat ini.");
+    // the captcha browser is the PC's Chrome (flow2api's own Chromium is not shipped)
+    const browser = await import("@/lib/browser/chrome").then((m) => m.chromePath()).catch(() => "");
+    const log = fs.openSync(path.join(rt.root, "flow2api.log"), "a");
+    const child = spawn(rt.exe, rt.args, {
+      cwd: rt.root,
       detached: true,
       windowsHide: true,
       stdio: ["ignore", log, log],
-      env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+      env: { ...process.env, PYTHONIOENCODING: "utf-8", ...(browser ? { BROWSER_EXECUTABLE_PATH: browser } : {}) },
     });
     child.unref();
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 90; i++) {
       await new Promise((r) => setTimeout(r, 1000));
       if (await healthy(cfg)) return;
     }
@@ -61,10 +135,22 @@ async function ensureRunning(cfg: Flow2ApiConfig) {
   await gs.__flowStart;
 }
 
+/**
+ * The automatic speed is capped by the active Google accounts: recount them and let queued jobs start at once when
+ * the limit went up (called on every generation and right after a Google login/removal).
+ */
+export async function refreshFlowLimit() {
+  const [{ n }] = await db.select({ n: count() }).from(googleAccounts).where(eq(googleAccounts.status, "active"));
+  noteActiveGoogleAccounts(n);
+  const { drainSlots } = await import("@/lib/video"); // lazy: lib/video imports settings, keep this module light
+  drainSlots();
+}
+
 export async function requireFlow2Api() {
   const cfg = loadFlow2ApiConfig();
   if (!cfg) throw new Error("Mesin video belum terpasang di perangkat ini.");
   await ensureRunning(cfg);
+  await refreshFlowLimit();
   const want = captchaBrowsersFor(parallelLimit());
   if (gs.__flowCapacity?.want !== want) {
     gs.__flowCapacity = {
@@ -149,6 +235,16 @@ export async function upsertFlowSession(input: { tokenId?: number | null; st: st
   }
   const j = await admin(cfg, "/api/tokens", { method: "POST", body });
   return { id: Number(j.token.id), email: (j.token.email as string) ?? null, credits: j.token.credits != null ? Number(j.token.credits) : null };
+}
+
+/** Re-read the Flow credits of every active Google account (after a render used some). */
+export async function syncAllFlowCredits() {
+  const list = await db.select().from(googleAccounts).where(eq(googleAccounts.status, "active"));
+  for (const a of list) {
+    if (!a.flowTokenId) continue;
+    const credits = await refreshFlowCredits(a.flowTokenId).catch(() => null);
+    if (credits != null) await db.update(googleAccounts).set({ credits, lastSyncAt: new Date() }).where(eq(googleAccounts.id, a.id));
+  }
 }
 
 export async function refreshFlowCredits(tokenId: number) {

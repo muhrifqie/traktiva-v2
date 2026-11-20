@@ -2,7 +2,7 @@ import type { ProjectEdit } from "@/lib/edit";
 import { sql } from "drizzle-orm";
 import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-export const PLATFORMS = ["tiktok", "instagram", "facebook", "youtube", "pinterest", "shopee"] as const;
+export const PLATFORMS = ["tiktok", "instagram", "facebook", "youtube", "shopee"] as const;
 
 export const accounts = sqliteTable(
   "accounts",

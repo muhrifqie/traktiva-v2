@@ -1,11 +1,15 @@
 // Electron shell: dev loads `next dev`; packaged app runs the Next standalone server locally.
-const { app, BrowserWindow, ipcMain, shell, utilityProcess } = require("electron");
+const { app, BrowserWindow, ipcMain, screen, shell, utilityProcess } = require("electron");
 const fs = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
 
+const license = require("./license");
+
 const ICON = path.join(__dirname, "..", "resources", "icon.png");
+const SCREENS = path.join(__dirname, "screens");
 let server;
+let mainWin = null;
 
 
 function freePort() {
@@ -37,16 +41,117 @@ async function startServer() {
       PORT: String(port),
       HOSTNAME: "127.0.0.1", // local only, never exposed to LAN
       TRAKTIVA_DATA_DIR: app.getPath("userData"),
+      TRAKTIVA_FLOW2API_BUNDLE: path.join(process.resourcesPath, "flow2api"), // video engine sidecar (copied by after-pack)
     },
   });
   return `http://127.0.0.1:${port}`;
 }
 
-async function createWindow() {
-  const url = await startServer();
+// ---------------------------------------------------------------- splash & login (native screens, local files)
+
+function screenWindow(file, { width, height }) {
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width,
+    height,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    frame: false,
+    show: false,
+    center: true,
+    icon: ICON,
+    backgroundColor: "#0e110f",
+    webPreferences: { preload: path.join(SCREENS, "preload.js"), contextIsolation: true, sandbox: true },
+  });
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.on("will-navigate", (e) => e.preventDefault()); // these screens never leave their file
+  win.once("ready-to-show", () => win.show());
+  win.loadFile(path.join(SCREENS, file));
+  return win;
+}
+
+const ready = (win) => new Promise((r) => (win.webContents.isLoading() ? win.webContents.once("did-finish-load", r) : r()));
+
+/** Show the license screen until the user activates (or retries successfully); resolves when licensed. */
+function askLicense(reason) {
+  return new Promise((resolve) => {
+    const win = screenWindow("login.html", { width: 440, height: 600 });
+    let licensed = false;
+    const done = (r) => {
+      if (!r.ok) return r;
+      licensed = true;
+      setTimeout(() => {
+        resolve(r);
+        win.destroy();
+      }, 600); // let the "Berhasil" state be seen
+      return r;
+    };
+    const own = (fn) => (event, ...args) => (event.sender === win.webContents ? fn(...args) : undefined);
+    ipcMain.removeHandler("license:activate");
+    ipcMain.removeHandler("license:retry");
+    ipcMain.handle("license:activate", own(async (key) => done(await license.activate(String(key ?? "")))));
+    ipcMain.handle("license:retry", own(async () => done(await license.session())));
+    ready(win).then(() => win.webContents.send("license:state", { ...reason, device: license.deviceName() }));
+    win.on("closed", () => {
+      if (!licensed) app.quit(); // closed without a valid license (first start or locked): quit
+    });
+  });
+}
+
+/** Make sure this PC holds a usable license; the splash steps aside while the login screen is open. */
+async function ensureLicensed(status, splash) {
+  if (!license.enabled()) return;
+  const login = async (reason) => {
+    splash.hide();
+    await askLicense(reason);
+    splash.show();
+  };
+  if (!license.configured()) return login({ error: "not_configured", message: "Server lisensi belum dikonfigurasi di versi aplikasi ini. Hubungi penjual.", needKey: false });
+  status("Memeriksa lisensi…");
+  const r = await license.session();
+  if (!r.ok) await login(r);
+}
+
+/** "Ganti lisensi" from the app (sidebar → lisensi): free this PC's slot, ask for a new key, reload with it. */
+async function changeLicense() {
+  if (!mainWin) return { ok: false };
+  mainWin.hide();
+  await askLicense(await license.release());
+  mainWin.show();
+  mainWin.webContents.reload(); // server-info (plan, role, banners) belongs to the new key
+  license.startHeartbeat(lockApp);
+  return { ok: true };
+}
+
+/** License stopped being usable while the app runs: hide the app behind the lock screen until it is valid again. */
+async function lockApp(reason) {
+  if (!mainWin) return;
+  mainWin.hide();
+  await askLicense(reason);
+  mainWin.show();
+  license.startHeartbeat(lockApp);
+}
+
+app.whenReady().then(() => {
+  ipcMain.handle("screen:minimize", (e) => BrowserWindow.fromWebContents(e.sender)?.minimize());
+  ipcMain.handle("screen:quit", () => app.quit());
+});
+
+async function createWindow() {
+  const splash = screenWindow("splash.html", { width: 460, height: 300 });
+  const status = (text) => ready(splash).then(() => !splash.isDestroyed() && splash.webContents.send("screen:status", { text, version: app.getVersion() }));
+  status("Menyiapkan…");
+  // the local server starts while the license is checked
+  const urlPromise = startServer();
+  await ensureLicensed(status, splash);
+  status("Membuka Traktiva…");
+  const url = await urlPromise;
+  // default size: ~90% of the screen's work area (capped), so the studio opens roomy on any monitor
+  const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
+  const win = new BrowserWindow({
+    width: Math.min(sw, 1720, Math.max(1280, Math.round(sw * 0.9))),
+    height: Math.min(sh, 1080, Math.max(800, Math.round(sh * 0.9))),
+    center: true,
     minWidth: 720, // small enough for half-screen snapping; layout switches to compact mode below md
     minHeight: 520,
     show: false,
@@ -61,11 +166,26 @@ async function createWindow() {
     shell.openExternal(target);
     return { action: "deny" };
   });
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => {
+    win.show();
+    if (!splash.isDestroyed()) splash.destroy();
+  });
   setupZoom(win);
   setupWindowControls(win);
   await waitFor(url);
+  mainWin = win;
   await win.loadURL(url);
+  if (license.enabled() && license.configured()) license.startHeartbeat(lockApp);
+  ipcMain.removeHandler("license:change");
+  ipcMain.removeHandler("license:refresh");
+  // Pengaturan → Lisensi → "Perbarui sekarang": renew the session (and server-info) right away
+  ipcMain.handle("license:refresh", async (e) => {
+    if (e.sender !== win.webContents || !license.enabled()) return { ok: false, message: "Lisensi tidak aktif di mode ini." };
+    const r = await license.session();
+    if (!r.ok && !r.offline) lockApp(r);
+    return { ok: r.ok, message: r.message };
+  });
+  ipcMain.handle("license:change", (e) => (e.sender === win.webContents && license.enabled() ? changeLicense() : { ok: false }));
 }
 
 // Zoom: Ctrl +/=/-/0 and Ctrl+scroll, clamped 50–200%, remembered across restarts.

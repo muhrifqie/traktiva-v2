@@ -1,6 +1,6 @@
 # Desain Lisensi Traktiva V2
 
-Status: **draf untuk review owner** · 18 Nov 2026
+Status: **tahap 1–2 jalan** · server live di `https://43.156.15.173:8443` sejak 20 Nov 2026 (runbook: `server/license/OPS.md`). Login app = splash + layar aktivasi di `electron/screens/`, penjaga di `electron/license.js`.
 
 ## Keputusan yang sudah dikunci
 
@@ -69,7 +69,7 @@ Format key: `TRK-XXXX-XXXX-XXXX-XXXX` (acak ≥ 80 bit). Key hanya ditampilkan s
 - Pembandingan konstan-waktu untuk hash key.
 - Admin **hanya di `127.0.0.1`**, diakses lewat SSH tunnel (pola yang sama dengan social-uploader), dengan token admin terpisah.
 - Kunci privat penandatangan token: file berizin 600, di luar folder app, dan ikut dibackup terenkripsi.
-- Caddy dengan `tls internal` di port khusus. Sidik jari kunci publik sertifikat (SPKI) di-*pin* di Electron main.
+- nginx di port 8443 dengan sertifikat self-signed untuk IP (berlaku s/d 2036). Sertifikat dan sidik jari SHA-256-nya di-*pin* di Electron main (`electron/license-pins.json`); koneksi dengan sertifikat lain ditolak.
 
 ## Pengerasan sisi app (mempersulit, bukan jaminan)
 - Electron fuses: matikan `RunAsNode` dan `NODE_OPTIONS`, nyalakan integritas asar dan `OnlyLoadAppFromAsar`.

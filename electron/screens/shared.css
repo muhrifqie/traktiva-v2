@@ -1,0 +1,30 @@
+/* Shared look of the native screens (splash, login): Traktiva's dark theme tokens (app/globals.css .dark). */
+:root {
+  --bg: #0e110f;
+  --card: #121613;
+  --chrome: #090b0a;
+  --brand: #106e3a;
+  --brand-light: #2fa868;
+  --fg: #e7ebe8;
+  --muted: #879189;
+  --border: rgb(220 255 235 / 0.08);
+  --input: rgb(220 255 235 / 0.12);
+  --danger: #eb5757;
+  --warn: #f2c94c;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; margin: 0; }
+[hidden] { display: none !important; } /* beats component display rules (buttons are flex) */
+html, body { height: 100%; }
+body {
+  background: radial-gradient(120% 80% at 50% -10%, rgb(16 110 58 / 0.28), transparent 60%), var(--bg);
+  color: var(--fg);
+  font: 13px/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+.logo { width: 56px; height: 56px; filter: drop-shadow(0 8px 24px rgb(16 110 58 / 0.55)); }
+.wordmark { font: 600 22px/1.2 "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; letter-spacing: -0.02em; }
+.muted { color: var(--muted); }
+kbd { font: inherit; }

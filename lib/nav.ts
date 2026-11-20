@@ -12,11 +12,11 @@ export const NAV = [
   { slug: "gambar-ai", title: "Buat Gambar AI", icon: ImagePlus, group: "Buat Konten", color: "#e535ab", desc: "Bikin gambar produk dan konten dari prompt." },
   { slug: "galeri", title: "Gambar & Unggahan", icon: Images, group: "Pustaka", color: "#f2c94c", desc: "Foto unggahan dan gambar AI, siap dipakai ulang tanpa unggah lagi." },
   { slug: "galeri-video", title: "Galeri Video", icon: Film, group: "Pustaka", color: "#4ea7fc", desc: "Semua video siap unggah dan riwayatnya." },
-  { slug: "showcase", title: "TikTok Shop", icon: Store, group: "Jualan & Akun", color: "#4cb782", desc: "Etalase, kesehatan akun, dan performa LIVE." },
+  { slug: "showcase", title: "TikTok Shop", icon: Store, group: "Jualan & Akun", color: "#4cb782", desc: "Etalase produk affiliate dan sinkron otomatis dari TikTok Shop." },
   { slug: "akun", title: "Akun Sosial", icon: Users, group: "Jualan & Akun", color: "#26b5ce", desc: "Kelola akun TikTok, Instagram, Facebook, YouTube, dan Shopee." },
-  { slug: "profil", title: "Profil & Postingan", icon: UserCircle, group: "Jualan & Akun", color: "#ff3b6b", desc: "Lihat profil dan performa postingan tiap akun." },
+  { slug: "profil", title: "Profil & Postingan", icon: UserCircle, group: "Jualan & Akun", color: "#ff3b6b", desc: "Profil, poin akun, dan performa postingan tiap akun." },
   { slug: "jadwal", title: "Jadwal Upload", icon: CalendarClock, group: "Jualan & Akun", color: "#5e6ad2", desc: "Atur kapan video diunggah ke tiap akun." },
-  { slug: "pengaturan", title: "Pengaturan AI", icon: Settings, group: "Pengaturan", color: "#8b7cf6", desc: "Akun Google, kecepatan pembuatan, dan mesin AI." },
+  { slug: "pengaturan", title: "Pengaturan", icon: Settings, group: "Pengaturan", color: "#8b7cf6", desc: "Lisensi, akun Google, aturan naskah, suara, dan mesin AI." },
 ] as const;
 
 export const NAV_GROUPS = ["Utama", "Riset", "Buat Konten", "Pustaka", "Jualan & Akun", "Pengaturan"] as const;

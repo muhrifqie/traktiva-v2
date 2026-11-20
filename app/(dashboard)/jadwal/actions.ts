@@ -26,7 +26,10 @@ export async function listUploadable(): Promise<Uploadable[]> {
     const files = await fs.readdir(resolveMedia(p.folder)).catch(() => [] as string[]);
     const productId = p.folder.match(/kalo-(\d{10,22})/)?.[1] ?? null; // projects made from KaloData carry the TikTok product id
     const base = { projectId: p.id, title: projectName(p), caption: p.caption ?? "", productId, productTitle: p.product.name.split(/[|/,]/)[0].trim().slice(0, 30) };
-    for (const f of files.filter((x) => /^final(-[A-D])?\.mp4$/.test(x)).sort()) {
+    // final.mp4 is the raw 720p join of the clips until the project is exported (1080p, captions burned in):
+    // only offer it once exported, so nothing soft gets posted (TikTok drops 720p uploads to a blurry tier)
+    const exported = !!p.edit?.exportedAt;
+    for (const f of files.filter((x) => /^final-[A-D]\.mp4$/.test(x) || (exported && x === "final.mp4")).sort()) {
       const variant = f.match(/^final-([A-D])\.mp4$/)?.[1];
       const side = variant ? await fs.readFile(resolveMedia(`${p.folder}/final-${variant}.json`), "utf8").then((t) => JSON.parse(t) as { hook?: string }, () => null) : null;
       out.push({ ...base, video: `${p.folder}/${f}`, label: variant ? `Varian ${variant}` : "Video utama", hook: variant ? side?.hook ?? null : firstLine(p.edit?.voices[0]?.text) || null });

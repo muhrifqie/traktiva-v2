@@ -129,7 +129,7 @@ export function AutopilotBoard({ initial, products, accounts, hasVoice }: { init
       {/* run board */}
       <section className={`${card} space-y-3 self-start`}>
         <div className="flex items-center gap-2">
-          <span className="grid size-7 place-items-center rounded-lg bg-[#f2994a1a] text-[#f2994a]"><Plane className="size-4" /></span>
+          <span className="grid size-7 place-items-center rounded-lg bg-muted text-black dark:text-white"><Plane className="size-4" /></span>
           <h2 className="flex-1 text-[13px] font-semibold">Antrean autopilot</h2>
           {state.running ? (
             <button type="button" className={`${btn} border bg-background hover:bg-accent`} onClick={() => void haltAutopilot().then(() => toast.success("Berhenti setelah video yang sedang dibuat selesai"))}>

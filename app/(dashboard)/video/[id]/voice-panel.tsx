@@ -3,18 +3,19 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { Check, ChevronDown, Loader2, Mic, MicOff, Pause, Play, Volume2 } from "lucide-react";
+import { CartesiaIcon, VeoIcon } from "@/components/brand-icons";
 import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { VoiceChoice } from "@/lib/voice";
 import { previewVoiceLine, setProjectVoice } from "../project-actions";
+import { isAbortError } from "@/lib/play-media";
 
 export type VoiceOption = { id: string; name: string; description: string; gender: string | null };
 export type ProjectVoiceState = { choice: VoiceChoice; voiceId: string | null; voiceName: string | null; speed: number };
 
-const CHOICES: { id: VoiceChoice | "elevenlabs"; label: string; icon: typeof Mic; ready: boolean; hint: string }[] = [
-  { id: "flow", label: "Bawaan Flow", icon: Mic, ready: true, hint: "Suara langsung dari video AI" },
-  { id: "cartesia", label: "Cartesia", icon: Volume2, ready: true, hint: "Suara manusiawi, dibuat terpisah lalu digabung" },
-  { id: "elevenlabs", label: "ElevenLabs", icon: Volume2, ready: false, hint: "Segera hadir" },
+const CHOICES: { id: VoiceChoice; label: string; icon: (p: { className?: string }) => React.ReactNode; ready: boolean; hint: string }[] = [
+  { id: "flow", label: "Bawaan Flow", icon: VeoIcon, ready: true, hint: "Suara langsung dari video AI" },
+  { id: "cartesia", label: "Cartesia", icon: CartesiaIcon, ready: true, hint: "Suara manusiawi, dibuat terpisah lalu digabung" },
   { id: "off", label: "Tanpa suara", icon: MicOff, ready: true, hint: "Senyap, tambah musik sendiri" },
 ];
 const SPEEDS = [0.9, 1, 1.1, 1.2];
@@ -40,7 +41,7 @@ function usePlayer() {
       await audio.current.play();
       setPlaying(key);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Gagal memutar");
+      if (!isAbortError(e)) toast.error(e instanceof Error ? e.message : "Gagal memutar");
     } finally {
       setLoading(null);
     }
@@ -79,7 +80,7 @@ export function VoicePanel({
   return (
     <div className="space-y-2.5 rounded-lg border bg-background p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="flex items-center gap-1.5 text-xs font-semibold"><Mic className="size-3.5 text-[#ff3b6b]" /> Suara voice-over</span>
+        <span className="flex items-center gap-1.5 text-xs font-semibold"><Mic className="size-3.5 text-black dark:text-white" /> Suara voice-over</span>
         {saving && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
         <span className="text-[11px] text-muted-foreground">dipilih per proyek sebelum render · mengganti suara membuat klip perlu dirender ulang</span>
       </div>

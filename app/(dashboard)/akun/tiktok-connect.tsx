@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { PlatformIcon } from "@/components/platform-icon";
 import { PLATFORMS } from "@/lib/db/schema";
 import { PLATFORM } from "@/lib/platforms";
+import { syncShowcase } from "../showcase/actions";
 import { pollTikTokLogin, startTikTokLogin, syncTikTokAccount } from "./actions";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -25,7 +26,10 @@ export async function connectTikTok(accountId?: number, onStep?: (msg: string) =
     if (s.status === "done") {
       onStep?.(`@${s.username} tersambung, mengambil data profil...`);
       await syncTikTokAccount(s.accountId).catch(() => {}); // profile sync is best-effort; login already saved
-      return s;
+      // the showcase too, so TikTok Shop is filled right away (after the profile: one profile = one browser at a time)
+      onStep?.(`Mengambil etalase produk @${s.username}...`);
+      const showcase = await syncShowcase(s.accountId).catch(() => null); // not an affiliate yet / TikTok busy: the hourly sync retries
+      return { ...s, showcaseCount: showcase?.count ?? null };
     }
     if (s.status === "failed" || s.status === "cancelled") throw new Error(s.error || "Login gagal");
   }
@@ -39,7 +43,8 @@ function useConnectTikTok() {
     const t = toast.loading("Membuka jendela login TikTok...");
     try {
       const s = await connectTikTok(undefined, (msg) => toast.loading(msg, { id: t }));
-      toast.success(s.created ? `@${s.username} tersambung` : `Sesi @${s.username} diperbarui`, { id: t });
+      const shop = s.showcaseCount != null ? ` · ${s.showcaseCount} produk etalase` : "";
+      toast.success(`${s.created ? `@${s.username} tersambung` : `Sesi @${s.username} diperbarui`}${shop}`, { id: t });
       router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Login gagal", { id: t });
@@ -74,7 +79,7 @@ export function ConnectTile() {
   return (
     <div className="flex min-h-56 flex-col rounded-xl border border-dashed bg-card/40 p-4">
       <div className="flex items-center gap-2">
-        <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-brand-light"><Plus className="size-4" /></span>
+        <span className="grid size-8 place-items-center rounded-lg bg-muted text-black dark:text-white"><Plus className="size-4" /></span>
         <div>
           <p className="text-[13px] font-semibold">Hubungkan akun baru</p>
           <p className="text-xs text-muted-foreground">Login sekali, data akun terisi otomatis.</p>

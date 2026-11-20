@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { and, desc, eq } from "drizzle-orm";
 import {
-  BadgeCheck, Bookmark, Clock, Eye, Heart, LinkIcon, Lock, MessageCircle, Pin, Play, Share2, Sparkles, TrendingUp, UserCircle,
+  BadgeCheck, Bookmark, Clock, Eye, Heart, LinkIcon, Lock, MessageCircle, Pin, Play, Share2, ShieldCheck, Sparkles, TrendingUp, UserCircle,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { PlatformIcon } from "@/components/platform-icon";
+import { PostCover } from "./post-cover";
 import { db } from "@/lib/db";
 import { accountPosts, accounts, accountStats, type AccountPost } from "@/lib/db/schema";
+import type { ShopOverview } from "@/lib/platforms/tiktok-shop";
+import { getShopCache } from "@/lib/showcase";
 import { SyncButton } from "./sync-button";
 
 export const dynamic = "force-dynamic";
@@ -41,10 +44,7 @@ function VideoCard({ v, username }: { v: AccountPost; username: string }) {
       className="group flex flex-col overflow-hidden rounded-xl border bg-card transition-colors hover:border-ring/40"
     >
       <div className="relative aspect-[9/16] overflow-hidden bg-muted">
-        {v.coverUrl && (
-          // eslint-disable-next-line @next/next/no-img-element -- TikTok CDN covers are signed + expiring; next/image would cache stale links
-          <img src={v.coverUrl} alt="" referrerPolicy="no-referrer" loading="lazy" className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
-        )}
+        <PostCover src={v.coverUrl} />
         <div className="absolute inset-x-0 bottom-0 flex items-center gap-1 bg-gradient-to-t from-black/75 to-transparent px-2 pt-8 pb-1.5 text-xs font-semibold text-white">
           <Play className="size-3.5 fill-white" /> {compact.format(v.views)}
           {v.durationSec ? <span className="ml-auto font-normal opacity-80">{Math.floor(v.durationSec / 60)}:{String(v.durationSec % 60).padStart(2, "0")}</span> : null}
@@ -90,6 +90,10 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
   const account = list.find((x) => String(x.id) === aParam) ?? list[0];
   const [latest, previous] = await db.select().from(accountStats).where(eq(accountStats.accountId, account.id)).orderBy(desc(accountStats.capturedAt)).limit(2);
   const byViews = sort === "populer";
+  // TikTok Shop account health points (read during the showcase sync, automatic after login)
+  const health = (await getShopCache<ShopOverview>(account.id, "overview"))?.data.health ?? null;
+  const points = health?.score != null ? health : null;
+  const pointsPct = points?.baseScore ? points.score! / points.baseScore : null;
   const posts = await db
     .select()
     .from(accountPosts)
@@ -134,27 +138,27 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
 
       <div className="flex-1 space-y-5">
         {/* profile header */}
-        <section className="flex flex-col gap-5 rounded-xl border bg-card p-5 md:flex-row md:items-center">
+        <section className="flex flex-col gap-4 rounded-xl border bg-card p-4 md:flex-row md:items-center">
           {account.avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- remote avatar
-            <img src={account.avatarUrl} alt="" referrerPolicy="no-referrer" className="size-24 shrink-0 rounded-full border object-cover md:size-28" />
+            <img src={account.avatarUrl} alt="" referrerPolicy="no-referrer" className="size-16 shrink-0 rounded-full border object-cover" />
           ) : (
-            <span className="grid size-24 shrink-0 place-items-center rounded-full border bg-muted text-3xl font-semibold uppercase text-muted-foreground md:size-28">
+            <span className="grid size-16 shrink-0 place-items-center rounded-full border bg-muted text-2xl font-semibold uppercase text-muted-foreground">
               {account.username.slice(0, 1)}
             </span>
           )}
-          <div className="min-w-0 flex-1 space-y-3">
+          <div className="min-w-0 flex-1 space-y-2">
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h2 className="flex items-center gap-1.5 text-xl font-semibold">
+              <h2 className="flex items-center gap-1.5 text-base font-semibold">
                 {account.displayName || account.username}
-                {latest?.verified && <BadgeCheck className="size-5 text-sky-500" />}
+                {latest?.verified && <BadgeCheck className="size-4 text-sky-500" />}
               </h2>
-              <a href={`https://www.tiktok.com/@${account.username}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+              <a href={`https://www.tiktok.com/@${account.username}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                 <PlatformIcon platform="tiktok" className="size-3.5" />@{account.username}
               </a>
               {latest?.isPrivate && <span className="flex items-center gap-1 text-xs text-muted-foreground"><Lock className="size-3" />Akun privat</span>}
             </div>
-            <dl className="flex flex-wrap gap-x-6 gap-y-2">
+            <dl className="flex flex-wrap gap-x-5 gap-y-1">
               {[
                 ["Mengikuti", latest?.following, previous?.following],
                 ["Pengikut", latest?.followers, previous?.followers],
@@ -162,17 +166,17 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
                 ["Video", latest?.videoCount, previous?.videoCount],
               ].map(([label, now, before]) => (
                 <div key={label as string} className="flex items-baseline gap-1.5">
-                  <dd className="text-lg font-semibold tabular-nums" title={now != null ? full.format(now as number) : undefined}>
+                  <dd className="text-sm font-semibold tabular-nums" title={now != null ? full.format(now as number) : undefined}>
                     {now != null ? compact.format(now as number) : "—"}
                   </dd>
-                  <dt className="text-sm text-muted-foreground">{label}</dt>
+                  <dt className="text-xs text-muted-foreground">{label}</dt>
                   {now != null && <Delta now={now as number} before={before as number | undefined} />}
                 </div>
               ))}
             </dl>
-            {latest?.bio && <p className="max-w-2xl whitespace-pre-line text-sm">{latest.bio}</p>}
+            {latest?.bio && <p className="line-clamp-2 max-w-2xl whitespace-pre-line text-xs text-muted-foreground">{latest.bio}</p>}
             {latest?.bioLink && (
-              <a href={latest.bioLink.startsWith("http") ? latest.bioLink : `https://${latest.bioLink}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-brand-light hover:underline">
+              <a href={latest.bioLink.startsWith("http") ? latest.bioLink : `https://${latest.bioLink}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-brand-light hover:underline">
                 <LinkIcon className="size-3.5" />{latest.bioLink}
               </a>
             )}
@@ -182,22 +186,36 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
           </p>
         </section>
 
-        {/* insights for learning what works */}
-        {posts.length > 0 && (
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {/* insights for learning what works + TikTok Shop account points, one row of equal cards */}
+        {(posts.length > 0 || points) && (
+          <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {[
-              { icon: Eye, color: "#4ea7fc", label: "Rata-rata tayangan", value: compact.format(Math.round(totalViews / posts.length)), hint: `${full.format(totalViews)} total dari ${posts.length} video` },
-              { icon: Sparkles, color: "#e535ab", label: "Engagement rate", value: totalViews ? pct.format(totalEng / totalViews) : "—", hint: "(suka + komentar + share + simpan) ÷ tayangan" },
-              { icon: TrendingUp, color: "#2fa868", label: "Video terbaik", value: best ? compact.format(best.views) : "—", hint: best?.caption ? best.caption.slice(0, 48) : "tayangan tertinggi" },
-              { icon: Clock, color: "#f2994a", label: "Posting 30 hari", value: String(last30), hint: `≈ ${(last30 / 4.3).toFixed(1)} video per minggu` },
+              ...(points
+                ? [{
+                    icon: ShieldCheck,
+                    label: "Poin akun",
+                    value: String(points.score),
+                    // points drop with TikTok Shop violations; low points limit affiliate features
+                    tone: pointsPct == null ? "" : pointsPct >= 0.9 ? "text-status-ok" : pointsPct >= 0.6 ? "text-status-progress" : "text-destructive",
+                    hint: [points.baseScore ? `dari ${points.baseScore}` : null, points.riskText, points.violationScore ? `${points.violationScore} poin pelanggaran` : null].filter(Boolean).join(" · "),
+                  }]
+                : []),
+              ...(posts.length > 0
+                ? [
+                    { icon: Eye, label: "Rata-rata tayangan", value: compact.format(Math.round(totalViews / posts.length)), hint: `${full.format(totalViews)} total dari ${posts.length} video` },
+                    { icon: Sparkles, label: "Engagement rate", value: totalViews ? pct.format(totalEng / totalViews) : "—", hint: "(suka + komentar + share + simpan) ÷ tayangan" },
+                    { icon: TrendingUp, label: "Video terbaik", value: best ? compact.format(best.views) : "—", hint: best?.caption ? best.caption.slice(0, 48) : "tayangan tertinggi" },
+                    { icon: Clock, label: "Posting 30 hari", value: String(last30), hint: `≈ ${(last30 / 4.3).toFixed(1)} video per minggu` },
+                  ]
+                : []),
             ].map((s) => (
-              <div key={s.label} className="rounded-xl border bg-card p-4">
-                <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-                  <span className="grid size-7 place-items-center rounded-lg" style={{ background: `${s.color}1a`, color: s.color }}><s.icon className="size-4" /></span>
+              <div key={s.label} className="rounded-xl border bg-card p-3">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="grid size-5 place-items-center rounded-md bg-muted text-black dark:text-white"><s.icon className="size-3" /></span>
                   {s.label}
                 </div>
-                <p className="mt-3 text-2xl font-semibold tabular-nums">{s.value}</p>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">{s.hint}</p>
+                <p className={`mt-1.5 text-lg font-semibold tabular-nums ${"tone" in s ? s.tone : ""}`}>{s.value}</p>
+                <p className="truncate text-[11px] text-muted-foreground" title={s.hint}>{s.hint}</p>
               </div>
             ))}
           </section>

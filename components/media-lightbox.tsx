@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { ChevronLeft, ChevronRight, Download, Film, Image as ImageIcon, Maximize2, Minimize2, Minus, Plus, X } from "lucide-react";
 import { mediaUrl } from "@/lib/media-url";
+import { playMedia } from "@/lib/play-media";
 
 export type LightboxItem = { src: string; kind: "image" | "video"; label?: string };
 
@@ -71,7 +72,7 @@ export function MediaLightbox() {
       else if (k === "0") z(1);
       else if (k === "f") setBig((v) => !v);
       else if (k === "d") download.current?.click();
-      else if (k === " " && v) void (v.paused ? v.play() : v.pause());
+      else if (k === " " && v) void (v.paused ? playMedia(v) : v.pause());
       else if (k === "m" && v) v.muted = !v.muted;
       else return;
       e.preventDefault();
@@ -100,7 +101,7 @@ export function MediaLightbox() {
           {s && item && (
             <>
               <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-                <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary/15 text-brand-light">{image ? <ImageIcon className="size-3.5" /> : <Film className="size-3.5" />}</span>
+                <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-muted text-black dark:text-white">{image ? <ImageIcon className="size-3.5" /> : <Film className="size-3.5" />}</span>
                 <span className="min-w-0 truncate text-[13px] font-medium">{item.label ?? (image ? "Gambar" : "Video")}</span>
                 {s.items.length > 1 && <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground tabular-nums">{s.index + 1} / {s.items.length}</span>}
                 <div className="ml-auto flex items-center gap-0.5 rounded-lg bg-muted p-0.5">

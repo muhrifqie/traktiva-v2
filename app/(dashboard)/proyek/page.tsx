@@ -33,7 +33,7 @@ export default async function ProyekPage({ searchParams }: PageProps<"/proyek">)
     <>
       <PageHeader slug="proyek">
         <Link href="/proyek/autopilot" className="flex h-9 items-center gap-1.5 rounded-lg border bg-card px-3.5 text-[13px] font-medium hover:bg-accent" title="Pilih produk laris, AI membuatkan videonya otomatis">
-          <Plane className="size-4 text-[#f2994a]" /> Autopilot
+          <Plane className="size-4 text-black dark:text-white" /> Autopilot
         </Link>
         <NewProjectButton />
       </PageHeader>
