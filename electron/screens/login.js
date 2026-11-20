@@ -8,9 +8,12 @@ const ALPHABET = /[^ABCDEFGHJKLMNPQRSTUVWXYZ23456789]/g; // matches the server's
 function format(raw) {
   let s = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (s.startsWith("TRK")) s = s.slice(3);
+  // typed by hand: the field already shows "TRK-", so typing T-R-K doubles it ("TRK-TRK…"). Drop the typed prefix,
+  // but never from a complete pasted body (16 chars), which may itself start with TRK.
+  if (s.startsWith("TRK") && s.length < 16) s = s.slice(3);
   s = s.replace(ALPHABET, "").slice(0, 16);
   const groups = s.match(/.{1,4}/g) ?? [];
-  return groups.length ? `TRK-${groups.join("-")}` : "";
+  return groups.length ? `TRK-${groups.join("-")}` : raw.trim() ? "TRK-" : "";
 }
 const complete = () => /^TRK(-[A-Z2-9]{4}){4}$/.test(input.value);
 
