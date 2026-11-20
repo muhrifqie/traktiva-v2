@@ -59,7 +59,7 @@ export function ReleaseDevice({ id, name, allowed }: { id: string; name: string;
   return ask ? (
     <span className="flex flex-wrap items-center gap-2 text-[13px]">
       <span className="text-[var(--site-body)]">Lepas {name}? App di PC itu akan terkunci.</span>
-      <button type="button" onClick={go} disabled={pending} className="rounded-full bg-white px-3 py-1.5 font-semibold text-black hover:bg-[#d4d4d8] disabled:opacity-60">
+      <button type="button" onClick={go} disabled={pending} className="rounded-full bg-white px-3 py-1.5 font-semibold text-black hover:opacity-85 disabled:opacity-60">
         {pending ? <Loader2 className="inline size-3.5 animate-spin" /> : "Ya, lepas"}
       </button>
       <button type="button" onClick={() => setAsk(false)} className="px-2 py-1.5 text-[var(--site-muted)] hover:text-white">Batal</button>

@@ -6,6 +6,7 @@ import crypto from "node:crypto";
 import { appInfo, audit, db, getPlans, getSetting, hashKey, hashPassword, normalizeKey, verifyPassword } from "./lib.mjs";
 import { newTotpSecret, totpUri, verifyTotp } from "./totp.mjs";
 import { createOrder, paymentsReady, syncOrder } from "./payments.mjs";
+import { emailGate } from "./verify.mjs";
 
 export const MEMBER_SESSION_TTL = 30 * 86400;
 export const SELF_RESET_COOLDOWN = 7 * 86400;
@@ -30,19 +31,24 @@ export function memberRoutes(h) {
   const tickets = new Map(); // ticket -> { userId, how, until, tries }
   const userOf = (req) => {
     const sid = String(req.headers["x-member-session"] ?? "");
-    return sid ? db.prepare("SELECT u.* FROM user_sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.expires_at > unixepoch()").get(sha(sid)) ?? null : null;
+    if (!sid) return null;
+    const user = db.prepare("SELECT u.* FROM user_sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.expires_at > unixepoch()").get(sha(sid)) ?? null;
+    if (user) db.prepare("UPDATE user_sessions SET last_seen = unixepoch() WHERE id_hash = ? AND (last_seen IS NULL OR last_seen < unixepoch() - 300)").run(sha(sid));
+    return user;
   };
   /** Signed in with password/Google/link: straight in, or a 2FA ticket when the account has an authenticator. */
-  const signIn = (res, user, ip, how) => {
-    if (!user.totp_secret) return startSession(res, user, ip, how);
+  const signIn = (res, user, ip, how, ua) => {
+    if (!user.totp_secret) return startSession(res, user, ip, how, ua);
     const ticket = crypto.randomBytes(24).toString("base64url");
     if (tickets.size > 5000) tickets.clear();
-    tickets.set(ticket, { userId: user.id, how, until: Date.now() + TICKET_TTL, tries: 0 });
+    tickets.set(ticket, { userId: user.id, how, ua, until: Date.now() + TICKET_TTL, tries: 0 });
     json(res, 200, { ok: true, needCode: true, ticket });
   };
-  const startSession = (res, user, ip, how) => {
+  const startSession = (res, user, ip, how, ua) => {
     const sid = crypto.randomBytes(32).toString("base64url");
-    db.prepare("INSERT INTO user_sessions (id_hash, user_id, expires_at) VALUES (?, ?, ?)").run(sha(sid), user.id, now() + MEMBER_SESSION_TTL);
+    db.prepare("INSERT INTO user_sessions (id_hash, user_id, expires_at, created_at, last_seen, ip, ua) VALUES (?, ?, ?, unixepoch(), unixepoch(), ?, ?)").run(
+      sha(sid), user.id, now() + MEMBER_SESSION_TTL, ip, String(ua ?? "").slice(0, 300) || null,
+    );
     db.prepare("UPDATE users SET last_login = unixepoch() WHERE id = ?").run(user.id);
     audit("member_login", { ip, actor: user.email, detail: how });
     json(res, 200, { ok: true, session: sid, maxAge: MEMBER_SESSION_TTL });
@@ -123,7 +129,7 @@ export function memberRoutes(h) {
         }
         const r = db.prepare("INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)").run(email, cleanName(b.name), hashPassword(password));
         audit("member_registered", { ip, actor: email, detail: "email" });
-        startSession(res, db.prepare("SELECT * FROM users WHERE id = ?").get(Number(r.lastInsertRowid)), ip, "email");
+        startSession(res, db.prepare("SELECT * FROM users WHERE id = ?").get(Number(r.lastInsertRowid)), ip, "email", b.ua);
       },
     },
 
@@ -140,7 +146,7 @@ export function memberRoutes(h) {
           return bad(res, user && !user.password_hash ? "Akun ini masuk lewat Google. Pakai tombol Masuk dengan Google." : "Email atau password salah.", 401);
         }
         fails.delete(`login:${ip}`);
-        signIn(res, user, ip, "email");
+        signIn(res, user, ip, "email", b.ua);
       },
     },
 
@@ -167,7 +173,7 @@ export function memberRoutes(h) {
           }
           user = db.prepare("SELECT * FROM users WHERE google_sub = ?").get(sub);
         }
-        signIn(res, user, ip, "google");
+        signIn(res, user, ip, "google", b.ua);
       },
     },
 
@@ -229,7 +235,7 @@ export function memberRoutes(h) {
           return bad(res, t.tries >= 5 ? "Terlalu banyak kode salah. Masuk lagi dari awal." : "Kode salah. Cek jam HP dan coba kode terbaru.", 401);
         }
         tickets.delete(String(b.ticket));
-        startSession(res, user, ip, `${t.how}+2fa`);
+        startSession(res, user, ip, `${t.how}+2fa`, t.ua);
       },
     },
 
@@ -282,9 +288,64 @@ export function memberRoutes(h) {
         db.prepare("DELETE FROM user_sessions WHERE user_id = ?").run(t.user_id);
         const user = db.prepare("SELECT * FROM users WHERE id = ?").get(t.user_id);
         audit("member_password_set", { ip, actor: user.email, detail: "lewat link" });
-        signIn(res, user, ip, "link");
+        signIn(res, user, ip, "link", b.ua);
       },
     },
+
+    // forgotten password: 6-digit code by email (Waroengku Verify, purpose "reset"), then a new password.
+    // Unknown emails get the same answer as known ones (no account probing).
+    "POST /internal/member/forgot": {
+      open: true,
+      fn: async (req, res) => {
+        const b = await body(req);
+        const ip = ipOf(b);
+        if (limited(`forgot:${ip}`)) return bad(res, "Terlalu banyak percobaan. Coba lagi 15 menit lagi.", 429);
+        const email = cleanEmail(b.email);
+        if (!EMAIL.test(email)) return bad(res, "Email tidak valid.");
+        const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+        const otp = String(b.otp ?? "").replace(/\D/g, "").slice(0, 6);
+        if (!otp) {
+          const sent = { ok: true, otp: true, message: "Kalau email ini terdaftar, kode 6 angka sudah dikirim. Cek juga folder spam.", retry_after: 60 };
+          if (!user) return json(res, 200, sent);
+          const g = await emailGate("reset", email, ip);
+          if (g.otp || g.ok) return json(res, 200, { ...sent, retry_after: g.retry_after ?? 60 });
+          return bad(res, g.message || "Kode gagal dikirim. Coba lagi sebentar.", 502);
+        }
+        const next = String(b.password ?? "");
+        if (next.length < 8 || next.length > 200) return bad(res, "Password baru minimal 8 karakter.");
+        if (!user) {
+          miss(`forgot:${ip}`);
+          return bad(res, "Kode salah atau kedaluwarsa.", 400);
+        }
+        const g = await emailGate("reset", email, ip, otp);
+        if (!g.ok) {
+          miss(`forgot:${ip}`);
+          return bad(res, g.message || "Kode salah atau kedaluwarsa.", 400);
+        }
+        db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(next), user.id);
+        db.prepare("DELETE FROM user_sessions WHERE user_id = ?").run(user.id);
+        audit("member_password_reset", { ip, actor: user.email, detail: "lupa password (kode email)" });
+        signIn(res, user, ip, "reset", b.ua);
+      },
+    },
+
+    // web sessions of this account (Pengaturan → Perangkat & sesi)
+    "GET /internal/member/sessions": member(async (req, res, user) => {
+      const mine = sha(String(req.headers["x-member-session"] ?? ""));
+      const rows = db
+        .prepare("SELECT rowid AS id, created_at, last_seen, ip, ua, id_hash = ? AS current FROM user_sessions WHERE user_id = ? AND expires_at > unixepoch() ORDER BY current DESC, coalesce(last_seen, created_at) DESC")
+        .all(mine, user.id);
+      json(res, 200, { ok: true, sessions: rows.map((r) => ({ ...r, current: !!r.current })) });
+    }),
+    "POST /internal/member/sessions/revoke": member(async (req, res, user) => {
+      const b = await body(req);
+      const mine = sha(String(req.headers["x-member-session"] ?? ""));
+      const r = b.all
+        ? db.prepare("DELETE FROM user_sessions WHERE user_id = ? AND id_hash <> ?").run(user.id, mine)
+        : db.prepare("DELETE FROM user_sessions WHERE user_id = ? AND rowid = ? AND id_hash <> ?").run(user.id, Number(b.id) || 0, mine);
+      audit("member_sessions_revoked", { actor: user.email, detail: b.all ? `semua perangkat lain (${r.changes})` : `1 sesi` });
+      json(res, 200, { ok: true, removed: r.changes });
+    }),
 
     // buy / renew online (WaroengPay QRIS): returns the payment page to send the buyer to
     "POST /internal/member/orders": member(async (req, res, user) => {

@@ -48,6 +48,10 @@ Server lisensi app desktop Traktiva V2 (aktivasi key, sesi, heartbeat). Desain: 
 - **Bayar otomatis (WaroengPay QRIS)**: env `WAROENGPAY_API_KEY`, `WAROENGPAY_WEBHOOK_SECRET`, `SITE_URL` (opsional `WAROENGPAY_BASE`) di proses `traktiva-license-internal`, lalu Pengaturan → Bayar otomatis. Key `wp_test_…` = mode uji (tagihan tak pernah jadi uang). Webhook: `<SITE_URL>/api/pay/webhook` (web meneruskan body mentah; tanda tangan HMAC dicek di server lisensi, 1 event = 1 pengiriman). Pesanan: tabel `orders`, panel → Pesanan. Mati = tombol beli kembali ke WhatsApp.
 - **Pengingat**: banner di /akun (≤ 7 hari) selalu tampil. WA H-7/H-1/habis lewat webhook (POST JSON `phone, text, kind, licenseId`) di Pengaturan → Pengingat; mati secara default. Dicatat di `reminder_log` (tidak dobel).
 
+## Lupa password & sesi (sejak 2026-11-21)
+- **Lupa password** (`/lupa-password`): kode 6 angka lewat **Waroengku Verify** (`purpose: "reset"`, SMTP SumoPod, pengirim `Traktiva <noreply@shopeeboost.com>`). Klien `traktiva` di `serverku:/srv/waroeng-verify/clients.json`; kunci ada di `data/verify.json` (600: `{ "url": "https://waroengin.com/_verify", "key": "…" }`) atau env `VERIFY_URL`/`VERIFY_KEY`. Batas dari pusat: kode 10 menit, 5 salah, kirim ulang 60 dtk, 5 kode/jam/email. Email tak terdaftar dijawab sama (tanpa kirim). Berhasil → semua sesi lain keluar.
+- **Perangkat & sesi** (/akun/pengaturan): `user_sessions` menyimpan `created_at, last_seen, ip, ua`; member bisa mengeluarkan sesi lain.
+
 ## Admin (CLI, di server)
 ```bash
 cd /srv/traktiva-license && alias trk='node --disable-warning=ExperimentalWarning admin.mjs'
@@ -62,7 +66,7 @@ trk extend <licenseId> <hari>
 
 ## Operasional
 - Cek: `curl -sk https://43.156.15.173:8443/health` → `{"ok":true,...}` · `pm2 logs traktiva-license --lines 50`
-- Deploy server lisensi: salin `lib.mjs server.mjs admin.mjs internal-api.mjs members.mjs payments.mjs totp.mjs test.mjs` ke folder ini, jalankan `./backup.sh`, `node test.mjs` (self-test di folder sementara), lalu `pm2 restart traktiva-license traktiva-license-internal` (data tidak tersentuh; tabel baru dibuat otomatis).
+- Deploy server lisensi: salin `lib.mjs server.mjs admin.mjs internal-api.mjs members.mjs payments.mjs totp.mjs verify.mjs test.mjs` ke folder ini, jalankan `./backup.sh`, `node test.mjs` (self-test di folder sementara), lalu `pm2 restart traktiva-license traktiva-license-internal` (data tidak tersentuh; tabel baru dibuat otomatis).
 - Deploy panel: di PC `cd web && npm run build`, gabungkan `.next/standalone` + `.next/static` (→ `.next/static`) + `public`, ganti isi `/srv/traktiva-web` (jaga `ecosystem.config.cjs`), lalu `pm2 restart traktiva-web --update-env`.
 - Rollback panel lama (vanilla, masih ada di folder ini): `pm2 delete traktiva-web && pm2 start admin-web.mjs --name traktiva-license-admin`.
 - **Jangan pernah** hapus/ganti `secrets.json` atau sertifikat: kunci publik server dan sidik jari sertifikat tertanam di setiap installer. Mengganti salah satunya = semua app terpasang tidak bisa login sampai update.

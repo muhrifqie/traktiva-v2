@@ -30,7 +30,21 @@ const wpMock = http
     });
   })
   .listen(38294, "127.0.0.1");
-const env = { ...process.env, LICENSE_DATA_DIR: dir, LICENSE_PORT: "38291", WAROENGPAY_BASE: "http://127.0.0.1:38294", WAROENGPAY_API_KEY: "wp_test_selftest", WAROENGPAY_WEBHOOK_SECRET: WP_SECRET };
+// Waroengku Verify stand-in: purpose "reset" sends code 246810, then accepts it once
+const verifySent = [];
+const verifyMock = http
+  .createServer((req, res) => {
+    let raw = "";
+    req.on("data", (d) => (raw += d)).on("end", () => {
+      const b = JSON.parse(raw || "{}");
+      res.setHeader("content-type", "application/json");
+      if (req.headers.authorization !== "Bearer vk_selftest") return res.end(JSON.stringify({ ok: false, error: "bad_key", message: "kunci" }));
+      if (!b.otp) return verifySent.push(b.email), res.end(JSON.stringify({ ok: false, otp: true, message: "Kode dikirim.", retry_after: 60 }));
+      res.end(JSON.stringify(b.otp === "246810" ? { ok: true, verified: true } : { ok: false, otp: true, message: "Kode salah." }));
+    });
+  })
+  .listen(38295, "127.0.0.1");
+const env = { ...process.env, VERIFY_URL: "http://127.0.0.1:38295", VERIFY_KEY: "vk_selftest", LICENSE_DATA_DIR: dir, LICENSE_PORT: "38291", WAROENGPAY_BASE: "http://127.0.0.1:38294", WAROENGPAY_API_KEY: "wp_test_selftest", WAROENGPAY_WEBHOOK_SECRET: WP_SECRET };
 const admin = (...a) => execFileSync(process.execPath, [path.join(import.meta.dirname, "admin.mjs"), ...a], { env, encoding: "utf8" });
 const serverPub = admin("init").trim().split("\n").pop();
 const key = admin("create", "--days", "30", "--note", "test").split(" ")[0];
@@ -256,6 +270,28 @@ try {
     const { nonce: rn } = await post("/v1/nonce", { deviceId: act2.deviceId });
     assert.ok((await post("/v1/release", { deviceId: act2.deviceId, nonce: rn, signature: crypto.sign(null, Buffer.from(`traktiva-release:${rn}`), pc2.privateKey).toString("base64") })).ok);
     assert.equal((await loginHw(hw)).error, "device_unknown"); // slot freed, this PC needs a key again
+    // forgotten password by email code; unknown emails look the same and send nothing
+    assert.equal((await mpost("/internal/member/forgot", { email: "tidakada@tes.id", ip: "9.9.9.9" })).otp, true);
+    assert.equal(verifySent.length, 0);
+    assert.equal((await mpost("/internal/member/forgot", { email: "budi@tes.id", ip: "9.9.9.9" })).otp, true);
+    assert.deepEqual(verifySent, ["budi@tes.id"]);
+    assert.equal((await mpost("/internal/member/forgot", { email: "budi@tes.id", otp: "111111", password: "BaruSekali2026", ip: "9.9.9.9" })).ok, false);
+    assert.equal((await mpost("/internal/member/forgot", { email: "budi@tes.id", otp: "246810", password: "pendek", ip: "9.9.9.9" })).ok, false);
+    const reset = await mpost("/internal/member/forgot", { email: "budi@tes.id", otp: "246 810", password: "BaruSekali2026", ip: "9.9.9.9", ua: "Mozilla/5.0 (Windows NT 10.0) Chrome/142" });
+    assert.ok(reset.session, JSON.stringify(reset));
+    assert.equal((await mget("/internal/member/me", mlog.session)).ok, false); // old sessions signed out
+    assert.equal((await mpost("/internal/member/login", { email: "budi@tes.id", password: "rahasia123", ip: "9.9.9.9" })).ok, false);
+    const phone = await mpost("/internal/member/login", { email: "budi@tes.id", password: "BaruSekali2026", ip: "8.8.8.8", ua: "Mozilla/5.0 (iPhone) Safari" });
+    assert.ok(phone.session);
+
+    // sessions list + sign out the other devices
+    const sess = (await mget("/internal/member/sessions", reset.session)).sessions;
+    assert.deepEqual(sess.map((x) => [x.current, x.ip]), [[true, "9.9.9.9"], [false, "8.8.8.8"]]);
+    assert.match(sess[0].ua, /Chrome/);
+    assert.equal((await mpost("/internal/member/sessions/revoke", { id: sess[0].id }, reset.session)).removed, 0); // never its own
+    assert.equal((await mpost("/internal/member/sessions/revoke", { all: true }, reset.session)).removed, 1);
+    assert.equal((await mget("/internal/member/me", phone.session)).ok, false);
+    assert.ok((await mget("/internal/member/me", reset.session)).ok);
     console.log("internal api ok");
   } finally {
     await new Promise((r) => (internal.once("exit", r), internal.kill()));
@@ -263,6 +299,7 @@ try {
 } finally {
   // wait for the server to exit: on Windows its open DB file blocks deleting the temp dir
   wpMock.close();
+  verifyMock.close();
   await new Promise((r) => (server.once("exit", r), server.kill()));
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }

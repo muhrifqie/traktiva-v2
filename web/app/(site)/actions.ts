@@ -14,6 +14,7 @@ const fail = (e: unknown): FormResult => {
   return { ok: false, message: e instanceof Error ? e.message : "Gagal" };
 };
 const ip = async () => (await headers()).get("x-real-ip") ?? "local";
+const ua = async () => ((await headers()).get("user-agent") ?? "").slice(0, 300);
 const str = (f: FormData, k: string, max = 200) => String(f.get(k) ?? "").slice(0, max);
 
 type SignIn = { session?: string; maxAge?: number; needCode?: boolean; ticket?: string };
@@ -23,7 +24,7 @@ export async function register(_prev: FormResult, form: FormData): Promise<FormR
   try {
     const r = await licenseApi<SignIn>("/internal/member/register", {
       method: "POST",
-      body: { name: str(form, "name", 80), email: str(form, "email", 254), password: str(form, "password"), ip: await ip() },
+      body: { name: str(form, "name", 80), email: str(form, "email", 254), password: str(form, "password"), ip: await ip(), ua: await ua() },
     });
     to = await finishSignIn(r, safeNext(form.get("next")));
   } catch (e) {
@@ -37,7 +38,7 @@ export async function login(_prev: FormResult, form: FormData): Promise<FormResu
   try {
     const r = await licenseApi<SignIn>("/internal/member/login", {
       method: "POST",
-      body: { email: str(form, "email", 254), password: str(form, "password"), ip: await ip() },
+      body: { email: str(form, "email", 254), password: str(form, "password"), ip: await ip(), ua: await ua() },
     });
     to = await finishSignIn(r, safeNext(form.get("next")));
   } catch (e) {
@@ -56,7 +57,7 @@ export async function verifyCode(_prev: FormResult, form: FormData): Promise<For
   if (!saved.ticket) return { ok: false, message: "Waktu habis. Masuk lagi dari awal." };
   let to: string;
   try {
-    const r = await licenseApi<SignIn>("/internal/member/login/2fa", { method: "POST", body: { ticket: saved.ticket, code: str(form, "code", 10).replace(/\s/g, ""), ip: await ip() } });
+    const r = await licenseApi<SignIn>("/internal/member/login/2fa", { method: "POST", body: { ticket: saved.ticket, code: str(form, "code", 10).replace(/\s/g, ""), ip: await ip(), ua: await ua() } });
     jar.delete(TWOFA_COOKIE);
     to = await finishSignIn(r, safeNext(saved.next));
   } catch (e) {
@@ -71,7 +72,7 @@ export async function setPasswordFromLink(_prev: FormResult, form: FormData): Pr
   if (password !== str(form, "again")) return { ok: false, message: "Ulangi password dengan sama persis." };
   let to: string;
   try {
-    const r = await licenseApi<SignIn>("/internal/member/password-token", { method: "POST", body: { token: str(form, "token", 100), password, ip: await ip() } });
+    const r = await licenseApi<SignIn>("/internal/member/password-token", { method: "POST", body: { token: str(form, "token", 100), password, ip: await ip(), ua: await ua() } });
     to = await finishSignIn(r, "/akun");
   } catch (e) {
     return fail(e);
@@ -182,4 +183,45 @@ export async function buyPlan(_prev: FormResult, form: FormData): Promise<FormRe
   }
   if (!/^https:\/\//.test(payUrl)) return { ok: false, message: "Halaman bayar tidak valid. Coba lagi." };
   redirect(payUrl);
+}
+
+// ---- lupa password (kode 6 angka lewat email, Waroengku Verify)
+
+export type ForgotResult = { ok: false; message: string } | { ok: true; step: "code"; email: string; message: string; retryAfter: number } | null;
+
+/** Step 1 (and "kirim ulang"): email → code. Step 2: email + code + new password → signed in. */
+export async function forgotPassword(prev: ForgotResult, form: FormData): Promise<ForgotResult> {
+  const email = str(form, "email", 254).trim();
+  const otp = form.get("resend") ? "" : str(form, "otp", 10).replace(/\D/g, "");
+  if (!otp) {
+    try {
+      const r = await licenseApi<{ message: string; retry_after?: number }>("/internal/member/forgot", { method: "POST", body: { email, ip: await ip() } });
+      return { ok: true, step: "code", email, message: r.message, retryAfter: r.retry_after ?? 60 };
+    } catch (e) {
+      return fail(e) as ForgotResult;
+    }
+  }
+  const password = str(form, "password");
+  if (password !== str(form, "again")) return { ok: false, message: "Ulangi password baru dengan sama persis." };
+  let to: string;
+  try {
+    const r = await licenseApi<SignIn>("/internal/member/forgot", { method: "POST", body: { email, otp, password, ip: await ip(), ua: await ua() } });
+    to = await finishSignIn(r, "/akun");
+  } catch (e) {
+    return fail(e) as ForgotResult;
+  }
+  redirect(to);
+}
+
+// ---- perangkat & sesi
+
+export async function revokeSessions(input: { id?: number; all?: boolean }): Promise<FormResult> {
+  try {
+    const body = input.all ? { all: true } : { id: z.number().int().positive().parse(input.id) };
+    const r = await asMember<{ removed: number }>("/internal/member/sessions/revoke", { method: "POST", body });
+    revalidatePath("/akun", "layout");
+    return { ok: true, message: r.removed ? `${r.removed} perangkat dikeluarkan.` : "Tidak ada perangkat lain." };
+  } catch (e) {
+    return fail(e);
+  }
 }

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import { KeyRound, LogIn, ShieldCheck, UserRound } from "lucide-react";
-import { requireMember } from "@/lib/license-api";
+import { KeyRound, LaptopMinimal, LogIn, ShieldCheck, UserRound } from "lucide-react";
+import { asMember, requireMember, type MemberSession } from "@/lib/license-api";
 import { PasswordForm, ProfileForm, TwoFaForm } from "../forms";
 import { Notice, PageTitle, Panel } from "../ui";
+import { SessionList } from "./sessions";
 
 export const metadata: Metadata = { title: "Pengaturan" };
 
@@ -17,7 +18,11 @@ function Method({ label, on, detail }: { label: string; on: boolean; detail: str
 }
 
 export default async function Settings({ searchParams }: { searchParams: Promise<{ perlu2fa?: string }> }) {
-  const [v, q] = await Promise.all([requireMember(), searchParams]);
+  const [v, q, sessions] = await Promise.all([
+    requireMember(),
+    searchParams,
+    asMember<{ sessions: MemberSession[] }>("/internal/member/sessions").then((r) => r.sessions, () => [] as MemberSession[]),
+  ]);
   const u = v.user;
   return (
     <>
@@ -41,6 +46,9 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         </Panel>
         <Panel id="keamanan" title="Verifikasi 2 langkah" icon={ShieldCheck} desc={u.totp ? undefined : "Kode 6 angka dari aplikasi authenticator setiap kali masuk. Wajib untuk admin."}>
           <TwoFaForm on={u.totp} />
+        </Panel>
+        <Panel id="sesi" title="Perangkat & sesi" icon={LaptopMinimal} desc="Browser yang sedang masuk ke akun ini. Ada yang tidak kamu kenal? Keluarkan, lalu ganti password.">
+          <SessionList sessions={sessions} />
         </Panel>
       </div>
     </>

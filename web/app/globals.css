@@ -216,3 +216,33 @@ html.is-desktop .titlebar {
 @keyframes site-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
 .site-float { animation: site-float 6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .site-float { animation: none; } }
+
+/* Light theme of the public site (toggle in the navbar, cookie trk_theme). Tailwind's white/black and the light
+   status tints are swapped inside .site, so text-white = ink, bg-white/5 = a faint ink wash, bg-black/30 = paper. */
+.site[data-theme="light"] {
+  --site-canvas: #f6f8f6;
+  --site-pine: #e3ece6;
+  --site-stage: #eef3ef;
+  --site-glow: #cfe6d7;
+  --site-card: #ffffff;
+  --site-edge: #d3e0d8;
+  --site-signal: #13804a;
+  --site-body: #3f5249;
+  --site-muted: #6b7a73;
+  --color-white: #0b1511;
+  --color-black: #ffffff;
+  --color-amber-100: #7c3d06;
+  --color-amber-200: #a14a06;
+  --color-amber-300: #d97706;
+  --color-red-200: #b42318;
+  --color-red-300: #c0362c;
+  --color-sky-200: #1d5fa8;
+  --color-sky-400: #3b82c4;
+  color-scheme: light;
+  color: var(--color-white);
+}
+.site[data-theme="light"] .site-pill { background: #0b1511; color: #fff; }
+.site[data-theme="light"] .site-pill:hover { background: #24322c; }
+.site[data-theme="light"] .site-pill-outline { border-color: #0b1511; color: #0b1511; }
+.site[data-theme="light"] .site-pill-outline:hover { border-color: #6b7a73; }
+.site { transition: background-color .2s ease, color .2s ease; }

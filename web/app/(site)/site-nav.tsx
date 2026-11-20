@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronDown, KeyRound, LayoutDashboard, LayoutGrid, LogOut, Menu, Receipt, Settings, X } from "lucide-react";
+import { ChevronDown, KeyRound, LayoutDashboard, LayoutGrid, LogOut, Menu, Moon, Receipt, Settings, Sun, X } from "lucide-react";
 import { logout } from "./actions";
 
+export type Theme = "dark" | "light";
 export type NavUser = { name: string; email: string; avatar: string | null; isAdmin: boolean; alert: boolean } | null;
 
 const LINKS = [
@@ -92,7 +93,7 @@ function UserMenu({ user }: { user: NonNullable<NavUser> }) {
         <ChevronDown className={`size-4 text-[var(--site-muted)] transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div role="menu" className="absolute top-12 right-0 w-64 rounded-2xl border border-white/10 bg-[#0b1511] p-2 shadow-2xl shadow-black/60">
+        <div role="menu" className="absolute top-12 right-0 w-64 rounded-2xl border border-white/10 bg-[var(--site-card)] p-2 shadow-2xl shadow-black/60">
           <div className="px-3 pt-2 pb-3">
             <p className="truncate text-[14px] font-medium">{user.name || "Akun Traktiva"}</p>
             <p className="truncate text-[12px] text-[var(--site-muted)]">{user.email}</p>
@@ -114,13 +115,15 @@ function MobileMenu({ user }: { user: NavUser }) {
       </button>
       {open && (
         <div className="absolute inset-x-0 top-16 border-b border-white/8 bg-[var(--site-canvas)] px-5 pt-2 pb-5 shadow-2xl shadow-black/60">
-          <div className="grid">
-            {LINKS.map(([href, label]) => (
-              <Link key={href} href={href} onClick={() => setOpen(false)} className="border-b border-white/6 py-3 text-[16px]">{label}</Link>
-            ))}
-          </div>
+          {!user && (
+            <div className="grid">
+              {LINKS.map(([href, label]) => (
+                <Link key={href} href={href} onClick={() => setOpen(false)} className="border-b border-white/6 py-3 text-[16px]">{label}</Link>
+              ))}
+            </div>
+          )}
           {user ? (
-            <div className="mt-4 grid gap-0.5">
+            <div className="mt-2 grid gap-0.5">
               <div className="mb-2 flex items-center gap-3 px-3">
                 <Initial user={user} size="size-9" />
                 <div className="min-w-0">
@@ -142,7 +145,28 @@ function MobileMenu({ user }: { user: NavUser }) {
   );
 }
 
-export function SiteNav({ user }: { user: NavUser }) {
+/** Dark/light switch: cookie for the next server render, attribute for this page right away. */
+function ThemeToggle({ initial }: { initial: Theme }) {
+  const [theme, setTheme] = useState(initial);
+  const next: Theme = theme === "light" ? "dark" : "light";
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        document.cookie = `trk_theme=${next}; path=/; max-age=31536000; samesite=lax`;
+        document.querySelector(".site")?.setAttribute("data-theme", next);
+        setTheme(next);
+      }}
+      aria-label={next === "light" ? "Ganti ke tampilan terang" : "Ganti ke tampilan gelap"}
+      title={next === "light" ? "Tampilan terang" : "Tampilan gelap"}
+      className="grid size-10 shrink-0 place-items-center rounded-full border border-white/12 text-[var(--site-body)] hover:border-white/30 hover:text-white"
+    >
+      {theme === "light" ? <Moon className="size-[18px]" /> : <Sun className="size-[18px]" />}
+    </button>
+  );
+}
+
+export function SiteNav({ user, theme }: { user: NavUser; theme: Theme }) {
   return (
     <header className="sticky top-0 z-50 border-b border-white/5 bg-[var(--site-canvas)]/85 backdrop-blur">
       <nav className="relative mx-auto flex h-16 max-w-[1260px] items-center gap-6 px-5 md:px-8" aria-label="Utama">
@@ -151,12 +175,15 @@ export function SiteNav({ user }: { user: NavUser }) {
           <img src="/logo.svg" alt="" className="size-7" />
           Traktiva
         </Link>
-        <div className="hidden items-center gap-1 text-[15px] text-[var(--site-body)] md:flex">
-          {LINKS.map(([href, label]) => (
-            <Link key={href} href={href} className="rounded-full px-3 py-1.5 hover:bg-white/[0.05] hover:text-white">{label}</Link>
-          ))}
-        </div>
-        <div className="ml-auto flex items-center gap-3">
+        {!user && (
+          <div className="hidden items-center gap-1 text-[15px] text-[var(--site-body)] md:flex">
+            {LINKS.map(([href, label]) => (
+              <Link key={href} href={href} className="rounded-full px-3 py-1.5 hover:bg-white/[0.05] hover:text-white">{label}</Link>
+            ))}
+          </div>
+        )}
+        <div className="ml-auto flex items-center gap-2 sm:gap-3">
+          <ThemeToggle initial={theme} />
           {user ? (
             <UserMenu user={user} />
           ) : (

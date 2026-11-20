@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { memberMe } from "@/lib/license-api";
-import { SiteNav, type NavUser } from "./site-nav";
+import { SiteNav, type NavUser, type Theme } from "./site-nav";
 
 export const dynamic = "force-dynamic";
 
@@ -11,9 +12,10 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
     name: me.user.name ?? "", email: me.user.email, avatar: me.user.avatar, isAdmin: me.user.isAdmin,
     alert: me.user.isAdmin && !me.user.totp,
   };
+  const theme: Theme = (await cookies()).get("trk_theme")?.value === "light" ? "light" : "dark";
   return (
-    <div className="site min-h-screen">
-      <SiteNav user={nav} />
+    <div className="site min-h-screen" data-theme={theme}>
+      <SiteNav user={nav} theme={theme} />
       {children}
       <footer className="bg-black">
         <div className="mx-auto grid max-w-[1260px] gap-10 px-5 py-16 md:grid-cols-[2fr_1fr_1fr] md:px-8">

@@ -104,6 +104,7 @@ export type MemberView = {
   latest: { version: string; url: string; notes: string; mandatory: number; created_at: number } | null;
   buyOnline: boolean;
 };
+export type MemberSession = { id: number; created_at: number | null; last_seen: number | null; ip: string | null; ua: string | null; current: boolean };
 export type MemberOrder = { id: string; plan: string; license_id: number | null; base_amount: number; amount: number | null; status: "pending" | "paid" | "expired" | "cancelled" | "mismatch"; created_at: number; paid_at: number | null; pay_url: string | null; livemode: number };
 
 /** Landing data; null when the license server is unreachable (the page still renders, without prices). */

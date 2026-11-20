@@ -4,7 +4,7 @@ import { waLink, type MemberLicense, type MemberOrder, type MemberView } from "@
 import { BuyButton, ReleaseDevice } from "./forms";
 
 export const TONE = {
-  info: { icon: Info, cls: "border-[#4ea7fc]/30 text-[#9ccbff]" },
+  info: { icon: Info, cls: "border-sky-400/30 text-sky-200" },
   warn: { icon: TriangleAlert, cls: "border-amber-300/30 text-amber-200" },
   critical: { icon: Megaphone, cls: "border-red-400/40 text-red-200" },
 } as const;

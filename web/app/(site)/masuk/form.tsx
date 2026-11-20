@@ -22,7 +22,7 @@ function GoogleG() {
 export function GoogleButton({ next, label }: { next: string; label: string }) {
   return (
     // a plain link: the OAuth start is a top-level navigation to /api/auth/google (sets state, redirects to Google)
-    <a href={`/api/auth/google?next=${encodeURIComponent(next)}`} className="flex h-12 w-full items-center justify-center gap-3 rounded-full border border-white/20 bg-white text-[16px] font-semibold text-black hover:bg-[#e4e4e7]">
+    <a href={`/api/auth/google?next=${encodeURIComponent(next)}`} className="flex h-12 w-full items-center justify-center gap-3 rounded-full border border-white/20 bg-white text-[16px] font-semibold text-black hover:opacity-90">
       <GoogleG /> {label}
     </a>
   );
@@ -58,6 +58,7 @@ export function AuthForm({ mode, next, google }: { mode: "login" | "register"; n
           Password
           <input name="password" type="password" required minLength={mode === "register" ? 8 : 1} maxLength={200} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder={mode === "register" ? "Minimal 8 karakter" : ""} className={field} />
         </label>
+        {mode === "login" && <Link href="/lupa-password" className="-mt-2 justify-self-end text-[14px] text-[var(--site-body)] underline hover:text-white">Lupa password?</Link>}
         {state && !state.ok && <p className="text-[14px] text-red-300" role="alert">{state.message}</p>}
         <button type="submit" disabled={pending} className="site-pill w-full disabled:opacity-60">
           {pending && <Loader2 className="size-4 animate-spin" />} {mode === "login" ? "Masuk" : "Buat akun"}

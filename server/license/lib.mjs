@@ -89,6 +89,9 @@ db.exec(`
   );
   CREATE TABLE IF NOT EXISTS user_sessions (id_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL);
 `);
+// member web sessions: when, from where, which browser (Pengaturan → Perangkat & sesi)
+for (const [col, type] of [["created_at", "INTEGER"], ["last_seen", "INTEGER"], ["ip", "TEXT"], ["ua", "TEXT"]])
+  if (!db.prepare("SELECT 1 FROM pragma_table_info('user_sessions') WHERE name = ?").get(col)) db.exec(`ALTER TABLE user_sessions ADD COLUMN ${col} ${type}`);
 // who did it (admin name / "cli" / "app"); added after the first deploy
 if (!db.prepare("SELECT 1 FROM pragma_table_info('audit_events') WHERE name = 'actor'").get()) db.exec("ALTER TABLE audit_events ADD COLUMN actor TEXT");
 // panel login = name + password (scrypt); token_hash stays only as a random placeholder (old token login removed)
