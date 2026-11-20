@@ -199,7 +199,7 @@ Return ONLY a JSON array of exactly ${n} strings in casual Indonesian, each "Jud
 /** First logged-in Google account (its Chrome profile carries the Gemini session). */
 export async function geminiAccount() {
   const g = await db.select().from(googleAccounts).where(and(eq(googleAccounts.status, "active"))).get();
-  if (!g) throw new Error("Tambahkan akun Google di Pengaturan AI dulu (dipakai untuk Gemini).");
+  if (!g) throw new Error("Tambahkan akun Google di Pengaturan dulu (dipakai untuk Gemini).");
   return g;
 }
 

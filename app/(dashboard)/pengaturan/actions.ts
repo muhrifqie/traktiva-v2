@@ -208,7 +208,7 @@ const Writing = z.object({
   notes: z.string().trim().max(500),
 });
 
-/** Pengaturan AI → Aturan naskah: CTA, banned words (auto-swapped) and extra notes for every AI writer. */
+/** Pengaturan → Aturan naskah: CTA, banned words (auto-swapped) and extra notes for every AI writer. */
 export async function saveWritingRules(input: z.input<typeof Writing>) {
   const { updateSettings } = await import("@/lib/settings");
   updateSettings({ writing: Writing.parse(input) });

@@ -15,7 +15,7 @@ export const withoutVoice = (motion: string) =>
 export const spoken = (t: string) => spokenNumbers(t);
 
 /**
- * Which voice a project uses: its own choice (set in the storyboard) or the app default from Pengaturan AI.
+ * Which voice a project uses: its own choice (set in the storyboard) or the app default from Pengaturan.
  * Project options keys: voice, voiceId, voiceName, voiceSpeed.
  */
 export function projectVoice(

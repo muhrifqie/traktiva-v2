@@ -95,7 +95,7 @@ export async function askChatGPT(profileKey: string, prompt: string, timeoutMs =
     const box = page.locator(EDITOR).first();
     await box.waitFor({ state: "attached", timeout: 45_000 }).catch(async () => {
       const title = await page.title().catch(() => "");
-      throw new Error(/moment|verify|cloudflare|just a/i.test(title) ? "ChatGPT minta verifikasi browser. Login ulang ChatGPT di Pengaturan AI." : "Halaman ChatGPT tidak siap (belum login?). Hubungkan ulang di Pengaturan AI.");
+      throw new Error(/moment|verify|cloudflare|just a/i.test(title) ? "ChatGPT minta verifikasi browser. Login ulang ChatGPT di Pengaturan." : "Halaman ChatGPT tidak siap (belum login?). Hubungkan ulang di Pengaturan.");
     });
     await dismissDialogs(page);
     const before = await page.locator(ASSISTANT).count();

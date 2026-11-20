@@ -27,6 +27,7 @@ export default async function LicenseDetail({ params }: { params: Promise<{ id: 
     ["Perangkat", `${l.used} dari ${l.max_devices}`],
     ["Dibuat", fmtTime(l.created_at)],
     ["Catatan", l.note ?? "—"],
+    ["Akun pemilik", l.owner ?? "Belum diklaim"],
   ];
 
   return (
@@ -49,7 +50,7 @@ export default async function LicenseDetail({ params }: { params: Promise<{ id: 
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold">{dv.name ?? "Tanpa nama"} {dv.status === "reset" && <StateBadge state="reset" />}</p>
                       <p className="font-mono text-[11px] text-muted-foreground">{dv.id.slice(0, 12)} · v{dv.app_version ?? "?"} · {dv.last_ip ?? "—"}</p>
-                      <p className="text-[11px] text-muted-foreground">{dv.hw_locked ? "🔒 Terkunci ke hardware (Windows, motherboard, CPU, RAM, disk, BIOS)" : "Belum terkunci hardware (diaktifkan dari versi app lama)"}</p>
+                      <p className="text-[11px] text-muted-foreground">{dv.hw_locked ? "🔒 Terkunci ke hardware (motherboard, CPU, RAM, disk, BIOS)" : "Belum terkunci hardware (diaktifkan dari versi app lama)"}</p>
                     </div>
                     <OnlineBadge at={dv.last_seen} now={now} />
                     {dv.status === "active" && <DeviceReset id={dv.id} name={dv.name ?? "perangkat ini"} />}

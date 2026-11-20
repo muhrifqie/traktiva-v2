@@ -79,8 +79,15 @@ db.exec(`
     mandatory INTEGER NOT NULL DEFAULT 0,                   -- 1 = apps older than this must update
     created_at INTEGER NOT NULL DEFAULT (unixepoch()), actor TEXT
   );
-  -- buyer website login (with their license key)
+  -- buyer website login (with their license key; replaced by member accounts, kept for old rows)
   CREATE TABLE IF NOT EXISTS buyer_sessions (id_hash TEXT PRIMARY KEY, license_id INTEGER NOT NULL REFERENCES licenses(id), expires_at INTEGER NOT NULL);
+  -- member accounts on the website: email + password (scrypt) and/or Google; licenses are claimed with their key
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE COLLATE NOCASE, name TEXT, avatar TEXT,
+    password_hash TEXT, google_sub TEXT UNIQUE,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()), last_login INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS user_sessions (id_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL);
 `);
 // who did it (admin name / "cli" / "app"); added after the first deploy
 if (!db.prepare("SELECT 1 FROM pragma_table_info('audit_events') WHERE name = 'actor'").get()) db.exec("ALTER TABLE audit_events ADD COLUMN actor TEXT");
@@ -88,8 +95,14 @@ if (!db.prepare("SELECT 1 FROM pragma_table_info('audit_events') WHERE name = 'a
 if (!db.prepare("SELECT 1 FROM pragma_table_info('admins') WHERE name = 'password_hash'").get()) db.exec("ALTER TABLE admins ADD COLUMN password_hash TEXT");
 // role: 'admin' (owner/team: label + panel shortcut in the app) or 'member' (buyers)
 if (!db.prepare("SELECT 1 FROM pragma_table_info('licenses') WHERE name = 'role'").get()) db.exec("ALTER TABLE licenses ADD COLUMN role TEXT NOT NULL DEFAULT 'member'");
-// hardware fingerprint taken at activation: JSON { guid, board, boardSerial, cpu, ram, disk, bios } of hashes
+// hardware fingerprint taken at activation: JSON { board, boardSerial, cpu, ram, disk, bios } of hashes (old rows may also hold an ignored "guid")
 if (!db.prepare("SELECT 1 FROM pragma_table_info('devices') WHERE name = 'hw'").get()) db.exec("ALTER TABLE devices ADD COLUMN hw TEXT");
+// member accounts: owner of a license (claimed on the website) + last self-service device reset (7-day cooldown)
+if (!db.prepare("SELECT 1 FROM pragma_table_info('licenses') WHERE name = 'user_id'").get()) {
+  db.exec("ALTER TABLE licenses ADD COLUMN user_id INTEGER REFERENCES users(id)");
+  db.exec("ALTER TABLE licenses ADD COLUMN self_reset_at INTEGER");
+  db.exec("CREATE INDEX IF NOT EXISTS licenses_user ON licenses(user_id)");
+}
 
 // ---------------------------------------------------------------- admin passwords
 
@@ -136,11 +149,14 @@ export const setSetting = (key, value) =>
   db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, JSON.stringify(value));
 
 /** Hardware lock: which components differ from the activation fingerprint (missing now = changed). */
-export const HW_PARTS = { guid: "Windows", board: "Motherboard (UUID)", boardSerial: "Motherboard (serial)", cpu: "CPU", ram: "RAM", disk: "Disk", bios: "BIOS" };
+// Physical parts only. Windows' MachineGuid is NOT part of the lock: it is a registry value that HWID spoofers
+// (common among multi-account affiliates), cleaners and Windows resets change without any hardware change, which
+// locked real buyers out. Older activations still carry a stored "guid": it is ignored here.
+export const HW_PARTS = { board: "Motherboard (UUID)", boardSerial: "Motherboard (serial)", cpu: "CPU", ram: "RAM", disk: "Disk", bios: "BIOS" };
 export function hwChanges(stored, now) {
   if (!stored) return []; // activated before the lock existed: nothing to compare
   const a = typeof stored === "string" ? JSON.parse(stored) : stored;
-  return Object.keys(a).filter((k) => !now || now[k] !== a[k]);
+  return Object.keys(a).filter((k) => k in HW_PARTS && (!now || now[k] !== a[k]));
 }
 /** How many components may differ before the session is refused (Pengaturan → Kunci hardware; 0 = strict). */
 export const hwTolerance = () => Math.max(0, Math.min(6, Number(getSetting("hwid", {}).tolerance) || 0));

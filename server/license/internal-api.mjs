@@ -7,6 +7,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { appInfo, audit, hwTolerance, createLicenses, DATA_DIR, db, getPlans, getSetting, hashKey, hashPassword, loadSecrets, normalizeKey, setPlans, setSetting, verifyPassword } from "./lib.mjs";
+import { memberRoutes } from "./members.mjs";
 
 const PORT = Number(process.env.INTERNAL_PORT || 3822);
 const HOST = "127.0.0.1";
@@ -48,7 +49,7 @@ const sessionAdmin = (sid) =>
 const fails = new Map();
 const failsOf = (ip) => fails.get(ip) ?? { n: 0, until: 0 };
 const plan = (id) => getPlans().find((p) => p.id === id);
-const LICENSE_COLS = `l.*, (SELECT count(*) FROM devices d WHERE d.license_id = l.id AND d.status = 'active') AS used,
+const LICENSE_COLS = `l.*, (SELECT email FROM users u WHERE u.id = l.user_id) AS owner, (SELECT count(*) FROM devices d WHERE d.license_id = l.id AND d.status = 'active') AS used,
                       (SELECT max(last_seen) FROM devices d WHERE d.license_id = l.id) AS last_seen`;
 const licenseRow = (id) => db.prepare(`SELECT ${LICENSE_COLS} FROM licenses l WHERE l.id = ?`).get(id);
 
@@ -134,8 +135,8 @@ const routes = {
       const where = [];
       const args = [];
       if (q) {
-        where.push("(l.note LIKE ? OR l.key_hint LIKE ? OR CAST(l.id AS TEXT) = ? OR EXISTS (SELECT 1 FROM devices d WHERE d.license_id = l.id AND d.name LIKE ?))");
-        args.push(`%${q}%`, `%${q.replace(/^.*-/, "").slice(-4)}%`, q.replace(/^#/, ""), `%${q}%`);
+        where.push("(l.note LIKE ? OR l.key_hint LIKE ? OR CAST(l.id AS TEXT) = ? OR EXISTS (SELECT 1 FROM devices d WHERE d.license_id = l.id AND d.name LIKE ?) OR EXISTS (SELECT 1 FROM users u WHERE u.id = l.user_id AND u.email LIKE ?))");
+        args.push(`%${q}%`, `%${q.replace(/^.*-/, "").slice(-4)}%`, q.replace(/^#/, ""), `%${q}%`, `%${q}%`);
       }
       if (status === "expired") where.push("l.status = 'active' AND l.expires_at <= unixepoch()");
       else if (status === "active") where.push("l.status = 'active' AND (l.expires_at IS NULL OR l.expires_at > unixepoch())");
@@ -195,6 +196,9 @@ const routes = {
       } else if (b.action === "lifetime") {
         db.prepare("UPDATE licenses SET expires_at = NULL WHERE id = ?").run(l.id);
         audit("license_extended", { license_id: l.id, actor: admin.name, detail: "lifetime" });
+      } else if (b.action === "unclaim") {
+        db.prepare("UPDATE licenses SET user_id = NULL WHERE id = ?").run(l.id);
+        audit("license_unclaimed", { license_id: l.id, actor: admin.name, detail: l.owner });
       } else if (b.action === "role") {
         const role = b.role === "admin" ? "admin" : "member";
         db.prepare("UPDATE licenses SET role = ? WHERE id = ?").run(role, l.id);
@@ -356,54 +360,8 @@ const routes = {
     },
   },
 
-  // ---- buyer website: login with the license key (no accounts, no email)
-  "POST /internal/buyer/login": {
-    open: true,
-    fn: async (req, res) => {
-      const { key, ip: rawIp } = await body(req);
-      const ip = `buyer:${String(rawIp ?? "?").slice(0, 64)}`;
-      if (Date.now() < failsOf(ip).until) return bad(res, "Terlalu banyak percobaan. Coba lagi 15 menit lagi.", 429);
-      const lic = db.prepare("SELECT id, status FROM licenses WHERE key_hash = ?").get(hashKey(secrets.pepper, normalizeKey(key)));
-      if (!lic || lic.status === "revoked") {
-        const n = failsOf(ip).n + 1;
-        if (fails.size > 10_000) fails.clear();
-        fails.set(ip, { n, until: n >= 10 ? Date.now() + 15 * 60_000 : 0 });
-        return bad(res, "Key lisensi tidak dikenal.", 401);
-      }
-      fails.delete(ip);
-      const sid = crypto.randomBytes(32).toString("base64url");
-      db.prepare("INSERT INTO buyer_sessions (id_hash, license_id, expires_at) VALUES (?, ?, ?)").run(sha(sid), lic.id, now() + 7 * 86400);
-      audit("buyer_login", { license_id: lic.id, ip: String(rawIp ?? "").slice(0, 64) || null });
-      json(res, 200, { ok: true, session: sid, maxAge: 7 * 86400 });
-    },
-  },
-  "POST /internal/buyer/logout": {
-    open: true,
-    fn: async (req, res) => {
-      db.prepare("DELETE FROM buyer_sessions WHERE id_hash = ?").run(sha(String(req.headers["x-buyer-session"] ?? "")));
-      json(res, 200, { ok: true });
-    },
-  },
-  "GET /internal/buyer/me": {
-    open: true,
-    fn: async (req, res) => {
-      const s = db
-        .prepare("SELECT license_id FROM buyer_sessions WHERE id_hash = ? AND expires_at > unixepoch()")
-        .get(sha(String(req.headers["x-buyer-session"] ?? "")));
-      const l = s && licenseRow(s.license_id);
-      if (!l || l.status === "revoked") return bad(res, "Sesi habis. Masuk lagi.", 401);
-      const info = appInfo();
-      json(res, 200, {
-        ok: true,
-        license: { id: l.id, key_hint: l.key_hint, plan: l.plan, status: l.status, expires_at: l.expires_at, max_devices: l.max_devices, used: l.used, created_at: l.created_at },
-        devices: db.prepare("SELECT name, app_version, created_at, last_seen FROM devices WHERE license_id = ? AND status = 'active' ORDER BY created_at DESC").all(l.id),
-        plans: getPlans(),
-        site: getSetting("site", {}),
-        announcements: info.announcements,
-        latest: info.latest,
-      });
-    },
-  },
+  // ---- member accounts (website): see members.mjs
+  ...memberRoutes({ json, bad, body, sha, now, failsOf, fails, licenseRow, secrets }),
 };
 
 function match(method, pathname) {
@@ -419,6 +377,7 @@ function match(method, pathname) {
 setInterval(() => {
   db.prepare("DELETE FROM admin_sessions WHERE expires_at < unixepoch()").run();
   db.prepare("DELETE FROM buyer_sessions WHERE expires_at < unixepoch()").run();
+  db.prepare("DELETE FROM user_sessions WHERE expires_at < unixepoch()").run();
 }, 3600_000).unref();
 
 http

@@ -58,7 +58,10 @@ const HW_SCRIPT = [
 ].join("; ");
 const JUNK = /^(0+|none|default string|to be filled.*|system serial number|not applicable)$/i; // OEM placeholders
 let hwPromise = null;
-/** { guid, board, boardSerial, cpu, ram, disk, bios } → 24-hex hashes; null when Windows could not be queried. */
+/**
+ * { board, boardSerial, cpu, ram, disk, bios } → 24-hex hashes; null when Windows could not be queried.
+ * MachineGuid is left out on purpose (spoofers/cleaners change it with no hardware change); it only feeds deviceHash.
+ */
 function hardware() {
   hwPromise ??= new Promise((resolve) => {
     execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", HW_SCRIPT], { windowsHide: true, timeout: 20_000 }, (err, out) => {
@@ -70,7 +73,6 @@ function hardware() {
         hwPromise = null; // try again on the next heartbeat
         return resolve(null);
       }
-      raw.guid = machineGuid();
       const hw = {};
       for (const [k, v] of Object.entries(raw)) {
         const val = String(v ?? "").trim();

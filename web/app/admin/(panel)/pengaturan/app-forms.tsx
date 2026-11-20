@@ -102,7 +102,7 @@ export function RemoteForm({ remote }: { remote: Record<string, string | number 
   );
 }
 
-/** HWID lock: how many hardware parts (of Windows, motherboard ×2, CPU, RAM, disk, BIOS) may change before a PC is refused. */
+/** HWID lock: how many hardware parts (of motherboard ×2, CPU, RAM, disk, BIOS) may change before a PC is refused. */
 export function HwidForm({ tolerance }: { tolerance: number }) {
   const [n, setN] = useState(tolerance);
   const [pending, start] = useTransition();
@@ -122,7 +122,7 @@ export function HwidForm({ tolerance }: { tolerance: number }) {
       <header className="flex items-center gap-3 border-b px-4 py-3">
         <div>
           <p className="flex items-center gap-1.5 text-sm font-semibold"><Cpu className="size-4 text-brand-light" /> Kunci hardware (HWID)</p>
-          <p className="text-xs text-muted-foreground">Setiap PC terkunci ke Windows, motherboard, CPU, RAM, disk, dan BIOS saat aktivasi.</p>
+          <p className="text-xs text-muted-foreground">Setiap PC terkunci ke motherboard, CPU, RAM, disk, dan BIOS saat aktivasi (bukan ID Windows, yang sering berubah oleh spoofer/cleaner).</p>
         </div>
         <Button className="ml-auto" onClick={save} disabled={pending || n === tolerance}>{pending ? <Loader2 className="animate-spin" /> : <Save />} Simpan</Button>
       </header>
