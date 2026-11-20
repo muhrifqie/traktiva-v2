@@ -181,7 +181,7 @@ export function BuyButton({ plan, renew, label, outline = false }: { plan: strin
     <form action={action} className="grid gap-2">
       <input type="hidden" name="plan" value={plan} />
       {renew && <input type="hidden" name="renew" value={renew} />}
-      <button type="submit" disabled={pending} className={`${outline ? "site-pill-outline" : "site-pill"} site-sm justify-self-start disabled:opacity-60`}>
+      <button type="submit" disabled={pending} className={`${outline ? "site-pill-outline" : "site-pill"} site-sm justify-self-start whitespace-nowrap disabled:opacity-60`}>
         {pending ? <Loader2 className="size-4 animate-spin" /> : <Wallet className="size-4" />} {label}
       </button>
       <Note state={state} />

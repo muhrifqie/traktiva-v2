@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -69,7 +70,7 @@ export async function requireAdmin(): Promise<AdminIdentity> {
       const me = await licenseApi<{ name: string; kind: "admin" | "member" }>("/internal/admin/me", { headers });
       return { name: me.name, kind: me.kind, headers };
     } catch (e) {
-      if (e instanceof ApiError && e.code === "need_2fa") redirect("/akun?perlu2fa=1#keamanan");
+      if (e instanceof ApiError && e.code === "need_2fa") redirect("/akun/pengaturan?perlu2fa=1#keamanan");
       if (!(e instanceof ApiError && e.status === 401)) throw e;
     }
   }
@@ -121,17 +122,26 @@ export async function asMember<T>(path: string, opts: { method?: "GET" | "POST";
   return licenseApi<T>(path, { ...opts, headers: { "x-member-session": session } });
 }
 
-/** The signed-in member with their licenses, or a redirect to /masuk. */
-export async function requireMember(): Promise<MemberView> {
-  let view: MemberView | null = null;
+/** The signed-in member (one request per page render), or null without a valid session. */
+export const memberMe = cache(async (): Promise<MemberView | null> => {
+  if (!(await cookies()).get(MEMBER_COOKIE)?.value) return null;
   try {
-    view = await asMember<MemberView>("/internal/member/me");
+    return await asMember<MemberView>("/internal/member/me");
   } catch (e) {
-    if (!(e instanceof ApiError && e.status === 401)) throw e;
+    if (e instanceof ApiError && e.status === 401) return null;
+    throw e;
   }
+});
+
+/** The signed-in member with their licenses, or a redirect to /masuk. */
+export const requireMember = cache(async (): Promise<MemberView> => {
+  const view = await memberMe();
   if (!view) redirect("/masuk");
   return view;
-}
+});
+
+/** This member's online orders (newest first); empty when the list cannot be loaded. */
+export const myOrders = cache(() => asMember<{ orders: MemberOrder[] }>("/internal/member/orders").then((r) => r.orders, () => [] as MemberOrder[]));
 
 /** Signed in? (cheap: cookie only, for the nav) */
 export const hasMemberCookie = async () => !!(await cookies()).get(MEMBER_COOKIE)?.value;

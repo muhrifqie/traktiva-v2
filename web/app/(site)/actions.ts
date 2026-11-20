@@ -92,7 +92,7 @@ export async function claimKey(_prev: FormResult, form: FormData): Promise<FormR
     const key = str(form, "key", 40);
     if (key.replace(/[^a-z0-9]/gi, "").length < 16) return { ok: false, message: "Masukkan key lengkap, contoh TRK-XXXX-XXXX-XXXX-XXXX." };
     const r = await asMember<{ already: boolean }>("/internal/member/claim", { method: "POST", body: { key, ip: await ip() } });
-    revalidatePath("/akun");
+    revalidatePath("/akun", "layout");
     return { ok: true, message: r.already ? "Key ini sudah ada di akunmu." : "Lisensi ditambahkan ke akunmu." };
   } catch (e) {
     return fail(e);
@@ -103,7 +103,7 @@ export async function claimKey(_prev: FormResult, form: FormData): Promise<FormR
 export async function resetMyDevice(deviceId: string): Promise<FormResult> {
   try {
     await asMember(`/internal/member/devices/${encodeURIComponent(z.string().regex(/^[0-9a-f]{32}$/).parse(deviceId))}/reset`, { method: "POST", body: { ip: await ip() } });
-    revalidatePath("/akun");
+    revalidatePath("/akun", "layout");
     return { ok: true };
   } catch (e) {
     return fail(e instanceof z.ZodError ? new Error("Perangkat tidak valid.") : e);
@@ -113,7 +113,7 @@ export async function resetMyDevice(deviceId: string): Promise<FormResult> {
 export async function saveProfile(_prev: FormResult, form: FormData): Promise<FormResult> {
   try {
     await asMember("/internal/member/profile", { method: "POST", body: { name: str(form, "name", 80), phone: str(form, "phone", 30) } });
-    revalidatePath("/akun");
+    revalidatePath("/akun", "layout");
     return { ok: true, message: "Profil disimpan." };
   } catch (e) {
     return fail(e);
@@ -125,7 +125,7 @@ export async function changePassword(_prev: FormResult, form: FormData): Promise
     const next = str(form, "next");
     if (next !== str(form, "again")) return { ok: false, message: "Ulangi password baru dengan sama persis." };
     await asMember("/internal/member/password", { method: "POST", body: { current: str(form, "current"), next } });
-    revalidatePath("/akun");
+    revalidatePath("/akun", "layout");
     return { ok: true, message: "Password disimpan. Perangkat lain otomatis keluar." };
   } catch (e) {
     return fail(e);
@@ -151,7 +151,7 @@ export async function startTwoFa(): Promise<TwoFaSetup> {
 export async function enableTwoFa(_prev: FormResult, form: FormData): Promise<FormResult> {
   try {
     await asMember("/internal/member/2fa/enable", { method: "POST", body: { code: str(form, "code", 10).replace(/\s/g, "") } });
-    revalidatePath("/akun");
+    revalidatePath("/akun", "layout");
     return { ok: true, message: "Verifikasi 2 langkah aktif." };
   } catch (e) {
     return fail(e);
@@ -161,7 +161,7 @@ export async function enableTwoFa(_prev: FormResult, form: FormData): Promise<Fo
 export async function disableTwoFa(_prev: FormResult, form: FormData): Promise<FormResult> {
   try {
     await asMember("/internal/member/2fa/disable", { method: "POST", body: { code: str(form, "code", 10).replace(/\s/g, "") } });
-    revalidatePath("/akun");
+    revalidatePath("/akun", "layout");
     return { ok: true, message: "Verifikasi 2 langkah dimatikan." };
   } catch (e) {
     return fail(e);
