@@ -97,7 +97,7 @@ function PlanCard({ p, href }: { p: Plan; href: string | null }) {
       </div>
       <p className="mt-1 text-[15px] text-[var(--site-signal)]">{p.days ? (p.days >= 365 ? "Paling hemat per bulan" : "Coba dulu sebulan") : "Bayar sekali"}</p>
       {href ? (
-        <a href={href} target="_blank" rel="noreferrer" className="site-pill-outline site-sm mt-6 w-full">Beli {p.label}</a>
+        <a href={href} {...(href.startsWith("/") ? {} : { target: "_blank", rel: "noreferrer" })} className="site-pill-outline site-sm mt-6 w-full">Beli {p.label}</a>
       ) : (
         <span className="site-pill-outline site-sm mt-6 w-full opacity-50">Segera dibuka</span>
       )}
@@ -202,7 +202,7 @@ export default async function Landing() {
           {plans.length ? (
             <div className="mt-12 flex snap-x gap-4 overflow-x-auto pb-2 md:grid md:grid-cols-3 md:overflow-visible">
               {plans.map((p) => (
-                <div key={p.id} className="snap-start"><PlanCard p={p} href={buy(p.label)} /></div>
+                <div key={p.id} className="snap-start"><PlanCard p={p} href={info?.buyOnline && p.price >= 1000 ? `/beli?plan=${p.id}` : buy(p.label)} /></div>
               ))}
             </div>
           ) : (

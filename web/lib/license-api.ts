@@ -21,7 +21,7 @@ export type Device = { id: string; name: string | null; app_version: string | nu
 export type AuditEvent = { id: number; at: number; event: string; license_id: number | null; device_id: string | null; ip: string | null; detail: string | null; actor: string | null; key_hint?: string | null; note?: string | null };
 
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly code?: string) {
     super(message);
   }
 }
@@ -45,38 +45,47 @@ export async function licenseApi<T>(path: string, opts: { method?: "GET" | "POST
   } catch {
     throw new ApiError("Server lisensi tidak bisa dihubungi.", 503);
   }
-  const json = (await res.json().catch(() => ({ ok: false, message: "Jawaban server lisensi tidak valid." }))) as { ok: boolean; message?: string } & T;
-  if (!json.ok) throw new ApiError(json.message ?? "Gagal", res.status);
+  const json = (await res.json().catch(() => ({ ok: false, message: "Jawaban server lisensi tidak valid." }))) as { ok: boolean; message?: string; code?: string } & T;
+  if (!json.ok) throw new ApiError(json.message ?? "Gagal", res.status, json.code);
   return json;
 }
 
+export type AdminIdentity = { name: string; kind: "admin" | "member"; headers: Record<string, string> };
+
 /**
- * The logged-in admin, or a redirect to the login page. Called by every admin page AND every server action:
- * authorization never relies on middleware alone.
+ * The logged-in admin, or a redirect. Called by every admin page AND every server action (authorization never relies
+ * on middleware alone). Two ways in: the legacy admin login (trk_admin), or a member account with the admin role
+ * (trk_member) — the license server checks the role and, by default, that the account has 2FA switched on.
  */
-export async function requireAdmin(): Promise<{ name: string; session: string }> {
-  const session = (await cookies()).get(SESSION_COOKIE)?.value;
-  if (!session) redirect("/admin/login");
-  let name: string | null = null;
-  try {
-    name = (await licenseApi<{ name: string }>("/internal/admin/me", { session })).name;
-  } catch (e) {
-    if (!(e instanceof ApiError && e.status === 401)) throw e;
+export async function requireAdmin(): Promise<AdminIdentity> {
+  const jar = await cookies();
+  const tries: Record<string, string>[] = [];
+  const legacy = jar.get(SESSION_COOKIE)?.value;
+  if (legacy) tries.push({ "x-admin-session": legacy });
+  const member = jar.get(MEMBER_COOKIE)?.value;
+  if (member) tries.push({ "x-member-session": member });
+  for (const headers of tries) {
+    try {
+      const me = await licenseApi<{ name: string; kind: "admin" | "member" }>("/internal/admin/me", { headers });
+      return { name: me.name, kind: me.kind, headers };
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "need_2fa") redirect("/akun?perlu2fa=1#keamanan");
+      if (!(e instanceof ApiError && e.status === 401)) throw e;
+    }
   }
-  if (!name) redirect("/admin/login");
-  return { name, session };
+  redirect("/admin/login");
 }
 
 /** Call an admin endpoint as the logged-in admin. */
 export async function asAdmin<T>(path: string, opts: { method?: "GET" | "POST"; body?: unknown } = {}) {
-  const { session } = await requireAdmin();
-  return licenseApi<T>(path, { ...opts, session });
+  const { headers } = await requireAdmin();
+  return licenseApi<T>(path, { ...opts, headers });
 }
 
 // ---------------------------------------------------------------- public site + buyer area (no admin session)
 
 export const MEMBER_COOKIE = "trk_member";
-export type PublicInfo = { plans: Plan[]; site: Site; latest: { version: string; created_at: number } | null };
+export type PublicInfo = { plans: Plan[]; site: Site; latest: { version: string; created_at: number } | null; buyOnline?: boolean };
 export type BuyerAnnouncement = { id: number; title: string; body: string; level: "info" | "warn" | "critical"; created_at: number };
 export type MemberDevice = { id: string; name: string | null; app_version: string | null; created_at: number; last_seen: number | null; hw_locked: number };
 export type MemberLicense = {
@@ -86,13 +95,15 @@ export type MemberLicense = {
   devices: MemberDevice[];
 };
 export type MemberView = {
-  user: { id: number; email: string; name: string | null; avatar: string | null; hasPassword: boolean; google: boolean; created_at: number };
+  user: { id: number; email: string; name: string | null; avatar: string | null; hasPassword: boolean; google: boolean; created_at: number; phone: string | null; isAdmin: boolean; totp: boolean };
   licenses: MemberLicense[];
   plans: Plan[];
   site: Site;
   announcements: BuyerAnnouncement[];
   latest: { version: string; url: string; notes: string; mandatory: number; created_at: number } | null;
+  buyOnline: boolean;
 };
+export type MemberOrder = { id: string; plan: string; license_id: number | null; base_amount: number; amount: number | null; status: "pending" | "paid" | "expired" | "cancelled" | "mismatch"; created_at: number; paid_at: number | null; pay_url: string | null; livemode: number };
 
 /** Landing data; null when the license server is unreachable (the page still renders, without prices). */
 export async function publicInfo(): Promise<PublicInfo | null> {

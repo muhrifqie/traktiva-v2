@@ -98,6 +98,27 @@ if (!db.prepare("SELECT 1 FROM pragma_table_info('licenses') WHERE name = 'role'
 // hardware fingerprint taken at activation: JSON { board, boardSerial, cpu, ram, disk, bios } of hashes (old rows may also hold an ignored "guid")
 if (!db.prepare("SELECT 1 FROM pragma_table_info('devices') WHERE name = 'hw'").get()) db.exec("ALTER TABLE devices ADD COLUMN hw TEXT");
 // member accounts: owner of a license (claimed on the website) + last self-service device reset (7-day cooldown)
+// member accounts: admin role (signs into /admin with the member session), TOTP 2FA, WhatsApp number for reminders
+for (const [col, type] of [["is_admin", "INTEGER NOT NULL DEFAULT 0"], ["totp_secret", "TEXT"], ["totp_pending", "TEXT"], ["phone", "TEXT"]]) {
+  if (!db.prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = ?").get(col)) db.exec(`ALTER TABLE users ADD COLUMN ${col} ${type}`);
+}
+db.exec(`
+  -- one-time "atur password" links (admin creates, member opens within 30 min)
+  CREATE TABLE IF NOT EXISTS password_tokens (
+    token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL, used_at INTEGER, created_by TEXT
+  );
+  -- website purchases paid with WaroengPay (QRIS); a paid order creates or extends a license for the member
+  CREATE TABLE IF NOT EXISTS orders (
+    id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), plan TEXT NOT NULL,
+    license_id INTEGER REFERENCES licenses(id),          -- set for renewals; filled with the new license when paid
+    base_amount INTEGER NOT NULL, amount INTEGER, wp_id TEXT UNIQUE, pay_url TEXT, livemode INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid','expired','cancelled','mismatch')),
+    event_id TEXT, created_at INTEGER NOT NULL DEFAULT (unixepoch()), paid_at INTEGER, expires_at INTEGER
+  );
+  -- expiry reminders already sent (license, kind = '7d' | '1d' | 'expired'), so each goes out once
+  CREATE TABLE IF NOT EXISTS reminder_log (license_id INTEGER NOT NULL, kind TEXT NOT NULL, sent_at INTEGER NOT NULL DEFAULT (unixepoch()), PRIMARY KEY (license_id, kind));
+`);
 if (!db.prepare("SELECT 1 FROM pragma_table_info('licenses') WHERE name = 'user_id'").get()) {
   db.exec("ALTER TABLE licenses ADD COLUMN user_id INTEGER REFERENCES users(id)");
   db.exec("ALTER TABLE licenses ADD COLUMN self_reset_at INTEGER");

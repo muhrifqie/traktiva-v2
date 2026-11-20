@@ -7,7 +7,8 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { appInfo, audit, hwTolerance, createLicenses, DATA_DIR, db, getPlans, getSetting, hashKey, hashPassword, loadSecrets, normalizeKey, setPlans, setSetting, verifyPassword } from "./lib.mjs";
-import { memberRoutes } from "./members.mjs";
+import { createPasswordToken, memberRoutes, runReminders } from "./members.mjs";
+import { handleWebhook, paymentsConfigured, paymentsReady, testMode } from "./payments.mjs";
 
 const PORT = Number(process.env.INTERNAL_PORT || 3822);
 const HOST = "127.0.0.1";
@@ -39,6 +40,21 @@ async function body(req) {
     if (raw.length > 65_536) throw new Error("too large");
   }
   return raw ? JSON.parse(raw) : {};
+}
+
+/** Admin rules (Pengaturan → Keamanan): member admins need an authenticator unless switched off. */
+const security = () => ({ requireAdmin2fa: true, ...getSetting("security", {}) });
+
+/** A signed-in member with the admin role → admin identity (actor = their email); "need_2fa" when 2FA is required. */
+function memberAdmin(req) {
+  const sid = String(req.headers["x-member-session"] ?? "");
+  if (!sid) return null;
+  const u = db
+    .prepare("SELECT u.* FROM user_sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.expires_at > unixepoch() AND u.is_admin = 1")
+    .get(sha(sid));
+  if (!u) return null;
+  if (security().requireAdmin2fa && !u.totp_secret) return "need_2fa";
+  return { id: null, userId: u.id, name: u.email, kind: "member" };
 }
 
 const sessionAdmin = (sid) =>
@@ -101,7 +117,74 @@ const routes = {
       json(res, 200, { ok: true });
     },
   },
-  "GET /internal/admin/me": { fn: async (_req, res, admin) => json(res, 200, { ok: true, name: admin.name }) },
+  "GET /internal/admin/me": { fn: async (_req, res, admin) => json(res, 200, { ok: true, name: admin.name, kind: admin.kind ?? "admin" }) },
+
+  // ---- WaroengPay webhook, forwarded by the web app with the raw body and WaroengPay's headers
+  "POST /internal/pay/webhook": {
+    open: true,
+    fn: async (req, res) => {
+      const b = await body(req);
+      const r = handleWebhook(String(b.raw ?? ""), b.headers ?? {});
+      json(res, r.status, r.body);
+    },
+  },
+  "GET /internal/orders": {
+    fn: async (_req, res) =>
+      json(res, 200, {
+        ok: true,
+        orders: db.prepare("SELECT o.*, u.email FROM orders o JOIN users u ON u.id = o.user_id ORDER BY o.created_at DESC LIMIT 200").all(),
+      }),
+  },
+
+  // ---- member accounts (admin panel → Member)
+  "GET /internal/members": {
+    fn: async (req, res) => {
+      const q = (new URL(req.url, "http://x").searchParams.get("q") ?? "").trim();
+      const rows = db
+        .prepare(
+          `SELECT u.id, u.email, u.name, u.phone, u.is_admin, u.created_at, u.last_login, u.password_hash IS NOT NULL AS has_password,
+                  u.google_sub IS NOT NULL AS google, u.totp_secret IS NOT NULL AS totp,
+                  (SELECT count(*) FROM licenses l WHERE l.user_id = u.id) AS licenses
+             FROM users u ${q ? "WHERE u.email LIKE ? OR u.name LIKE ?" : ""} ORDER BY u.is_admin DESC, u.id DESC LIMIT 300`,
+        )
+        .all(...(q ? [`%${q}%`, `%${q}%`] : []));
+      json(res, 200, { ok: true, members: rows, security: security() });
+    },
+  },
+  // create a member account (no password yet: send them an "atur password" link)
+  "POST /internal/members": {
+    fn: async (req, res, admin) => {
+      const b = await body(req);
+      const email = String(b.email ?? "").trim().toLowerCase().slice(0, 254);
+      if (!/^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/.test(email)) return bad(res, "Email tidak valid.");
+      if (db.prepare("SELECT 1 FROM users WHERE email = ?").get(email)) return bad(res, "Email ini sudah punya akun.", 409);
+      const r = db.prepare("INSERT INTO users (email, name, is_admin) VALUES (?, ?, ?)").run(email, String(b.name ?? "").trim().slice(0, 80) || null, b.admin ? 1 : 0);
+      audit("member_created", { actor: admin.name, detail: email + (b.admin ? " (admin)" : "") });
+      json(res, 200, { ok: true, id: Number(r.lastInsertRowid) });
+    },
+  },
+  "POST /internal/members/:id": {
+    fn: async (req, res, admin, id) => {
+      const u = db.prepare("SELECT * FROM users WHERE id = ?").get(Number(id));
+      if (!u) return bad(res, "Akun tidak ditemukan.", 404);
+      const b = await body(req);
+      if (b.action === "role") {
+        if (admin.userId === u.id) return bad(res, "Peran akunmu sendiri tidak bisa diubah dari sini.");
+        db.prepare("UPDATE users SET is_admin = ? WHERE id = ?").run(b.admin ? 1 : 0, u.id);
+        if (!b.admin) db.prepare("DELETE FROM user_sessions WHERE user_id = ?").run(u.id); // drop admin access right away
+        audit("member_role", { actor: admin.name, detail: `${u.email} → ${b.admin ? "admin" : "member"}` });
+        return json(res, 200, { ok: true });
+      }
+      if (b.action === "link") return json(res, 200, { ok: true, token: createPasswordToken(u.id, admin.name), ttl: 30 * 60 });
+      if (b.action === "reset2fa") {
+        db.prepare("UPDATE users SET totp_secret = NULL, totp_pending = NULL WHERE id = ?").run(u.id);
+        db.prepare("DELETE FROM user_sessions WHERE user_id = ?").run(u.id);
+        audit("member_2fa_reset", { actor: admin.name, detail: u.email });
+        return json(res, 200, { ok: true });
+      }
+      bad(res, "Aksi tidak dikenal.");
+    },
+  },
 
   "GET /internal/summary": {
     fn: async (_req, res) => {
@@ -241,12 +324,30 @@ const routes = {
         site: getSetting("site", {}),
         remote: getSetting("remote", {}),
         hwid: { tolerance: hwTolerance() },
+        security: security(),
+        reminders: { enabled: false, webhook: "", ...getSetting("reminders", {}) },
+        payments: { enabled: !!getSetting("payments", {}).enabled, configured: paymentsConfigured(), testMode: testMode() },
         admins: db.prepare("SELECT name, created_at, last_login FROM admins ORDER BY id").all(),
       }),
   },
   "POST /internal/settings": {
     fn: async (req, res, admin) => {
-      const { plans, site, remote, hwid } = await body(req);
+      const { plans, site, remote, hwid, security: sec, reminders, payments } = await body(req);
+      if (payments !== undefined) {
+        if (payments?.enabled && !paymentsConfigured()) return bad(res, "Isi WAROENGPAY_API_KEY dan WAROENGPAY_WEBHOOK_SECRET di server dulu.");
+        setSetting("payments", { enabled: !!payments?.enabled });
+        audit("payments_updated", { actor: admin.name, detail: payments?.enabled ? `bayar online aktif${testMode() ? " (mode uji)" : ""}` : "bayar online mati" });
+      }
+      if (sec !== undefined) {
+        setSetting("security", { requireAdmin2fa: sec?.requireAdmin2fa !== false });
+        audit("security_updated", { actor: admin.name, detail: sec?.requireAdmin2fa === false ? "2FA admin opsional" : "2FA admin wajib" });
+      }
+      if (reminders !== undefined) {
+        const webhook = String(reminders?.webhook ?? "").trim().slice(0, 300);
+        if (webhook && !/^https?:\/\//.test(webhook)) return bad(res, "Alamat webhook harus http(s)://");
+        setSetting("reminders", { enabled: !!reminders?.enabled && !!webhook, webhook });
+        audit("reminders_updated", { actor: admin.name, detail: reminders?.enabled && webhook ? "WA aktif" : "WA mati" });
+      }
       if (hwid !== undefined) {
         const tolerance = Math.max(0, Math.min(6, Math.round(Number(hwid?.tolerance) || 0)));
         setSetting("hwid", { tolerance });
@@ -356,7 +457,7 @@ const routes = {
     open: true,
     fn: async (_req, res) => {
       const latest = db.prepare("SELECT version, created_at FROM releases ORDER BY id DESC LIMIT 1").get() ?? null;
-      json(res, 200, { ok: true, plans: getPlans(), site: getSetting("site", {}), latest });
+      json(res, 200, { ok: true, plans: getPlans(), site: getSetting("site", {}), latest, buyOnline: paymentsReady() });
     },
   },
 
@@ -374,6 +475,10 @@ function match(method, pathname) {
   return null;
 }
 
+// expiry reminders: hourly (no-op while switched off in Pengaturan)
+setInterval(() => void runReminders().catch((e) => console.error("[reminders]", e instanceof Error ? e.message : e)), 3600_000).unref();
+setTimeout(() => void runReminders().catch(() => {}), 60_000).unref();
+
 setInterval(() => {
   db.prepare("DELETE FROM admin_sessions WHERE expires_at < unixepoch()").run();
   db.prepare("DELETE FROM buyer_sessions WHERE expires_at < unixepoch()").run();
@@ -387,8 +492,16 @@ http
     if (!sameToken(String(req.headers.authorization ?? "").replace(/^Bearer /, ""), SERVICE_TOKEN)) return bad(res, "Token layanan salah.", 403);
     const r = match(req.method, url.pathname);
     if (!r) return bad(res, "Tidak ditemukan.", 404);
-    const admin = r.open ? null : sessionAdmin(String(req.headers["x-admin-session"] ?? ""));
-    if (!r.open && !admin) return bad(res, "Sesi admin habis. Masuk lagi.", 401);
+    let admin = null;
+    if (!r.open) {
+      admin = sessionAdmin(String(req.headers["x-admin-session"] ?? ""));
+      if (!admin) {
+        const m = memberAdmin(req);
+        if (m === "need_2fa") return json(res, 403, { ok: false, code: "need_2fa", message: "Aktifkan verifikasi 2 langkah di halaman Akun dulu untuk membuka panel admin." });
+        admin = m;
+      }
+      if (!admin) return bad(res, "Sesi admin habis. Masuk lagi.", 401);
+    }
     try {
       await r.fn(req, res, admin, r.param && decodeURIComponent(r.param));
     } catch (e) {

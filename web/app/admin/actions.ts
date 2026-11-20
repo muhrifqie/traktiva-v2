@@ -4,7 +4,7 @@ import { cookies, headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { asAdmin, licenseApi, SESSION_COOKIE, type License, type Plan } from "@/lib/license-api";
+import { asAdmin, licenseApi, MEMBER_COOKIE, SESSION_COOKIE, type License, type Plan } from "@/lib/license-api";
 
 // Every action re-checks the admin session (asAdmin → requireAdmin): pages hide buttons, actions enforce.
 export type Result<T = object> = ({ ok: true } & T) | { ok: false, message: string };
@@ -37,9 +37,16 @@ export async function login(_prev: Result | null, form: FormData): Promise<Resul
 export async function logout() {
   const jar = await cookies();
   const session = jar.get(SESSION_COOKIE)?.value;
-  if (session) await licenseApi("/internal/admin/logout", { method: "POST", session }).catch(() => {});
-  jar.delete(SESSION_COOKIE);
-  redirect("/admin/login");
+  if (session) {
+    await licenseApi("/internal/admin/logout", { method: "POST", session }).catch(() => {});
+    jar.delete(SESSION_COOKIE);
+    redirect("/admin/login");
+  }
+  // admin through a member account: sign that account out too
+  const member = jar.get(MEMBER_COOKIE)?.value;
+  if (member) await licenseApi("/internal/member/logout", { method: "POST", headers: { "x-member-session": member } }).catch(() => {});
+  jar.delete(MEMBER_COOKIE);
+  redirect("/masuk");
 }
 
 const Create = z.object({
@@ -199,5 +206,65 @@ export async function saveRemote(remote: Record<string, string | number | boolea
     return { ok: true };
   } catch (e) {
     return fail(e instanceof z.ZodError ? new Error("Setelan app tidak valid.") : e);
+  }
+}
+
+// ---- member accounts
+
+const NewMember = z.object({ email: z.string().trim().toLowerCase().email().max(254), name: z.string().trim().max(80), admin: z.boolean() });
+/** Create an account (optionally admin) and return a one-time "atur password" link for it. */
+export async function createMember(input: z.input<typeof NewMember>): Promise<Result & { link?: string }> {
+  try {
+    const { id } = await asAdmin<{ id: number }>("/internal/members", { method: "POST", body: NewMember.parse(input) });
+    revalidatePath("/admin/member");
+    return { ok: true, link: await passwordLink(id) };
+  } catch (e) {
+    return fail(e instanceof z.ZodError ? new Error("Email tidak valid.") : e);
+  }
+}
+
+async function passwordLink(id: number) {
+  const { token } = await asAdmin<{ token: string }>(`/internal/members/${id}`, { method: "POST", body: { action: "link" } });
+  const h = await headers();
+  const origin = process.env.SITE_URL?.replace(/\/$/, "") || `${h.get("x-forwarded-proto") ?? "http"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
+  return `${origin}/atur-password?t=${token}`;
+}
+
+const MemberAction = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("role"), admin: z.boolean() }),
+  z.object({ action: z.literal("link") }),
+  z.object({ action: z.literal("reset2fa") }),
+]);
+export async function memberAction(id: number, input: z.input<typeof MemberAction>): Promise<Result & { link?: string }> {
+  try {
+    const a = MemberAction.parse(input);
+    const uid = z.number().int().positive().parse(id);
+    if (a.action === "link") return { ok: true, link: await passwordLink(uid) };
+    await asAdmin(`/internal/members/${uid}`, { method: "POST", body: a });
+    revalidatePath("/admin/member");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function saveSecurity(requireAdmin2fa: boolean): Promise<Result> {
+  return settingsPost({ security: { requireAdmin2fa: z.boolean().parse(requireAdmin2fa) } });
+}
+export async function saveReminders(enabled: boolean, webhook: string): Promise<Result> {
+  const url = z.string().trim().max(300).parse(webhook);
+  if (url && !/^https:\/\//.test(url)) return { ok: false, message: "Webhook harus https://" };
+  return settingsPost({ reminders: { enabled, webhook: url } });
+}
+export async function savePayments(enabled: boolean): Promise<Result> {
+  return settingsPost({ payments: { enabled: z.boolean().parse(enabled) } });
+}
+async function settingsPost(body: object): Promise<Result> {
+  try {
+    await asAdmin("/internal/settings", { method: "POST", body });
+    revalidatePath("/", "layout");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
   }
 }

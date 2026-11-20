@@ -4,18 +4,41 @@
 // A member may free one PC of a license per 7 days themselves (more = through the admin).
 import crypto from "node:crypto";
 import { appInfo, audit, db, getPlans, getSetting, hashKey, hashPassword, normalizeKey, verifyPassword } from "./lib.mjs";
+import { newTotpSecret, totpUri, verifyTotp } from "./totp.mjs";
+import { createOrder, paymentsReady, syncOrder } from "./payments.mjs";
 
 export const MEMBER_SESSION_TTL = 30 * 86400;
 export const SELF_RESET_COOLDOWN = 7 * 86400;
+export const PASSWORD_LINK_TTL = 30 * 60;
+const TICKET_TTL = 5 * 60_000; // password/Google OK, waiting for the 2FA code
+
+/** One-time "atur password" link token for a member (admin panel / CLI). Returns the plain token (shown once). */
+export function createPasswordToken(userId, createdBy) {
+  const token = crypto.randomBytes(24).toString("base64url");
+  db.prepare("INSERT INTO password_tokens (token_hash, user_id, expires_at, created_by) VALUES (?, ?, unixepoch() + ?, ?)").run(
+    crypto.createHash("sha256").update(token).digest("hex"), userId, PASSWORD_LINK_TTL, createdBy,
+  );
+  audit("password_link_created", { actor: createdBy, detail: db.prepare("SELECT email FROM users WHERE id = ?").get(userId)?.email });
+  return token;
+}
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
 
 /** Routes for internal-api.mjs. `h` = its helpers (json, bad, body, sha, now, failsOf, fails, licenseRow, secrets). */
 export function memberRoutes(h) {
   const { json, bad, body, sha, now, failsOf, fails, licenseRow, secrets } = h;
 
+  const tickets = new Map(); // ticket -> { userId, how, until, tries }
   const userOf = (req) => {
     const sid = String(req.headers["x-member-session"] ?? "");
     return sid ? db.prepare("SELECT u.* FROM user_sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.expires_at > unixepoch()").get(sha(sid)) ?? null : null;
+  };
+  /** Signed in with password/Google/link: straight in, or a 2FA ticket when the account has an authenticator. */
+  const signIn = (res, user, ip, how) => {
+    if (!user.totp_secret) return startSession(res, user, ip, how);
+    const ticket = crypto.randomBytes(24).toString("base64url");
+    if (tickets.size > 5000) tickets.clear();
+    tickets.set(ticket, { userId: user.id, how, until: Date.now() + TICKET_TTL, tries: 0 });
+    json(res, 200, { ok: true, needCode: true, ticket });
   };
   const startSession = (res, user, ip, how) => {
     const sid = crypto.randomBytes(32).toString("base64url");
@@ -69,12 +92,17 @@ export function memberRoutes(h) {
     });
     const info = appInfo();
     return {
-      user: { id: user.id, email: user.email, name: user.name, avatar: user.avatar, hasPassword: !!user.password_hash, google: !!user.google_sub, created_at: user.created_at },
+      user: {
+        id: user.id, email: user.email, name: user.name, avatar: user.avatar, phone: user.phone,
+        hasPassword: !!user.password_hash, google: !!user.google_sub, created_at: user.created_at,
+        isAdmin: !!user.is_admin, totp: !!user.totp_secret,
+      },
       licenses,
       plans,
       site: getSetting("site", {}),
       announcements: info.announcements,
       latest: info.latest,
+      buyOnline: paymentsReady(),
     };
   }
 
@@ -112,7 +140,7 @@ export function memberRoutes(h) {
           return bad(res, user && !user.password_hash ? "Akun ini masuk lewat Google. Pakai tombol Masuk dengan Google." : "Email atau password salah.", 401);
         }
         fails.delete(`login:${ip}`);
-        startSession(res, user, ip, "email");
+        signIn(res, user, ip, "email");
       },
     },
 
@@ -139,7 +167,7 @@ export function memberRoutes(h) {
           }
           user = db.prepare("SELECT * FROM users WHERE google_sub = ?").get(sub);
         }
-        startSession(res, user, ip, "google");
+        signIn(res, user, ip, "google");
       },
     },
 
@@ -186,9 +214,99 @@ export function memberRoutes(h) {
       json(res, 200, { ok: true });
     }),
 
+    // second step of sign-in for accounts with an authenticator
+    "POST /internal/member/login/2fa": {
+      open: true,
+      fn: async (req, res) => {
+        const b = await body(req);
+        const ip = ipOf(b);
+        const t = tickets.get(String(b.ticket ?? ""));
+        if (!t || t.until < Date.now()) return bad(res, "Waktu habis. Masuk lagi dari awal.", 401);
+        const user = db.prepare("SELECT * FROM users WHERE id = ?").get(t.userId);
+        if (!user || !verifyTotp(user.totp_secret, b.code)) {
+          if (++t.tries >= 5) tickets.delete(String(b.ticket));
+          audit("member_2fa_failed", { ip, actor: user?.email ?? "?" });
+          return bad(res, t.tries >= 5 ? "Terlalu banyak kode salah. Masuk lagi dari awal." : "Kode salah. Cek jam HP dan coba kode terbaru.", 401);
+        }
+        tickets.delete(String(b.ticket));
+        startSession(res, user, ip, `${t.how}+2fa`);
+      },
+    },
+
+    // authenticator: setup (pending secret + QR link), enable with a first code, disable with a code
+    "POST /internal/member/2fa/setup": member(async (_req, res, user) => {
+      const secret = newTotpSecret();
+      db.prepare("UPDATE users SET totp_pending = ? WHERE id = ?").run(secret, user.id);
+      json(res, 200, { ok: true, secret, uri: totpUri(secret, user.email) });
+    }),
+    "POST /internal/member/2fa/enable": member(async (req, res, user) => {
+      const b = await body(req);
+      if (!user.totp_pending || !verifyTotp(user.totp_pending, b.code)) return bad(res, "Kode salah. Pindai QR lagi lalu masukkan kode 6 angka terbaru.");
+      db.prepare("UPDATE users SET totp_secret = totp_pending, totp_pending = NULL WHERE id = ?").run(user.id);
+      audit("member_2fa_enabled", { actor: user.email });
+      json(res, 200, { ok: true });
+    }),
+    "POST /internal/member/2fa/disable": member(async (req, res, user) => {
+      const b = await body(req);
+      if (!verifyTotp(user.totp_secret, b.code)) return bad(res, "Kode salah.");
+      db.prepare("UPDATE users SET totp_secret = NULL, totp_pending = NULL WHERE id = ?").run(user.id);
+      audit("member_2fa_disabled", { actor: user.email });
+      json(res, 200, { ok: true });
+    }),
+
+    // one-time "atur password" link: check, then set (signs the member in, via 2FA when enabled)
+    "POST /internal/member/password-token/check": {
+      open: true,
+      fn: async (req, res) => {
+        const b = await body(req);
+        const t = db.prepare("SELECT t.*, u.email FROM password_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?").get(sha(String(b.token ?? "")));
+        if (!t || t.used_at || t.expires_at < now()) return bad(res, "Link ini sudah dipakai atau kedaluwarsa. Minta link baru ke admin.", 410);
+        json(res, 200, { ok: true, email: t.email });
+      },
+    },
+    "POST /internal/member/password-token": {
+      open: true,
+      fn: async (req, res) => {
+        const b = await body(req);
+        const ip = ipOf(b);
+        if (limited(`token:${ip}`)) return bad(res, "Terlalu banyak percobaan. Coba lagi 15 menit lagi.", 429);
+        const t = db.prepare("SELECT * FROM password_tokens WHERE token_hash = ?").get(sha(String(b.token ?? "")));
+        if (!t || t.used_at || t.expires_at < now()) {
+          miss(`token:${ip}`);
+          return bad(res, "Link ini sudah dipakai atau kedaluwarsa. Minta link baru ke admin.", 410);
+        }
+        const next = String(b.password ?? "");
+        if (next.length < 10 || next.length > 200) return bad(res, "Password minimal 10 karakter.");
+        db.prepare("UPDATE password_tokens SET used_at = unixepoch() WHERE token_hash = ?").run(t.token_hash);
+        db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(next), t.user_id);
+        db.prepare("DELETE FROM user_sessions WHERE user_id = ?").run(t.user_id);
+        const user = db.prepare("SELECT * FROM users WHERE id = ?").get(t.user_id);
+        audit("member_password_set", { ip, actor: user.email, detail: "lewat link" });
+        signIn(res, user, ip, "link");
+      },
+    },
+
+    // buy / renew online (WaroengPay QRIS): returns the payment page to send the buyer to
+    "POST /internal/member/orders": member(async (req, res, user) => {
+      const b = await body(req);
+      try {
+        json(res, 200, { ok: true, ...(await createOrder(user, String(b.plan ?? ""), b.renew ? Number(b.renew) : null)) });
+      } catch (e) {
+        bad(res, e.message, e.status ?? 502);
+      }
+    }),
+    "GET /internal/member/orders": member(async (_req, res, user) => {
+      const rows = db.prepare("SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 20").all(user.id);
+      const out = [];
+      for (const o of rows) out.push(o.status === "pending" ? await syncOrder(o) : o); // webhook missed → ask WaroengPay
+      json(res, 200, { ok: true, orders: out.map(({ id, plan, license_id, base_amount, amount, status, created_at, paid_at, pay_url, livemode }) => ({ id, plan, license_id, base_amount, amount, status, created_at, paid_at, pay_url, livemode })) });
+    }),
+
     "POST /internal/member/profile": member(async (req, res, user) => {
       const b = await body(req);
-      db.prepare("UPDATE users SET name = ? WHERE id = ?").run(cleanName(b.name), user.id);
+      const phone = String(b.phone ?? "").replace(/\D/g, "").replace(/^0/, "62").slice(0, 16) || null;
+      if (phone && !/^62\d{8,13}$/.test(phone)) return bad(res, "Nomor WhatsApp tidak valid (contoh 0812xxxxxxx).");
+      db.prepare("UPDATE users SET name = ?, phone = ? WHERE id = ?").run(cleanName(b.name), phone, user.id);
       json(res, 200, { ok: true });
     }),
 
@@ -204,4 +322,51 @@ export function memberRoutes(h) {
       json(res, 200, { ok: true });
     }),
   };
+}
+
+// ---------------------------------------------------------------- expiry reminders (WhatsApp via the owner's webhook)
+// Off until Pengaturan → Pengingat has a webhook and is switched on. Each (license, kind) is sent once.
+const SITE = (process.env.SITE_URL || "https://43.156.15.173:8443").replace(/\/+$/, "");
+const REMINDERS = [
+  { kind: "7d", from: 1 * 86400, to: 7 * 86400, text: (d) => `habis ${d} hari lagi` },
+  { kind: "1d", from: 0, to: 1 * 86400, text: () => "habis besok" },
+  { kind: "expired", from: -2 * 86400, to: 0, text: () => "sudah habis" },
+];
+
+/** Send due reminders; returns how many went out. `send` is injectable for the self-test. */
+export async function runReminders(send = postWebhook) {
+  const cfg = getSetting("reminders", {});
+  if (!cfg.enabled || !cfg.webhook) return 0;
+  const plans = getPlans();
+  let sent = 0;
+  for (const r of REMINDERS) {
+    const due = db
+      .prepare(
+        `SELECT l.id, l.key_hint, l.plan, l.expires_at, u.email, u.name, u.phone FROM licenses l JOIN users u ON u.id = l.user_id
+          WHERE l.status = 'active' AND l.expires_at IS NOT NULL AND u.phone IS NOT NULL
+            AND l.expires_at - unixepoch() > ? AND l.expires_at - unixepoch() <= ?
+            AND NOT EXISTS (SELECT 1 FROM reminder_log g WHERE g.license_id = l.id AND g.kind = ?)`,
+      )
+      .all(r.from, r.to, r.kind);
+    for (const l of due) {
+      const days = Math.max(1, Math.ceil((l.expires_at - Date.now() / 1000) / 86400));
+      const date = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Jakarta" }).format(l.expires_at * 1000);
+      const plan = plans.find((p) => p.id === l.plan)?.label ?? l.plan;
+      const text = `Halo ${l.name || "kak"}, lisensi Traktiva kamu (paket ${plan}, key …${l.key_hint}) ${r.text(days)} (${date}). Perpanjang lewat ${SITE}/akun supaya app tetap jalan.`;
+      try {
+        await send(cfg.webhook, { phone: l.phone, text, licenseId: l.id, kind: r.kind });
+        db.prepare("INSERT OR IGNORE INTO reminder_log (license_id, kind) VALUES (?, ?)").run(l.id, r.kind);
+        audit("reminder_sent", { license_id: l.id, actor: "system", detail: `${r.kind} → ${l.phone.slice(0, 5)}…` });
+        sent++;
+      } catch (e) {
+        audit("reminder_failed", { license_id: l.id, actor: "system", detail: String(e instanceof Error ? e.message : e).slice(0, 120) });
+      }
+    }
+  }
+  return sent;
+}
+
+async function postWebhook(url, payload) {
+  const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(`webhook ${res.status}`);
 }

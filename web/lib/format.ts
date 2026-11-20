@@ -35,6 +35,11 @@ const EVENT: Record<string, [string, "ok" | "bad" | "warn" | ""]> = {
   release_created: ["Rilis diumumkan", "ok"], release_deleted: ["Rilis dihapus", "warn"], site_updated: ["Kontak diubah", ""], remote_updated: ["Setelan app diubah", ""], buyer_login: ["Pembeli masuk web", ""], device_changed: ["Hardware berubah, ditolak", "bad"], device_released: ["Perangkat dilepas (ganti lisensi)", ""],
   member_registered: ["Member daftar", "ok"], member_login: ["Member masuk", ""], member_login_failed: ["Login member gagal", "bad"], member_google_linked: ["Google ditautkan", ""],
   member_password_changed: ["Member ganti password", ""], license_claimed: ["Key diklaim ke akun", "ok"], license_unclaimed: ["Key dilepas dari akun", "warn"], hwid_updated: ["Kunci hardware diubah", ""], admin_removed: ["Admin dihapus", "warn"],
+  member_created: ["Akun member dibuat", "ok"], member_role: ["Peran member diubah", "warn"], password_link_created: ["Link atur password dibuat", ""], member_password_set: ["Password diatur lewat link", ""],
+  member_2fa_enabled: ["2FA diaktifkan", "ok"], member_2fa_disabled: ["2FA dimatikan", "warn"], member_2fa_failed: ["Kode 2FA salah", "bad"], member_2fa_reset: ["2FA direset admin", "warn"],
+  order_created: ["Pesanan dibuat", ""], order_paid: ["Pesanan lunas", "ok"], order_mismatch: ["Nominal bayar tidak cocok", "bad"],
+  reminder_sent: ["Pengingat terkirim", ""], reminder_failed: ["Pengingat gagal", "bad"],
+  payments_updated: ["Bayar online diubah", "warn"], security_updated: ["Keamanan diubah", "warn"], reminders_updated: ["Pengingat diubah", ""],
 };
 const FAIL: Record<string, string> = { invalid_key: "key salah", device_limit: "batas perangkat penuh", suspended: "lisensi ditangguhkan", revoked: "lisensi dicabut", expired: "kedaluwarsa" };
 

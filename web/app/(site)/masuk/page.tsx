@@ -2,15 +2,24 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { googleEnabled, safeNext } from "@/lib/google";
 import { memberSignedIn } from "@/lib/license-api";
-import { AuthForm } from "./form";
+import { cookies } from "next/headers";
+import { TWOFA_COOKIE } from "@/lib/member-session";
+import { AuthForm, CodeForm } from "./form";
 import { AuthShell } from "./shell";
 
 export const metadata: Metadata = { title: "Masuk", robots: { index: false, follow: false } };
 
 const ERRORS: Record<string, string> = { "google-off": "Masuk dengan Google belum tersedia. Pakai email dulu." };
 
-export default async function Login({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
-  const { next: n, error } = await searchParams;
+export default async function Login({ searchParams }: { searchParams: Promise<{ next?: string; error?: string; step?: string }> }) {
+  const { next: n, error, step } = await searchParams;
+  if (step === "kode" && (await cookies()).get(TWOFA_COOKIE)) {
+    return (
+      <AuthShell eyebrow="Keamanan akun" title="Satu langkah lagi." points={["Akun ini dilindungi verifikasi 2 langkah", "Kode berganti tiap 30 detik", "Ganti HP? Minta admin reset verifikasi"]}>
+        <CodeForm />
+      </AuthShell>
+    );
+  }
   const next = safeNext(n);
   if (await memberSignedIn()) redirect(next); // a stale cookie must not bounce between /masuk and /akun
   const message = error ? (ERRORS[error] ?? error).slice(0, 200) : null;

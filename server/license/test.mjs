@@ -2,13 +2,35 @@
 // Usage: node server/license/test.mjs
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
+import http from "node:http";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { totpCode } from "./totp.mjs";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trk-license-"));
-const env = { ...process.env, LICENSE_DATA_DIR: dir, LICENSE_PORT: "38291" };
+// WaroengPay stand-in (sandbox key): records invoices, answers like POST/GET /api/payments
+const WP_SECRET = "whsec_test_selftest";
+const wpInvoices = [];
+const wpMock = http
+  .createServer((req, res) => {
+    let raw = "";
+    req.on("data", (d) => (raw += d)).on("end", () => {
+      res.setHeader("content-type", "application/json");
+      if (req.method === "POST" && req.url === "/api/payments") {
+        const b = JSON.parse(raw);
+        const inv = { id: `WRG-T${wpInvoices.length + 1}`, status: "pending", base_amount: b.amount, amount: b.amount + 137, pay_url: "https://wp.test/pay/x", livemode: false, expires_at: new Date(Date.now() + 1800e3).toISOString() };
+        wpInvoices.push(inv);
+        return res.end(JSON.stringify(inv));
+      }
+      const inv = wpInvoices.find((i) => req.url.endsWith(i.id));
+      res.statusCode = inv ? 200 : 404;
+      res.end(JSON.stringify(inv ?? { error: "not_found" }));
+    });
+  })
+  .listen(38294, "127.0.0.1");
+const env = { ...process.env, LICENSE_DATA_DIR: dir, LICENSE_PORT: "38291", WAROENGPAY_BASE: "http://127.0.0.1:38294", WAROENGPAY_API_KEY: "wp_test_selftest", WAROENGPAY_WEBHOOK_SECRET: WP_SECRET };
 const admin = (...a) => execFileSync(process.execPath, [path.join(import.meta.dirname, "admin.mjs"), ...a], { env, encoding: "utf8" });
 const serverPub = admin("init").trim().split("\n").pop();
 const key = admin("create", "--days", "30", "--note", "test").split(" ")[0];
@@ -122,6 +144,91 @@ try {
     assert.equal((await mget("/internal/member/me", g.session)).user.google, true);
     assert.equal((await mget("/internal/member/me", "palsu")).ok, false);
 
+    // member admin: CLI creates the account + one-time link → set password → panel needs 2FA → enable 2FA → 2-step login
+    const cli = admin("member-admin", "owner@tes.id", "--name", "Owner");
+    const token = cli.match(/atur-password\?t=([\w-]+)/)?.[1];
+    assert.ok(token, cli);
+    assert.equal((await mpost("/internal/member/password-token/check", { token })).email, "owner@tes.id");
+    assert.equal((await mpost("/internal/member/password-token", { token, password: "pendek" })).ok, false); // < 10 chars
+    const set = await mpost("/internal/member/password-token", { token, password: "PanjangSekali#2026", ip: "5.5.5.5" });
+    assert.ok(set.ok && set.session, JSON.stringify(set));
+    assert.equal((await mpost("/internal/member/password-token", { token, password: "PanjangSekali#2027" })).ok, false); // used once
+    const adminMe = (session) => fetch(ib + "/internal/admin/me", { headers: { authorization: `Bearer ${svc}`, "x-member-session": session } }).then((r) => r.json());
+    assert.equal((await adminMe(set.session)).code, "need_2fa"); // admins must turn on 2FA first
+    assert.equal((await adminMe(mlog.session)).ok, false); // a normal member is no admin
+    const setup = await mpost("/internal/member/2fa/setup", {}, set.session);
+    assert.match(setup.uri, /^otpauth:\/\/totp\/Traktiva/);
+    assert.equal((await mpost("/internal/member/2fa/enable", { code: "000000" }, set.session)).ok, false);
+    assert.ok((await mpost("/internal/member/2fa/enable", { code: totpCode(setup.secret) }, set.session)).ok);
+    const me2 = await adminMe(set.session);
+    assert.deepEqual([me2.ok, me2.name, me2.kind], [true, "owner@tes.id", "member"]);
+    const step1 = await mpost("/internal/member/login", { email: "owner@tes.id", password: "PanjangSekali#2026", ip: "5.5.5.5" });
+    assert.ok(step1.needCode && step1.ticket && !step1.session); // password alone is not enough now
+    assert.equal((await mpost("/internal/member/login/2fa", { ticket: step1.ticket, code: "123456" })).ok, false);
+    const step2 = await mpost("/internal/member/login/2fa", { ticket: step1.ticket, code: totpCode(setup.secret), ip: "5.5.5.5" });
+    assert.ok(step2.ok && step2.session);
+    // admin manages members: list, promote/demote, link for another account
+    const list = await fetch(ib + "/internal/members", { headers: { authorization: `Bearer ${svc}`, "x-member-session": step2.session } }).then((r) => r.json());
+    assert.ok(list.members.some((m) => m.email === "owner@tes.id" && m.is_admin && m.totp));
+    const budiId = list.members.find((m) => m.email === "budi@tes.id").id;
+    const asAdminPost = (p, body) => fetch(ib + p, { method: "POST", headers: { authorization: `Bearer ${svc}`, "content-type": "application/json", "x-member-session": step2.session }, body: JSON.stringify(body) }).then((r) => r.json());
+    assert.ok((await asAdminPost(`/internal/members/${budiId}`, { action: "link" })).token);
+    assert.equal((await asAdminPost(`/internal/members/${list.members.find((m) => m.email === "owner@tes.id").id}`, { action: "role", admin: false })).ok, false); // not yourself
+
+    // expiry reminders: off by default; on → sent once per kind to the member's WhatsApp number
+    const soon = admin("create", "--plan", "bulanan", "--days", "5", "--note", "reminder").split(" ")[0];
+    assert.ok((await mpost("/internal/member/claim", { key: soon }, mlog.session)).ok);
+    assert.equal((await mpost("/internal/member/profile", { name: "Budi", phone: "123" }, mlog.session)).ok, false);
+    assert.ok((await mpost("/internal/member/profile", { name: "Budi", phone: "0812-3456-7890" }, mlog.session)).ok);
+    const remind = () => execFileSync(process.execPath, ["--disable-warning=ExperimentalWarning", "--input-type=module", "-e",
+      "import { runReminders } from './members.mjs'; const out = []; const n = await runReminders(async (url, p) => out.push(p)); console.log(JSON.stringify({ n, out }));"],
+      { env, cwd: import.meta.dirname, encoding: "utf8" });
+    assert.equal(JSON.parse(remind()).n, 0); // switched off
+    assert.ok((await ipost("/internal/settings", { reminders: { enabled: true, webhook: "https://wa.test/kirim" } }, ok.session)).ok);
+    const first = JSON.parse(remind());
+    assert.equal(first.n, 1);
+    assert.equal(first.out[0].phone, "6281234567890");
+    assert.match(first.out[0].text, /habis 5 hari lagi/);
+    assert.equal(JSON.parse(remind()).n, 0); // once
+
+    // online purchase (WaroengPay, mocked): off until configured + switched on; paid webhook → license in the account
+    const memberOrder = (body) => mpost("/internal/member/orders", body, mlog.session);
+    assert.equal((await memberOrder({ plan: "bulanan" })).ok, false); // switched off
+    assert.ok((await ipost("/internal/settings", { plans: [{ id: "bulanan", label: "Bulanan", days: 30, devices: 1, price: 50000 }, { id: "lifetime", label: "Lifetime", days: null, devices: 1, price: 0 }] }, ok.session)).ok);
+    assert.ok((await ipost("/internal/settings", { payments: { enabled: true } }, ok.session)).ok);
+    assert.equal((await memberOrder({ plan: "lifetime" })).ok, false); // no price → not sold online
+    const order = await memberOrder({ plan: "bulanan" });
+    assert.ok(order.ok && order.payUrl && order.amount === 50137, JSON.stringify(order));
+    const wpId = wpInvoices.at(-1).id;
+    const sign = (bodyText, ts = Math.floor(Date.now() / 1000)) => ({
+      "x-waroengpay-timestamp": String(ts),
+      "x-signature": crypto.createHmac("sha256", WP_SECRET).update(`${ts}.${bodyText}`).digest("hex"),
+    });
+    const hook = (event, headers) => {
+      const raw = JSON.stringify(event);
+      return ipost("/internal/pay/webhook", { raw, headers: headers ?? sign(raw) });
+    };
+    const paid = (id, base, evt = "evt_" + id, livemode = false) => ({ id: evt, event: "payment.paid", livemode, data: { id, base_amount: base, amount: base + 137, status: "paid", livemode } });
+    assert.equal((await hook(paid(wpId, 50000), { "x-waroengpay-timestamp": "1", "x-signature": "palsu" })).ok, false); // bad signature
+    assert.equal((await hook(paid(wpId, 50000, "evt_live", true))).ignored, "mode"); // live event on a sandbox server
+    const done = await hook(paid(wpId, 50000));
+    assert.ok(done.ok && done.licenseId, JSON.stringify(done));
+    assert.equal((await hook(paid(wpId, 50000))).already, true); // replay: delivered once
+    const mine = await mget("/internal/member/me", mlog.session);
+    const bought = mine.licenses.find((l) => l.id === done.licenseId);
+    assert.ok(bought && bought.plan === "bulanan" && bought.expires_at > Date.now() / 1000 + 29 * 86400);
+    // renewal extends that license; a wrong amount never delivers
+    const renew = await memberOrder({ plan: "bulanan", renew: done.licenseId });
+    const renewWp = wpInvoices.at(-1).id;
+    assert.equal((await hook(paid(renewWp, 1000, "evt_cheap"))).reason, "mismatch");
+    const renew2 = await memberOrder({ plan: "bulanan", renew: done.licenseId });
+    assert.ok(renew.ok && renew2.ok);
+    assert.ok((await hook(paid(wpInvoices.at(-1).id, 50000, "evt_renew"))).ok);
+    const after = (await mget("/internal/member/me", mlog.session)).licenses.find((l) => l.id === done.licenseId);
+    assert.ok(after.expires_at >= bought.expires_at + 30 * 86400 - 5);
+    const orders = await mget("/internal/member/orders", mlog.session);
+    assert.deepEqual(orders.orders.map((o) => o.status).sort(), ["mismatch", "paid", "paid"]);
+
     // hardware lock + admin role + "ganti lisensi"
     const adminKey = admin("create", "--plan", "lifetime", "--devices", "2", "--role", "admin", "--note", "owner").split(" ")[0];
     const hw = { guid: "a".repeat(24), board: "b".repeat(24), cpu: "c".repeat(24), ram: "d".repeat(24), disk: "e".repeat(24) };
@@ -155,6 +262,7 @@ try {
   }
 } finally {
   // wait for the server to exit: on Windows its open DB file blocks deleting the temp dir
+  wpMock.close();
   await new Promise((r) => (server.once("exit", r), server.kill()));
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }

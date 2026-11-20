@@ -41,6 +41,13 @@ Server lisensi app desktop Traktiva V2 (aktivasi key, sesi, heartbeat). Desain: 
 - **Lupa password**: belum ada kirim email. Pembeli masuk pakai Google, atau admin bantu (sementara).
 - **Login Google** (butuh domain; IP tidak diterima Google): Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web application), Authorized redirect URI `https://<domain>/api/auth/google/callback`. Isi di `/srv/traktiva-web/ecosystem.config.cjs` (env): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SITE_URL=https://<domain>`, lalu `pm2 delete traktiva-web && pm2 start ecosystem.config.cjs && pm2 save`. Tombol "Masuk dengan Google" muncul otomatis.
 
+## Admin lewat akun member, 2FA, bayar online, pengingat (sejak 2026-11-20)
+
+- **Satu login**: akun member dengan `is_admin` bisa membuka `/admin` (masuk di `/masuk`, email atau Google). Wajib verifikasi 2 langkah (TOTP, Google Authenticator) selama Pengaturan → "Wajib 2FA admin" aktif. Admin token lama tetap jalan.
+- Buat admin pertama: `node admin.mjs member-admin <email> [--name "Nama"]` → link `/atur-password?t=…` (sekali pakai, 30 menit; pemilik akun bikin password sendiri, min 10 karakter). Link lupa password: `node admin.mjs member-link <email>`, atau panel → Member → Link password. HP authenticator hilang: Member → Reset 2FA.
+- **Bayar otomatis (WaroengPay QRIS)**: env `WAROENGPAY_API_KEY`, `WAROENGPAY_WEBHOOK_SECRET`, `SITE_URL` (opsional `WAROENGPAY_BASE`) di proses `traktiva-license-internal`, lalu Pengaturan → Bayar otomatis. Key `wp_test_…` = mode uji (tagihan tak pernah jadi uang). Webhook: `<SITE_URL>/api/pay/webhook` (web meneruskan body mentah; tanda tangan HMAC dicek di server lisensi, 1 event = 1 pengiriman). Pesanan: tabel `orders`, panel → Pesanan. Mati = tombol beli kembali ke WhatsApp.
+- **Pengingat**: banner di /akun (≤ 7 hari) selalu tampil. WA H-7/H-1/habis lewat webhook (POST JSON `phone, text, kind, licenseId`) di Pengaturan → Pengingat; mati secara default. Dicatat di `reminder_log` (tidak dobel).
+
 ## Admin (CLI, di server)
 ```bash
 cd /srv/traktiva-license && alias trk='node --disable-warning=ExperimentalWarning admin.mjs'
@@ -55,7 +62,7 @@ trk extend <licenseId> <hari>
 
 ## Operasional
 - Cek: `curl -sk https://43.156.15.173:8443/health` → `{"ok":true,...}` · `pm2 logs traktiva-license --lines 50`
-- Deploy server lisensi: salin `lib.mjs server.mjs admin.mjs internal-api.mjs members.mjs test.mjs` ke folder ini, jalankan `./backup.sh`, `node test.mjs` (self-test di folder sementara), lalu `pm2 restart traktiva-license traktiva-license-internal` (data tidak tersentuh; tabel baru dibuat otomatis).
+- Deploy server lisensi: salin `lib.mjs server.mjs admin.mjs internal-api.mjs members.mjs payments.mjs totp.mjs test.mjs` ke folder ini, jalankan `./backup.sh`, `node test.mjs` (self-test di folder sementara), lalu `pm2 restart traktiva-license traktiva-license-internal` (data tidak tersentuh; tabel baru dibuat otomatis).
 - Deploy panel: di PC `cd web && npm run build`, gabungkan `.next/standalone` + `.next/static` (→ `.next/static`) + `public`, ganti isi `/srv/traktiva-web` (jaga `ecosystem.config.cjs`), lalu `pm2 restart traktiva-web --update-env`.
 - Rollback panel lama (vanilla, masih ada di folder ini): `pm2 delete traktiva-web && pm2 start admin-web.mjs --name traktiva-license-admin`.
 - **Jangan pernah** hapus/ganti `secrets.json` atau sertifikat: kunci publik server dan sidik jari sertifikat tertanam di setiap installer. Mengganti salah satunya = semua app terpasang tidak bisa login sampai update.

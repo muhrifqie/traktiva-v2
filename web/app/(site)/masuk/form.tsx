@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
-import { login, register } from "../actions";
+import { login, register, setPasswordFromLink, verifyCode } from "../actions";
 
 const field = "h-12 rounded-2xl border border-white/15 bg-black/30 px-4 text-[16px] outline-none placeholder:text-white/25 focus:border-[var(--site-signal)]";
 
@@ -71,5 +71,58 @@ export function AuthForm({ mode, next, google }: { mode: "login" | "register"; n
         )}
       </p>
     </div>
+  );
+}
+
+/** Second sign-in step for accounts with an authenticator app. */
+export function CodeForm() {
+  const [state, action, pending] = useActionState(verifyCode, null);
+  return (
+    <form action={action} className="grid gap-4">
+      <div>
+        <p className="text-[20px] font-[400]">Verifikasi 2 langkah</p>
+        <p className="mt-1 text-[14px] text-[var(--site-body)]">Buka Google Authenticator (atau aplikasi sejenis) lalu masukkan kode 6 angka untuk Traktiva.</p>
+      </div>
+      <input
+        name="code"
+        required
+        autoFocus
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        pattern="\d{6}"
+        maxLength={6}
+        placeholder="123456"
+        className={`${field} h-14 text-center font-mono text-[24px] tracking-[0.4em]`}
+      />
+      {state && !state.ok && <p className="text-[14px] text-red-300" role="alert">{state.message}</p>}
+      <button type="submit" disabled={pending} className="site-pill w-full disabled:opacity-60">
+        {pending && <Loader2 className="size-4 animate-spin" />} Verifikasi
+      </button>
+      <Link href="/masuk" className="text-[14px] text-[var(--site-muted)] underline hover:text-white">Batal, masuk dari awal</Link>
+    </form>
+  );
+}
+
+/** "Atur password" from a one-time link (new account created by the admin, or a forgotten password). */
+export function SetPasswordForm({ token, email }: { token: string; email: string }) {
+  const [state, action, pending] = useActionState(setPasswordFromLink, null);
+  return (
+    <form action={action} className="grid gap-4">
+      <input type="hidden" name="token" value={token} />
+      <p className="text-[15px] text-[var(--site-body)]">Akun: <b className="font-medium text-white">{email}</b></p>
+      <label className="grid gap-2 text-[15px] font-medium">
+        Password baru
+        <input name="password" type="password" required minLength={10} maxLength={200} autoComplete="new-password" placeholder="Minimal 10 karakter" className={field} />
+      </label>
+      <label className="grid gap-2 text-[15px] font-medium">
+        Ulangi password
+        <input name="again" type="password" required minLength={10} maxLength={200} autoComplete="new-password" className={field} />
+      </label>
+      <p className="text-[13px] text-[var(--site-muted)]">Pakai kalimat panjang yang hanya kamu tahu, dan simpan di password manager.</p>
+      {state && !state.ok && <p className="text-[14px] text-red-300" role="alert">{state.message}</p>}
+      <button type="submit" disabled={pending} className="site-pill w-full disabled:opacity-60">
+        {pending && <Loader2 className="size-4 animate-spin" />} Simpan password & masuk
+      </button>
+    </form>
   );
 }

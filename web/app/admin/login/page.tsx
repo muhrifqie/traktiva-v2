@@ -14,7 +14,10 @@ export default function LoginPage() {
           <p className="text-sm text-muted-foreground">Masuk dengan akun admin kamu.</p>
         </div>
         <LoginForm />
-        <p className="text-[11px] text-muted-foreground">Lupa password? Minta owner reset lewat server.</p>
+        <a href="/masuk?next=/admin" className="block rounded-lg border px-3 py-2.5 text-[13px] font-medium hover:bg-accent">
+          Masuk dengan akun member (email / Google)
+        </a>
+        <p className="text-[11px] text-muted-foreground">Akun member perlu peran admin + verifikasi 2 langkah. Lupa password? Minta owner kirim link atur password.</p>
       </div>
     </main>
   );

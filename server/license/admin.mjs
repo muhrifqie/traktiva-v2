@@ -7,8 +7,14 @@
 //   node admin.mjs suspend|activate|revoke <licenseId>
 //   node admin.mjs extend <licenseId> <days>
 //   node admin.mjs add-admin <name>                       create admin / reset password (new random password shown once)
+//   node admin.mjs member-admin <email> [--name "Rifq"]   website account with the admin role + one-time "atur password" link (30 min)
+//   node admin.mjs member-link <email>                    new "atur password" link for an existing website account
 //   node admin.mjs admins | remove-admin <name>
 import { audit, createLicenses, db, getPlans, initSecrets, loadSecrets, setAdminPassword } from "./lib.mjs";
+import { createPasswordToken } from "./members.mjs";
+
+// public origin for printed links (the domain once it exists)
+const SITE = (process.env.SITE_URL || "https://43.156.15.173:8443").replace(/\/+$/, "");
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flag = (name, def) => {
@@ -41,6 +47,27 @@ switch (cmd) {
     audit("admin_password_reset", { detail: name, actor: "cli" });
     console.log(`Login panel: username ${name}, password (tampil SEKALI, ganti di Pengaturan setelah masuk):
 ${password}`);
+    break;
+  }
+  case "member-admin":
+  case "member-link": {
+    const email = String(rest[0] ?? "").trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw new Error("Email tidak valid.");
+    let u = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+    if (cmd === "member-admin") {
+      if (!u) {
+        db.prepare("INSERT INTO users (email, name, is_admin) VALUES (?, ?, 1)").run(email, flag("name", null));
+        audit("member_created", { actor: "cli", detail: `${email} (admin)` });
+      } else {
+        db.prepare("UPDATE users SET is_admin = 1 WHERE id = ?").run(u.id);
+        audit("member_role", { actor: "cli", detail: `${email} → admin` });
+      }
+      u = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+    }
+    if (!u) throw new Error("Akun tidak ditemukan. Pakai member-admin untuk membuat akun admin.");
+    const token = createPasswordToken(u.id, "cli");
+    console.log(`Akun ${email}${u.is_admin ? " (admin)" : ""}. Link atur password (sekali pakai, 30 menit):
+${SITE}/atur-password?t=${token}`);
     break;
   }
   case "admins": {

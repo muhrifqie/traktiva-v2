@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Cpu, Loader2, MessageCircle, Plus, Save, Trash2 } from "lucide-react";
+import { BellRing, Cpu, Loader2, MessageCircle, Plus, Save, ShieldCheck, Trash2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { saveHwid, saveRemote, saveSite } from "../../actions";
+import { saveHwid, savePayments, saveReminders, saveRemote, saveSecurity, saveSite } from "../../actions";
 
 /** Flags the desktop app already reads (lib/server-info.ts → remoteFlag). Anything else is stored for future use. */
 const KNOWN: Record<string, string> = {
@@ -135,6 +135,83 @@ export function HwidForm({ tolerance }: { tolerance: number }) {
           </button>
         ))}
       </div>
+    </section>
+  );
+}
+
+function Toggle({ on, onChange, label, disabled }: { on: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={() => onChange(!on)}
+      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-40 ${on ? "bg-primary" : "bg-muted"}`}>
+      <span className={`absolute top-0.5 size-5 rounded-full bg-white transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
+    </button>
+  );
+}
+
+function useSave<T extends unknown[]>(fn: (...a: T) => Promise<{ ok: boolean; message?: string }>, done: string) {
+  const [pending, start] = useTransition();
+  return [pending, (...a: T) => start(async () => {
+    const r = await fn(...a);
+    if (r.ok) toast.success(done);
+    else toast.error(r.message ?? "Gagal");
+  })] as const;
+}
+
+export function SecurityForm({ on }: { on: boolean }) {
+  const [v, setV] = useState(on);
+  const [pending, save] = useSave(saveSecurity, "Keamanan disimpan");
+  return (
+    <section className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3">
+      <div className="flex-1">
+        <p className="flex items-center gap-1.5 text-sm font-semibold"><ShieldCheck className="size-4 text-brand-light" /> Wajib verifikasi 2 langkah untuk admin</p>
+        <p className="text-xs text-muted-foreground">Akun member berperan admin baru bisa membuka panel setelah memasang Google Authenticator. Sangat disarankan tetap aktif.</p>
+      </div>
+      <Toggle on={v} onChange={(x) => { setV(x); save(x); }} label="Wajib 2FA admin" disabled={pending} />
+    </section>
+  );
+}
+
+export function RemindersForm({ enabled, webhook }: { enabled: boolean; webhook: string }) {
+  const [on, setOn] = useState(enabled);
+  const [url, setUrl] = useState(webhook);
+  const [pending, save] = useSave(saveReminders, "Pengingat disimpan");
+  return (
+    <section className="rounded-xl border bg-card">
+      <header className="flex items-center gap-3 border-b px-4 py-3">
+        <div className="flex-1">
+          <p className="flex items-center gap-1.5 text-sm font-semibold"><BellRing className="size-4 text-brand-light" /> Pengingat masa aktif via WhatsApp</p>
+          <p className="text-xs text-muted-foreground">H-7, H-1, dan saat habis, ke nomor WA yang diisi member. Banner di halaman Akun selalu tampil.</p>
+        </div>
+        <Toggle on={on} onChange={setOn} label="Pengingat WA" />
+      </header>
+      <div className="flex flex-wrap items-end gap-3 p-4">
+        <label className="grid flex-1 gap-1.5 text-xs font-medium">
+          Webhook pengirim WA (POST JSON: phone, text, kind, licenseId)
+          <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://bot-wa-kamu/kirim" maxLength={300} />
+        </label>
+        <Button onClick={() => save(on, url)} disabled={pending}>{pending ? <Loader2 className="animate-spin" /> : <Save />} Simpan</Button>
+      </div>
+    </section>
+  );
+}
+
+export function PaymentsForm({ enabled, configured, testMode }: { enabled: boolean; configured: boolean; testMode: boolean }) {
+  const [on, setOn] = useState(enabled);
+  const [pending, save] = useSave(savePayments, "Pembayaran disimpan");
+  return (
+    <section className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3">
+      <div className="flex-1">
+        <p className="flex items-center gap-1.5 text-sm font-semibold">
+          <Wallet className="size-4 text-brand-light" /> Bayar otomatis (WaroengPay QRIS)
+          {configured && testMode && <span className="rounded-md bg-amber-300/15 px-1.5 py-px text-[11px] text-amber-200">mode uji</span>}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {configured
+            ? "Pembeli bayar QRIS di website, key dibuat/diperpanjang otomatis setelah lunas. Mati = tombol beli kembali ke WhatsApp."
+            : "Belum bisa diaktifkan: isi WAROENGPAY_API_KEY dan WAROENGPAY_WEBHOOK_SECRET di server lisensi dulu."}
+        </p>
+      </div>
+      <Toggle on={on} onChange={(x) => { setOn(x); save(x); }} label="Bayar otomatis" disabled={pending || (!configured && !on)} />
     </section>
   );
 }

@@ -2,7 +2,7 @@ import { cookies, headers } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { GOOGLE_STATE_COOKIE, googleFinish, publicOrigin } from "@/lib/google";
 import { licenseApi } from "@/lib/license-api";
-import { setMemberCookie } from "@/lib/member-session";
+import { finishSignIn } from "@/lib/member-session";
 
 /** Back from Google: verify, sign in (or create / link the account by verified email), go to /akun. */
 export async function GET(req: NextRequest) {
@@ -13,9 +13,8 @@ export async function GET(req: NextRequest) {
     const { profile, next } = await googleFinish(req.nextUrl.searchParams, jar.get(GOOGLE_STATE_COOKIE)?.value);
     jar.delete({ name: GOOGLE_STATE_COOKIE, path: "/api/auth/google" });
     const ip = (await headers()).get("x-real-ip") ?? "local";
-    const r = await licenseApi<{ session: string; maxAge: number }>("/internal/member/google", { method: "POST", body: { ...profile, ip } });
-    await setMemberCookie(r.session, r.maxAge);
-    return NextResponse.redirect(new URL(next, origin));
+    const r = await licenseApi<{ session?: string; maxAge?: number; needCode?: boolean; ticket?: string }>("/internal/member/google", { method: "POST", body: { ...profile, ip } });
+    return NextResponse.redirect(new URL(await finishSignIn(r, next), origin)); // account with 2FA → code step
   } catch (e) {
     jar.delete({ name: GOOGLE_STATE_COOKIE, path: "/api/auth/google" });
     return fail(e instanceof Error ? e.message : "Gagal masuk dengan Google.");
