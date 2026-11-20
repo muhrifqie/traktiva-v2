@@ -44,7 +44,7 @@ const tokens = (gt.__geminiTokens ??= new Map());
  * Cached per profile for TOKEN_TTL. */
 async function openGemini(page: Page, sessionKey: string): Promise<Wiz> {
   await page.goto(APP, { waitUntil: "domcontentloaded", timeout: 45_000 });
-  if (/accounts\.google\.com/.test(page.url())) throw new Error("Akun Google ini belum login ke Gemini. Login ulang di Pengaturan AI.");
+  if (/accounts\.google\.com/.test(page.url())) throw new Error("Akun Google ini belum login ke Gemini. Login ulang di Pengaturan.");
   const html = await page.content();
   const tok = (k: string) => html.match(new RegExp(`"${k}":"([^"]+)"`))?.[1] ?? "";
   const wiz = { SNlM0e: tok("SNlM0e"), cfb2h: tok("cfb2h"), FdrFJe: tok("FdrFJe") };

@@ -17,7 +17,7 @@ async function call<T>(key: string, path: string, init: RequestInit = {}): Promi
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    if (res.status === 401 || res.status === 403) throw new Error("API key Cartesia ditolak. Cek lagi key-nya di Pengaturan AI.");
+    if (res.status === 401 || res.status === 403) throw new Error("API key Cartesia ditolak. Cek lagi key-nya di Pengaturan.");
     if (res.status === 402 || /credit|quota|insufficient/i.test(text)) throw new Error("Kredit Cartesia habis.");
     throw new Error(`Cartesia ${res.status}: ${text.slice(0, 160)}`);
   }
@@ -88,7 +88,7 @@ export async function synthesizeTimed(key: string, text: string, voiceId: string
   });
   if (!res.ok) {
     const t = await res.text().catch(() => "");
-    if (res.status === 401 || res.status === 403) throw new Error("API key Cartesia ditolak. Cek lagi key-nya di Pengaturan AI.");
+    if (res.status === 401 || res.status === 403) throw new Error("API key Cartesia ditolak. Cek lagi key-nya di Pengaturan.");
     if (res.status === 402 || /credit|quota|insufficient/i.test(t)) throw new Error("Kredit Cartesia habis.");
     throw new Error(`Cartesia ${res.status}: ${t.slice(0, 160)}`);
   }

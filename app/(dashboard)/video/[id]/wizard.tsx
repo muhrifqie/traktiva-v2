@@ -213,7 +213,7 @@ export function Wizard({
       )}
       {!hasGoogle && (
         <Link href="/pengaturan" className="flex items-center gap-2 rounded-xl border border-status-progress/40 bg-status-progress/10 px-4 py-3 text-[13px]">
-          <CircleAlert className="size-4 shrink-0 text-status-progress" /> Tambahkan akun Google di Pengaturan AI supaya bisa membuat gambar & video.
+          <CircleAlert className="size-4 shrink-0 text-status-progress" /> Tambahkan akun Google di Pengaturan supaya bisa membuat gambar & video.
         </Link>
       )}
 

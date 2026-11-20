@@ -39,7 +39,7 @@ export default async function VideoPage() {
         {!flow ? (
           <Banner>Mesin video belum terpasang di perangkat ini. Hubungi penjual untuk aktivasi.</Banner>
         ) : active.length === 0 ? (
-          <Banner href="/pengaturan">Tambahkan akun Google di Pengaturan AI dulu supaya AI bisa membuat gambar &amp; video.</Banner>
+          <Banner href="/pengaturan">Tambahkan akun Google di Pengaturan dulu supaya AI bisa membuat gambar &amp; video.</Banner>
         ) : null}
 
         <div className="flex flex-wrap items-end gap-3">

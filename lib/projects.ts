@@ -206,7 +206,7 @@ async function runRender(id: number) {
   const silent = isSilent(p.presetId, p.options);
   const model = `omni-1.2-flash-${p.clipSec}s-portrait`;
   // voice-over by Cartesia: Flow renders the clip without speech, the line is spoken by Cartesia and mixed in
-  // the project's own voice choice (storyboard) wins over the app default (Pengaturan AI)
+  // the project's own voice choice (storyboard) wins over the app default (Pengaturan)
   const defaults = getSettings().voice ?? { provider: "flow" };
   const pv = projectVoice(p.options, defaults);
   const cartesia = !silent && pv.choice === "cartesia" && defaults.cartesiaKey && pv.voiceId ? { key: defaults.cartesiaKey, voiceId: pv.voiceId, speed: pv.speed } : null;

@@ -95,8 +95,8 @@ export function VoicePanel({
               role="radio"
               aria-checked={on}
               disabled={disabled || saving || !c.ready || on}
-              title={blocked ? "Masukkan API key Cartesia di Pengaturan AI dulu" : c.hint}
-              onClick={() => (blocked ? toast.error("Masukkan API key Cartesia di Pengaturan AI dulu.") : save({ voice: c.id as VoiceChoice }))}
+              title={blocked ? "Masukkan API key Cartesia di Pengaturan dulu" : c.hint}
+              onClick={() => (blocked ? toast.error("Masukkan API key Cartesia di Pengaturan dulu.") : save({ voice: c.id as VoiceChoice }))}
               className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed ${on ? "border-primary/50 bg-primary/10 text-foreground" : c.ready ? "bg-card text-muted-foreground hover:text-foreground" : "bg-card text-muted-foreground opacity-50"}`}
             >
               {on ? <Check className="size-3.5 text-brand-light" /> : <c.icon className="size-3.5" />}
@@ -146,7 +146,7 @@ export function VoicePanel({
             </div>
           </div>
         ) : (
-          <p className="text-[11px] text-muted-foreground">Cartesia belum tersambung. <Link href="/pengaturan" className="font-medium text-brand-light underline">Masukkan API key di Pengaturan AI</Link>.</p>
+          <p className="text-[11px] text-muted-foreground">Cartesia belum tersambung. <Link href="/pengaturan" className="font-medium text-brand-light underline">Masukkan API key di Pengaturan</Link>.</p>
         )
       )}
     </div>

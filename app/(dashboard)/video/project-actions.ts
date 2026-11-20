@@ -35,7 +35,7 @@ async function get(id: number) {
 }
 async function requireGoogle() {
   const a = await db.select({ id: googleAccounts.id }).from(googleAccounts).where(eq(googleAccounts.status, "active")).limit(1);
-  if (!a.length) throw new Error("Tambahkan akun Google di Pengaturan AI dulu.");
+  if (!a.length) throw new Error("Tambahkan akun Google di Pengaturan dulu.");
 }
 
 export async function createProject(presetId: string) {
@@ -246,7 +246,7 @@ async function startAll(ids: number[]) {
  */
 export async function quickMake(id: number) {
   const p = await get(id);
-  if (!(await db.select().from(googleAccounts).where(eq(googleAccounts.status, "active")).get())) throw new Error("Tambahkan akun Google di Pengaturan AI dulu (dipakai untuk Flow).");
+  if (!(await db.select().from(googleAccounts).where(eq(googleAccounts.status, "active")).get())) throw new Error("Tambahkan akun Google di Pengaturan dulu (dipakai untuk Flow).");
   if (!p.scenes.length) throw new Error("Susun storyboard dulu.");
   quick.__quick ??= new Set();
   const mainBusy = quick.__quick.has(id);
@@ -560,7 +560,7 @@ export async function setProjectVoice(id: number, input: z.input<typeof VoiceInp
   const p = await get(id);
   notRunning(p);
   const d = VoiceInput.parse(input);
-  if (d.voice === "cartesia" && !getSettings().voice?.cartesiaKey) throw new Error("Masukkan API key Cartesia di Pengaturan AI dulu.");
+  if (d.voice === "cartesia" && !getSettings().voice?.cartesiaKey) throw new Error("Masukkan API key Cartesia di Pengaturan dulu.");
   const options = { ...p.options, voice: d.voice, voiceId: d.voiceId ?? p.options.voiceId ?? "", voiceName: d.voiceName ?? p.options.voiceName ?? "", voiceSpeed: String(d.voiceSpeed ?? p.options.voiceSpeed ?? 1) };
   const engineChanged = (p.options.voice || "") !== d.voice || (d.voice === "cartesia" && p.options.voiceId !== options.voiceId) || p.options.voiceSpeed !== options.voiceSpeed;
   await db
@@ -572,7 +572,7 @@ export async function setProjectVoice(id: number, input: z.input<typeof VoiceInp
 /** Hear one line in a Cartesia voice (few credits) → data URL for the browser. */
 export async function previewVoiceLine(text: string, voiceId: string, speed = 1) {
   const key = getSettings().voice?.cartesiaKey;
-  if (!key) throw new Error("Masukkan API key Cartesia di Pengaturan AI dulu.");
+  if (!key) throw new Error("Masukkan API key Cartesia di Pengaturan dulu.");
   const line = z.string().trim().min(1).max(300).parse(text);
   const wav = await synthesize(key, spoken(applyRules(line, writingRules())), z.string().min(8).max(80).parse(voiceId), { speed });
   return `data:audio/wav;base64,${wav.toString("base64")}`;

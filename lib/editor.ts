@@ -440,7 +440,7 @@ export async function fullVoiceOver(p: VideoProject, e: ProjectEdit, script: str
   const { synthesizeTimed } = await import("@/lib/cartesia");
   const defaults = getSettings().voice ?? { provider: "flow" };
   const pv = projectVoice(p.options, defaults);
-  if (!defaults.cartesiaKey || !pv.voiceId) throw new Error("Pilih suara Cartesia dulu (Pengaturan AI → Suara).");
+  if (!defaults.cartesiaKey || !pv.voiceId) throw new Error("Pilih suara Cartesia dulu (Pengaturan → Suara).");
   const { wav, words: timed } = await synthesizeTimed(defaults.cartesiaKey, spoken(applyRules(script, writingRules())), pv.voiceId, { speed: pv.speed });
   const src = await writeMedia(`${p.folder}/suara/vo-utuh-${Date.now().toString(36)}.wav`, wav);
   const dur = (await probeMedia(src)).seconds;

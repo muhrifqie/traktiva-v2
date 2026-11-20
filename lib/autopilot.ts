@@ -118,7 +118,7 @@ export async function autoEdit(p: VideoProject) {
 /** Start a run for these products (no-op while one runs). Returns at once; progress is read with autopilotState(). */
 export async function startAutopilot(products: { productId: string; title: string }[]) {
   if (g.__autopilot) throw new Error("Autopilot masih berjalan.");
-  if (!(await db.select().from(googleAccounts).where(eq(googleAccounts.status, "active")).get())) throw new Error("Belum ada akun Google aktif untuk Flow (Pengaturan AI).");
+  if (!(await db.select().from(googleAccounts).where(eq(googleAccounts.status, "active")).get())) throw new Error("Belum ada akun Google aktif untuk Flow (Pengaturan).");
   const prev = await autopilotState();
   const s: AutoState = {
     running: true,
