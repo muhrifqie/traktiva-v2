@@ -107,7 +107,31 @@ const healthy = (cfg: Flow2ApiConfig) =>
   fetch(`${cfg.baseUrl}/health`, { signal: AbortSignal.timeout(3000) }).then((r) => r.ok, () => false);
 
 // One start attempt at a time across concurrent callers.
-const gs = globalThis as unknown as { __flowStart?: Promise<void> | null; __flowCapacity?: { want: number; done: Promise<void> } };
+const gs = globalThis as unknown as { __flowStart?: Promise<void> | null; __flowCapacity?: { want: number; done: Promise<void> }; __flowHeadedUntil?: number };
+
+/**
+ * Captcha browsers run hidden (headless) so no Chrome windows sit on the desktop. When Google turns the hidden
+ * browser down (reCAPTCHA failure), flow2api is restarted with visible Chrome for HEADED_FALLBACK_MIN as a
+ * fallback, then goes back to hidden once no generation is running.
+ */
+const HEADED_FALLBACK_MIN = 60;
+const inHeadedFallback = () => (gs.__flowHeadedUntil ?? 0) > Date.now();
+
+/** Write flow2api's browser_headless setting (read at its start). Returns true when it changed. */
+function writeHeadless(on: boolean) {
+  const rt = runtime();
+  if (!rt) return false;
+  let toml = "";
+  try {
+    toml = fs.readFileSync(rt.config, "utf8");
+  } catch {
+    return false;
+  }
+  const next = toml.replace(/^(\s*browser_headless\s*=\s*)(true|false)/m, `$1${on}`);
+  if (next === toml) return false;
+  fs.writeFileSync(rt.config, next);
+  return true;
+}
 
 /** Start flow2api if it isn't answering yet (detached, logs to flow2api.log next to it). */
 async function ensureRunning(cfg: Flow2ApiConfig) {
@@ -115,6 +139,7 @@ async function ensureRunning(cfg: Flow2ApiConfig) {
   gs.__flowStart ??= (async () => {
     const rt = runtime();
     if (!rt || !fs.existsSync(rt.exe)) throw new Error("Mesin video belum terpasang di perangkat ini.");
+    writeHeadless(!inHeadedFallback()); // hidden captcha browsers unless a fallback to visible Chrome is on
     // the captcha browser is the PC's Chrome (flow2api's own Chromium is not shipped)
     const browser = await import("@/lib/browser/chrome").then((m) => m.chromePath()).catch(() => "");
     const log = fs.openSync(path.join(rt.root, "flow2api.log"), "a");
@@ -375,10 +400,24 @@ function stage(line: string): { text: string; pct?: number } {
  * requests) and retry. Requests that were cut off by someone else's restart also retry instead of failing.
  * ponytail: Windows-only restart (finds the PID by port); other OSes just surface the error.
  */
-const rs = globalThis as unknown as { __flowRestart?: { gen: number; running: Promise<void> | null } };
+const rs = globalThis as unknown as { __flowRestart?: { gen: number; running: Promise<void> | null }; __flowActive?: number };
 rs.__flowRestart ??= { gen: 0, running: null };
 
 async function withCaptchaRetry<T>(fn: () => Promise<T>, onProgress?: Progress) {
+  rs.__flowActive = (rs.__flowActive ?? 0) + 1;
+  try {
+    return await captchaRetry(fn, onProgress);
+  } finally {
+    rs.__flowActive = Math.max(0, (rs.__flowActive ?? 1) - 1);
+    // fallback time is over and nothing is generating: back to hidden captcha browsers
+    if (!rs.__flowActive && gs.__flowHeadedUntil && !inHeadedFallback()) {
+      gs.__flowHeadedUntil = undefined;
+      if (writeHeadless(true)) void restartFlow2Api().catch(() => {});
+    }
+  }
+}
+
+async function captchaRetry<T>(fn: () => Promise<T>, onProgress?: Progress) {
   const state = rs.__flowRestart!;
   const gen = state.gen;
   try {
@@ -393,8 +432,13 @@ async function withCaptchaRetry<T>(fn: () => Promise<T>, onProgress?: Progress) 
       // flow2api was busy, not broken: wait a little and try again (no restart, it would kill other jobs)
       onProgress?.("Antrean Flow penuh, mencoba lagi...");
       await new Promise((r) => setTimeout(r, 5000));
-    } else if (/obtain reCAPTCHA token/i.test(raw)) {
-      onProgress?.("Captcha macet, menyalakan ulang mesin video...");
+    } else if (/obtain reCAPTCHA token|recaptcha/i.test(raw)) {
+      if (!inHeadedFallback()) {
+        // hidden browser turned down: fall back to visible Chrome for a while
+        gs.__flowHeadedUntil = Date.now() + HEADED_FALLBACK_MIN * 60_000;
+        writeHeadless(false);
+        onProgress?.("Captcha gagal di mode tersembunyi, membuka Chrome verifikasi...");
+      } else onProgress?.("Captcha macet, menyalakan ulang mesin video...");
       await restartFlow2Api();
     } else throw e;
     return fn();

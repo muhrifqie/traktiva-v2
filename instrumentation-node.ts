@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { startAiStandby } from "@/lib/ai-standby";
 import { startShowcaseAutoSync } from "@/lib/showcase";
 import { failInterruptedJobs } from "@/lib/video";
+import { startProfileAutoSync } from "@/lib/profile-autosync";
 import { startUploadRunner } from "@/lib/uploads";
 
 await migrate(db, { migrationsFolder: path.join(process.cwd(), "drizzle") });
@@ -16,3 +17,5 @@ if (process.env.TRAKTIVA_NO_STANDBY !== "1") startAiStandby();
 
 // Jadwal Upload: posts due TikTok uploads one at a time while the app is open
 startUploadRunner();
+// Profil & Postingan: re-read each TikTok account after a new post goes live and every 30 minutes
+startProfileAutoSync();

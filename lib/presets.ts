@@ -147,6 +147,8 @@ export function suggestFromRef(sec: number): { format: "short" | "long"; clips: 
 
 const product = (p: Product) => `the product "${p.name}"${p.details ? ` (${p.details})` : ""}, exactly as in the reference photo`;
 const vertical = "vertical 9:16 smartphone photo, realistic, sharp focus, natural colors, no text, no watermark";
+// JJ frames are cut to a fast beat: punchy, high-energy stills instead of calm product shots
+const jjLook = "energetic TikTok jedag-jedug edit frame, bold dutch or low camera angle, punchy high-contrast lighting with a soft camera flash, dynamic confident pose";
 const voiceLine = (o: Options, line: string) =>
   o.voice === "none" ? "No dialogue, natural ambient sound." : `A ${o.voice} Indonesian voice says casually in Bahasa Indonesia: "${line}"`;
 
@@ -162,10 +164,10 @@ export const PRESETS: Preset[] = [
     silent: true,
     fields: [BACKGROUND, MODEL],
     scenes: (p, o) => [
-      { label: "Master", imagePrompt: `Hero shot of ${o.model} holding ${product(p)} toward the camera, ${o.background}, ${vertical}`, motionPrompt: "Subtle slow push-in, the person smiles and tilts the product to catch the light. Silent, no music, no speech." },
-      { label: "Candid 1", imagePrompt: `Candid moment: ${o.model} pointing at ${product(p)} with a surprised face, ${o.background}, ${vertical}`, motionPrompt: "Quick natural hand gesture pointing at the product, slight camera shake like handheld. Silent." },
-      { label: "Candid 2", imagePrompt: `Close-up of hands showing details of ${product(p)}, ${o.background}, ${vertical}`, motionPrompt: "Hands rotate the product slowly to show details, smooth motion. Silent." },
-      { label: "Candid 3", imagePrompt: `${o.model} giving a thumbs up next to ${product(p)}, cheerful, ${o.background}, ${vertical}`, motionPrompt: "Confident thumbs up then a small nod, energetic but smooth. Silent." },
+      { label: "Master", imagePrompt: `Hero shot of ${o.model} thrusting ${product(p)} toward the camera lens, ${jjLook}, ${o.background}, ${vertical}`, motionPrompt: "Subtle slow push-in, the person smiles and tilts the product to catch the light. Silent, no music, no speech." },
+      { label: "Candid 1", imagePrompt: `Candid moment: ${o.model} pointing at ${product(p)} with a hyped surprised face, mid-movement, ${jjLook}, ${o.background}, ${vertical}`, motionPrompt: "Quick natural hand gesture pointing at the product, slight camera shake like handheld. Silent." },
+      { label: "Candid 2", imagePrompt: `Extreme close-up of hands snapping ${product(p)} into frame, details crisp, ${jjLook}, ${o.background}, ${vertical}`, motionPrompt: "Hands rotate the product slowly to show details, smooth motion. Silent." },
+      { label: "Candid 3", imagePrompt: `${o.model} striking a cool pose with ${product(p)} and a thumbs up, hair in motion, ${jjLook}, ${o.background}, ${vertical}`, motionPrompt: "Confident thumbs up then a small nod, energetic but smooth. Silent." },
     ],
   },
   {

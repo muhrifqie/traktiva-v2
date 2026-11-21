@@ -10,10 +10,22 @@ import { withProfile } from "@/lib/browser/chrome";
 const UPLOAD_URL = "https://www.tiktok.com/tiktokstudio/upload?from=webapp&tab=video";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export type UploadProgress = (stage: string) => void;
-export type UploadInput = { sessionKey: string; file: string; caption: string; productId?: string | null; productTitle?: string | null; dryRun?: boolean; visible?: boolean };
+export type UploadInput = {
+  sessionKey: string;
+  file: string;
+  caption: string;
+  productId?: string | null;
+  productTitle?: string | null;
+  /** add a random trending sound (search "JJ") in TikTok's editor at this volume (dB, -60…20); null = original audio only */
+  music?: { volume: number } | null;
+  /** ms epoch: let TikTok publish the post at this time (Studio's own "Schedule"); null/undefined = post now */
+  scheduleAt?: number | null;
+  dryRun?: boolean;
+  visible?: boolean;
+};
 
 // one-click dismissals for tours, tips and cookie banners (never "accept all": decline optional cookies instead)
-const DISMISS = /^(got it|ok|okay|skip|skip tour|done|dismiss|not now|maybe later|later|no thanks|i understand|understood|decline optional cookies|mengerti|saya mengerti|oke|lewati|selesai|nanti saja|tidak sekarang|tolak cookie opsional)$/i;
+const DISMISS = /^(got it|ok|okay|skip|skip tour|done|dismiss|not now|maybe later|later|no thanks|i understand|understood|decline optional cookies|mengerti|saya mengerti|oke|lewati|selesai|nanti saja|tidak sekarang|tolak cookie opsional|tutup|close)$/i;
 const SUCCESS = /Your video has been uploaded|Video Anda telah diunggah|Manage your posts|Kelola postingan|Video published|Video dipublikasikan|has been scheduled|telah dijadwalkan/i;
 const EDITOR = '.public-DraftEditor-content[contenteditable="true"], .caption-editor [contenteditable="true"], .notranslate[contenteditable="true"]';
 const POST = 'button[data-e2e="post_video_button"]';
@@ -51,7 +63,18 @@ async function dismissPopups(page: Page) {
         return null;
       }, DISMISS.source)
       .catch(() => null);
-    if (!hit) return;
+    if (!hit) break;
+    await sleep(600);
+  }
+  // any other dialog with an X (not the product search, which we fill ourselves)
+  for (let i = 0; i < 3; i++) {
+    const x = page
+      .locator('[role="dialog"]:visible, .TUXModal:visible')
+      .filter({ hasNot: page.locator('input[placeholder*="Search products" i], input[placeholder*="Cari produk" i]') })
+      .locator('button[aria-label="Close" i], button[aria-label="Tutup" i], [data-e2e="modal-close-inner-button"]')
+      .first();
+    if (!(await x.isVisible().catch(() => false))) break;
+    await x.click({ timeout: 3000 }).catch(() => {});
     await sleep(600);
   }
 }
@@ -197,6 +220,117 @@ async function addProduct(page: Page, productId: string, title: string, onProgre
   if (await modal.isVisible().catch(() => false)) throw new Error("Tautan produk belum tersimpan (jendela produk masih terbuka).");
 }
 
+// ---------------------------------------------------------------- music (TikTok Studio's video editor)
+// Verified on TikTok Studio (2026-11-21): the upload form has editor shortcuts (button.editor-entrance
+// data-button-name="sounds" = "Suara") opening the editor on its sound panel: "Cari suara" search, rows
+// .MusicPanelMusicItem__wrap with a primary "+" button. Adding one selects its clip and shows "Volume" (-60…20 dB,
+// slider + text box in .PropSettingAudioVolume__wrap). "Simpan" closes the editor; the video's own audio stays.
+
+const MUSIC_QUERY = "JJ";
+
+/** Add a random sound from the "JJ" search results at `volume` dB, then save the editor. */
+async function addMusic(page: Page, volume: number, onProgress: UploadProgress) {
+  onProgress("Menambahkan musik JJ...");
+  await dismissPopups(page);
+  await page.locator('button.editor-entrance[data-button-name="sounds"]').first().click({ timeout: 10_000 });
+  await sleep(5000);
+  await dismissPopups(page);
+  const search = page.getByPlaceholder(/^(cari suara|search sounds)$/i).first();
+  await search.fill(MUSIC_QUERY, { timeout: 15_000 });
+  await page.keyboard.press("Enter");
+  await sleep(4000);
+  const items = page.locator(".MusicPanelMusicItem__wrap");
+  const n = Math.min(await items.count(), 10);
+  if (!n) throw new Error(`Musik "${MUSIC_QUERY}" tidak ditemukan di TikTok. Coba lagi atau matikan musik.`);
+  const pick = items.nth(Math.floor(Math.random() * n));
+  const name = ((await pick.locator(".MusicPanelMusicItem__infoBasicTitle").textContent().catch(() => "")) ?? "").trim();
+  await pick.hover();
+  await pick.locator(".MusicPanelMusicItem__operation button.Button__root--type-primary").click({ timeout: 8000 });
+  await sleep(4000);
+  await dismissPopups(page);
+
+  const v = String(Math.round(Math.max(-60, Math.min(20, volume))));
+  const box = page.locator(".PropSettingAudioVolume__wrap input.PropSettingInput__input").first();
+  await box.click({ clickCount: 3, timeout: 10_000 });
+  await page.keyboard.type(v);
+  await page.keyboard.press("Enter");
+  await sleep(1000);
+  if ((await box.inputValue().catch(() => "")) !== v) throw new Error(`Volume musik di TikTok tidak berubah ke ${v} dB.`);
+
+  await dismissPopups(page);
+  await page.locator("button:visible").filter({ hasText: /^(simpan|save)$/i }).first().click({ timeout: 8000 });
+  await sleep(4000);
+  await dismissPopups(page);
+  if (await page.locator(".MusicPanelMusicItem__wrap:visible").count()) throw new Error("Editor TikTok tidak tertutup setelah Simpan.");
+  onProgress(`Musik ditambahkan: ${name || MUSIC_QUERY} (${v} dB)`);
+}
+
+// ---------------------------------------------------------------- schedule (TikTok Studio's "Waktu posting")
+// Verified on TikTok Studio (2026-11-21): radio "Sekarang" / "Jadwalkan" ("Now" / "Schedule"); then a date field
+// opening a DatePicker (.DatePicker__day buttons, data-disabled outside the allowed range, "Next month" nav) and a
+// time field opening two TimePicker listboxes ("Hours" 00–23, "Minutes" in steps of 5); the zone shows "(GMT+7) …".
+
+const MONTHS: Record<string, number> = {
+  januari: 0, january: 0, februari: 1, february: 1, maret: 2, march: 2, april: 3, mei: 4, may: 4, juni: 5, june: 5, juli: 6, july: 6,
+  agustus: 7, august: 7, september: 8, oktober: 9, october: 9, november: 10, desember: 11, december: 11,
+};
+
+/** Wall-clock parts of `ms` in a fixed UTC offset (minutes). */
+function partsAt(ms: number, offsetMin: number) {
+  const d = new Date(ms + offsetMin * 60_000);
+  return { y: d.getUTCFullYear(), m: d.getUTCMonth(), day: d.getUTCDate(), h: d.getUTCHours(), min: d.getUTCMinutes() };
+}
+
+/** Pick "Schedule" and set the date & time TikTok will publish at (minutes rounded up to its 5-minute steps). */
+async function setSchedule(page: Page, at: number, onProgress: UploadProgress) {
+  onProgress("Mengatur jadwal tayang di TikTok...");
+  const block = page.locator("div").filter({ has: page.getByText(/^(waktu posting|when to post)$/i) }).filter({ has: page.getByText(/^(sekarang|now)$/i) }).last();
+  await block.getByText(/^(jadwalkan|schedule)$/i).first().click({ timeout: 10_000 });
+  await sleep(1200);
+
+  // TikTok shows times in the zone it names next to the fields, e.g. "(GMT+7) Waktu Lokal"
+  const zone = (await block.innerText().catch(() => "")).match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/);
+  const offset = zone ? (zone[1] === "-" ? -1 : 1) * (Number(zone[2]) * 60 + Number(zone[3] ?? 0)) : 7 * 60;
+  const rounded = Math.ceil(at / 300_000) * 300_000; // TikTok's minute list goes 00, 05, 10, …
+  const t = partsAt(rounded, offset);
+
+  // date: open the calendar, go to the right month, click the day
+  await block.getByText(/\d{1,2} \w{3,9} \d{4}|\w{3,9} \d{1,2}, \d{4}/).first().click({ timeout: 5000 });
+  await sleep(800);
+  const panel = page.locator(".DatePicker__panel").last();
+  for (let i = 0; i < 14; i++) {
+    const month = MONTHS[((await panel.locator(".DatePicker__titleMonth").textContent()) ?? "").trim().toLowerCase()];
+    const year = Number((await panel.locator(".DatePicker__titleYear").textContent())?.trim());
+    if (month == null || !year) throw new Error("Kalender jadwal TikTok tidak terbaca.");
+    const diff = t.y * 12 + t.m - (year * 12 + month);
+    if (diff === 0) break;
+    await panel.getByRole("button", { name: diff > 0 ? /next month|bulan berikutnya/i : /previous month|bulan sebelumnya/i }).click({ timeout: 5000 });
+    await sleep(400);
+  }
+  const dayBtn = panel.locator('.DatePicker__day[data-outside="false"]').filter({ hasText: new RegExp(`^${t.day}$`) }).first();
+  if ((await dayBtn.getAttribute("data-disabled")) === "true") {
+    throw new Error("TikTok tidak mengizinkan jadwal di tanggal itu (biasanya maksimal ±10 hari ke depan). Pilih jam yang lebih dekat.");
+  }
+  await dayBtn.click({ timeout: 5000 });
+  await sleep(800);
+
+  // time: open the picker, click the hour and the minute
+  const pad = (n: number) => String(n).padStart(2, "0");
+  await block.getByText(/^\d{2}:\d{2}$/).first().click({ timeout: 5000 });
+  await sleep(800);
+  await page.getByRole("option", { name: new RegExp(`^(hours|jam) ${pad(t.h)}$`, "i") }).first().click({ timeout: 5000 });
+  await sleep(300);
+  await page.getByRole("option", { name: new RegExp(`^(minutes|menit) ${pad(t.min)}$`, "i") }).first().click({ timeout: 5000 });
+  await sleep(500);
+  await page.keyboard.press("Escape").catch(() => {});
+  await sleep(500);
+
+  // read it back: the fields must now show our time
+  const shown = await block.innerText().catch(() => "");
+  if (!shown.includes(`${pad(t.h)}:${pad(t.min)}`)) throw new Error(`Jam jadwal di TikTok tidak berubah ke ${pad(t.h)}:${pad(t.min)}. Cek manual di TikTok Studio.`);
+  onProgress(`Jadwal tayang di TikTok: ${t.day}/${t.m + 1}/${t.y} ${pad(t.h)}:${pad(t.min)}`);
+}
+
 /** Upload one video. dryRun = do everything except pressing Post (to test an account). Returns when TikTok confirms. */
 export async function uploadToTikTok(input: UploadInput, onProgress: UploadProgress = () => {}) {
   return withProfile(input.sessionKey, { headless: !input.visible }, async (ctx) => {
@@ -217,13 +351,19 @@ export async function uploadToTikTok(input: UploadInput, onProgress: UploadProgr
       if (input.productId) await addProduct(page, input.productId, input.productTitle ?? "", onProgress);
       await waitUploaded(page, onProgress);
       await dismissPopups(page);
+      if (input.music) {
+        await addMusic(page, input.music.volume, onProgress);
+        await waitUploaded(page, onProgress); // the edited video is processed again
+        await dismissPopups(page);
+      }
+      if (input.scheduleAt) await setSchedule(page, input.scheduleAt, onProgress);
       if (input.dryRun) {
         if (process.env.TRAKTIVA_UPLOAD_DEBUG) await page.screenshot({ path: process.env.TRAKTIVA_UPLOAD_DEBUG, fullPage: true }).catch(() => {});
-        onProgress("Uji coba selesai: semua siap, tombol Post tidak ditekan.");
+        onProgress(input.scheduleAt ? "Uji coba selesai: jadwal terisi, tombol Jadwalkan tidak ditekan." : "Uji coba selesai: semua siap, tombol Post tidak ditekan.");
         await sleep(4000);
-        return { posted: false };
+        return { posted: false, scheduled: false };
       }
-      onProgress("Menekan Post...");
+      onProgress(input.scheduleAt ? "Menekan Jadwalkan..." : "Menekan Post...");
       await page.locator(POST).scrollIntoViewIfNeeded().catch(() => {});
       await page.locator(POST).click({ timeout: 15_000 });
       // confirmation dialogs ("Post now", content check not finished, …) and the success message
@@ -232,10 +372,10 @@ export async function uploadToTikTok(input: UploadInput, onProgress: UploadProgr
       while (Date.now() < deadline) {
         await sleep(2000);
         const text = await page.evaluate(() => document.body.innerText).catch(() => "");
-        if (SUCCESS.test(text) || /\/tiktokstudio\/content|\/manage/.test(page.url())) return { posted: true };
-        await clickButton(page, /^(post now|posting sekarang|posting saja|continue|lanjutkan|post|posting)$/i, '[role="dialog"] button, .TUXModal button, div[class*="modal" i] button');
+        if (SUCCESS.test(text) || /\/tiktokstudio\/content|\/manage/.test(page.url())) return { posted: true, scheduled: !!input.scheduleAt };
+        await clickButton(page, /^(post now|posting sekarang|posting saja|continue|lanjutkan|post|posting|schedule|jadwalkan)$/i, '[role="dialog"] button, .TUXModal button, div[class*="modal" i] button');
         const stillThere = await page.locator(POST).isVisible().catch(() => false);
-        if (!stillThere) return { posted: true }; // the form is gone: TikTok accepted it (no retry: avoids a double post)
+        if (!stillThere) return { posted: true, scheduled: !!input.scheduleAt }; // the form is gone: TikTok accepted it (no retry: avoids a double post)
         if (!clickedAgain && Date.now() > deadline - 90_000) {
           clickedAgain = true;
           await page.locator(POST).click({ timeout: 5000 }).catch(() => {});
