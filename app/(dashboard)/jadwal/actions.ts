@@ -45,7 +45,7 @@ const NewJobs = z.object({
   productId: z.string().regex(/^\d{10,22}$/).nullish(),
   productTitle: z.string().max(60).nullish(),
   music: z.boolean().default(false),
-  musicVolume: z.number().int().min(-60).max(20).default(0),
+  musicVolume: z.number().int().min(-60).max(20).default(-20),
   startAt: z.number().int(), // epoch ms
   gapMinutes: z.number().int().min(20).max(24 * 60),
 });
