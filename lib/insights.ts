@@ -23,10 +23,12 @@ export async function hookInsights(): Promise<HookInsights> {
     let post = j.postId ? await db.select().from(accountPosts).where(and(eq(accountPosts.accountId, j.accountId), eq(accountPosts.externalId, j.postId))).get() : undefined;
     if (!post) {
       const t = j.postedAt!.getTime();
+      // a post scheduled at TikTok shows up from its upload time, which can be long before t: look from the job's creation
+      const from = Math.min(t - 30 * 60_000, j.createdAt.getTime() - 10 * 60_000);
       const near = await db
         .select()
         .from(accountPosts)
-        .where(and(eq(accountPosts.accountId, j.accountId), gte(accountPosts.postedAt, new Date(t - 30 * 60_000))))
+        .where(and(eq(accountPosts.accountId, j.accountId), gte(accountPosts.postedAt, new Date(from))))
         .orderBy(accountPosts.postedAt)
         .limit(10);
       const want = norm(j.caption);

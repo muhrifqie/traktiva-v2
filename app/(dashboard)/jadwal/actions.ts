@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { accounts, uploadJobs, videoProjects } from "@/lib/db/schema";
 import { resolveMedia } from "@/lib/media";
 import { projectName } from "@/lib/presets";
-import { runJobNow } from "@/lib/uploads";
+import { kickUploads, runJobNow } from "@/lib/uploads";
 
 const Id = z.number().int().positive();
 const refresh = () => revalidatePath("/jadwal");
@@ -44,6 +44,8 @@ const NewJobs = z.object({
   caption: z.string().max(2200),
   productId: z.string().regex(/^\d{10,22}$/).nullish(),
   productTitle: z.string().max(60).nullish(),
+  music: z.boolean().default(false),
+  musicVolume: z.number().int().min(-60).max(20).default(-20),
   startAt: z.number().int(), // epoch ms
   gapMinutes: z.number().int().min(20).max(24 * 60),
 });
@@ -65,10 +67,13 @@ export async function createUploadJobs(input: z.input<typeof NewJobs>) {
       caption: d.caption.trim(),
       productId: d.productId || null,
       productTitle: d.productTitle || null,
+      music: d.music,
+      musicVolume: d.musicVolume,
       scheduledAt: new Date(start + i * d.gapMinutes * 60_000),
     })),
   );
   refresh();
+  kickUploads(); // upload now; far-ahead times are set as TikTok's own schedule (lib/uploads.ts)
 }
 
 export async function cancelUpload(id: number) {
@@ -77,8 +82,13 @@ export async function cancelUpload(id: number) {
 }
 
 export async function retryUpload(id: number) {
-  await db.update(uploadJobs).set({ status: "queued", error: null, progress: null, scheduledAt: new Date() }).where(eq(uploadJobs.id, Id.parse(id)));
+  const job = await db.select().from(uploadJobs).where(eq(uploadJobs.id, Id.parse(id))).get();
+  if (!job) return;
+  // keep a time that is still ahead (it goes to TikTok's schedule again); a past one posts now
+  const at = job.scheduledAt.getTime() > Date.now() ? job.scheduledAt : new Date();
+  await db.update(uploadJobs).set({ status: "queued", error: null, progress: null, scheduledAt: at }).where(eq(uploadJobs.id, job.id));
   refresh();
+  kickUploads();
 }
 
 export async function deleteUploads(ids: number[]) {

@@ -1,14 +1,20 @@
 import Link from "next/link";
 import { and, desc, eq } from "drizzle-orm";
 import {
-  BadgeCheck, Bookmark, Clock, Eye, Heart, LinkIcon, Lock, MessageCircle, Pin, Play, Share2, ShieldCheck, Sparkles, TrendingUp, UserCircle,
+  Activity, BadgeCheck, Bookmark, Clock, Eye, Heart, LinkIcon, Lock, MessageCircle, Moon, Pin, Play, Share2, ShieldCheck, Sparkles, TrendingUp, UserCircle,
 } from "lucide-react";
+import { Advice } from "@/components/content-advice";
+import { AutoRefresh } from "@/components/auto-refresh";
 import { PageHeader } from "@/components/page-header";
 import { PlatformIcon } from "@/components/platform-icon";
 import { PostCover } from "./post-cover";
+import { contentHealth, HEALTH_DAYS, MIN_AVG_VIEWS } from "@/lib/content-health";
 import { db } from "@/lib/db";
-import { accountPosts, accounts, accountStats, type AccountPost } from "@/lib/db/schema";
+import { PROFILE_SYNC_EVERY_MIN } from "@/lib/profile-autosync";
+import { accountPosts, accounts, accountStats, uploadJobs, type AccountPost } from "@/lib/db/schema";
+import { hookInsights } from "@/lib/insights";
 import type { ShopOverview } from "@/lib/platforms/tiktok-shop";
+import { mediaUrl } from "@/lib/media-url";
 import { getShopCache } from "@/lib/showcase";
 import { SyncButton } from "./sync-button";
 
@@ -35,7 +41,16 @@ function Delta({ now, before }: { now: number; before?: number }) {
   return <span className={`text-xs font-medium ${d > 0 ? "text-status-ok" : "text-destructive"}`}>{d > 0 ? "+" : ""}{compact.format(d)}</span>;
 }
 
-function VideoCard({ v, username }: { v: AccountPost; username: string }) {
+const timeFmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: TZ });
+
+/** Posts uploaded from Jadwal that TikTok publishes later (postId → publish time), request-time helper. */
+async function scheduledPosts(accountId: number) {
+  await hookInsights().catch(() => null); // links finished jobs to their TikTok post
+  const rows = await db.select({ postId: uploadJobs.postId, at: uploadJobs.postedAt, video: uploadJobs.video }).from(uploadJobs).where(and(eq(uploadJobs.accountId, accountId), eq(uploadJobs.status, "done")));
+  return new Map(rows.filter((r) => r.postId && r.at && r.at.getTime() > Date.now()).map((r) => [r.postId!, { at: r.at!, video: r.video }]));
+}
+
+function VideoCard({ v, username, scheduled }: { v: AccountPost; username: string; scheduled?: { at: Date; video: string } }) {
   return (
     <a
       href={`https://www.tiktok.com/@${username}/video/${v.externalId}`}
@@ -44,12 +59,14 @@ function VideoCard({ v, username }: { v: AccountPost; username: string }) {
       className="group flex flex-col overflow-hidden rounded-xl border bg-card transition-colors hover:border-ring/40"
     >
       <div className="relative aspect-[9/16] overflow-hidden bg-muted">
-        <PostCover src={v.coverUrl} />
+        {/* TikTok keeps a scheduled post's cover private until it goes live: show our own file meanwhile */}
+        {scheduled ? <video src={`${mediaUrl(scheduled.video)}#t=0.5`} muted preload="metadata" className="size-full object-cover" /> : <PostCover src={v.coverUrl} />}
         <div className="absolute inset-x-0 bottom-0 flex items-center gap-1 bg-gradient-to-t from-black/75 to-transparent px-2 pt-8 pb-1.5 text-xs font-semibold text-white">
           <Play className="size-3.5 fill-white" /> {compact.format(v.views)}
           {v.durationSec ? <span className="ml-auto font-normal opacity-80">{Math.floor(v.durationSec / 60)}:{String(v.durationSec % 60).padStart(2, "0")}</span> : null}
         </div>
         <div className="absolute top-1.5 left-1.5 flex gap-1">
+          {scheduled && <span className="flex items-center gap-0.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-[#4ade80]"><Clock className="size-2.5" />Terjadwal {timeFmt.format(scheduled.at)}</span>}
           {v.isPinned && <span className="flex items-center gap-0.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white"><Pin className="size-2.5" />Disematkan</span>}
           {v.isPrivate && <span className="flex items-center gap-0.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white"><Lock className="size-2.5" />Privat</span>}
         </div>
@@ -104,6 +121,9 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
   const totalEng = posts.reduce((s, p) => s + engagement(p), 0);
   const best = posts.reduce<AccountPost | null>((b, p) => (!b || p.views > b.views ? p : b), null);
   const last30 = postedWithinDays(posts, 30);
+  // last 7 days (same analysis as Beranda): low average views = rest the account or switch content
+  const week = (await contentHealth()).find((h) => h.accountId === account.id) ?? null;
+  const scheduled = await scheduledPosts(account.id);
   const canSync = !!account.sessionKey?.startsWith("cfx_") && account.status === "active";
 
   const chip = (active: boolean) =>
@@ -112,6 +132,7 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
 
   return (
     <>
+      <AutoRefresh />
       <PageHeader slug="profil">
         {canSync ? (
           <SyncButton accountId={account.id} username={account.username} primary={!latest} />
@@ -181,9 +202,49 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
               </a>
             )}
           </div>
-          <p className="flex items-center gap-1 self-start text-xs text-muted-foreground md:self-end">
-            <Clock className="size-3" /> {latest ? `Disinkron ${dateTimeFmt.format(latest.capturedAt)}` : "Belum pernah disinkron"}
-          </p>
+          {/* right side: content analysis, last 7 days (same as Beranda): low average views = rest the account or switch content */}
+          <div className="flex shrink-0 flex-col gap-2 md:w-1/2 md:self-stretch">
+            {week && (
+              <div className={`space-y-2 rounded-lg border px-3.5 py-3 ${week.status === "rest" ? "border-status-progress/40 bg-status-progress/5" : "bg-muted/30"}`}>
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground" title={`Video ${HEALTH_DAYS} hari terakhir (yang di bawah 24 jam belum dihitung); tren dibanding ${HEALTH_DAYS} hari sebelumnya.`}>
+                  <Activity className="size-3.5" /> Analisis {HEALTH_DAYS} hari
+                  <span className="ml-auto"><Advice h={week} /></span>
+                </div>
+                <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div>
+                    <dd className={`flex items-baseline gap-1.5 text-lg font-semibold tabular-nums ${week.status === "rest" ? "text-status-progress" : ""}`}>
+                      {week.avgViews != null ? full.format(week.avgViews) : "—"}
+                      {week.trend != null && <span className={`text-xs font-medium ${week.trend >= 0 ? "text-status-ok" : "text-destructive"}`}>{week.trend >= 0 ? "▲" : "▼"}{Math.round(Math.abs(week.trend) * 100)}%</span>}
+                    </dd>
+                    <dt className="text-xs text-muted-foreground">rata-rata penonton</dt>
+                  </div>
+                  <div>
+                    <dd className="text-lg font-semibold tabular-nums">{week.posts}</dd>
+                    <dt className="text-xs text-muted-foreground">video dihitung</dt>
+                  </div>
+                  <div>
+                    <dd className="text-lg font-semibold tabular-nums">{week.engagement != null ? pct.format(week.engagement) : "—"}</dd>
+                    <dt className="text-xs text-muted-foreground" title="(suka + komentar + dibagikan + disimpan) ÷ penonton">tingkat interaksi</dt>
+                  </div>
+                  <div title="Jam posting (WIB) yang videonya paling banyak ditonton, dari riwayat akun ini">
+                    <dd className="text-lg font-semibold tabular-nums">{week.bestHour != null ? `${String(week.bestHour).padStart(2, "0")}.00` : "—"}</dd>
+                    <dt className="text-xs text-muted-foreground">{week.bestHour != null ? "jam terbaik" : "jam terbaik (data kurang)"}</dt>
+                  </div>
+                </dl>
+                {week.status === "rest" && (
+                  <p className="flex items-start gap-1.5 text-[11px] text-status-progress">
+                    <Moon className="mt-px size-3.5 shrink-0" />
+                    Di bawah {MIN_AVG_VIEWS} penonton: istirahatkan akun 2–3 hari atau gunakan konten lain.
+                  </p>
+                )}
+              </div>
+            )}
+            <p className="mt-auto flex items-center gap-1 text-xs text-muted-foreground md:justify-end">
+              <Clock className="size-3" /> {latest ? `Disinkron ${dateTimeFmt.format(latest.capturedAt)}` : "Belum pernah disinkron"}
+              {canSync && <span title={`Otomatis setelah ada postingan baru dan tiap ${PROFILE_SYNC_EVERY_MIN} menit selama aplikasi terbuka`}>· otomatis</span>}
+              {week?.stale && <span>· data lama, klik Sinkronkan</span>}
+            </p>
+          </div>
         </section>
 
         {/* insights for learning what works + TikTok Shop account points, one row of equal cards */}
@@ -203,7 +264,7 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
               ...(posts.length > 0
                 ? [
                     { icon: Eye, label: "Rata-rata tayangan", value: compact.format(Math.round(totalViews / posts.length)), hint: `${full.format(totalViews)} total dari ${posts.length} video` },
-                    { icon: Sparkles, label: "Engagement rate", value: totalViews ? pct.format(totalEng / totalViews) : "—", hint: "(suka + komentar + share + simpan) ÷ tayangan" },
+                    { icon: Sparkles, label: "Tingkat interaksi", value: totalViews ? pct.format(totalEng / totalViews) : "—", hint: "(suka + komentar + dibagikan + disimpan) ÷ tayangan" },
                     { icon: TrendingUp, label: "Video terbaik", value: best ? compact.format(best.views) : "—", hint: best?.caption ? best.caption.slice(0, 48) : "tayangan tertinggi" },
                     { icon: Clock, label: "Posting 30 hari", value: String(last30), hint: `≈ ${(last30 / 4.3).toFixed(1)} video per minggu` },
                   ]
@@ -237,7 +298,7 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-              {posts.map((v) => <VideoCard key={v.id} v={v} username={account.username} />)}
+              {posts.map((v) => <VideoCard key={v.id} v={v} username={account.username} scheduled={scheduled.get(v.externalId)} />)}
             </div>
           )}
         </section>

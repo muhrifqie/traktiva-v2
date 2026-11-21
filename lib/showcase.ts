@@ -5,7 +5,6 @@ import { db } from "@/lib/db";
 import { accounts, shopCache, showcaseProducts, type ProductDetail } from "@/lib/db/schema";
 import { resolveMedia, saveResult } from "@/lib/media";
 import { fetchProductDetail, fetchShopSnapshot, type ShowcaseProduct } from "@/lib/platforms/tiktok-shop";
-import { getSettings } from "@/lib/settings";
 
 // Local mirror of each TikTok account's showcase + background auto-sync.
 
@@ -102,15 +101,16 @@ export async function syncAllShowcases() {
 
 export const lastAutoSync = () => g.__showcaseLast ?? null;
 
+/** Background showcase sync while the app is open (the TikTok Shop page also syncs live while it is looked at). */
+export const SHOWCASE_SYNC_EVERY_MIN = 15;
+
 /**
- * Start (or restart after a settings change) the periodic showcase sync.
+ * Start the periodic showcase sync (fixed interval, no setting).
  * ponytail: in-process interval; fine for a desktop app that is open while you work.
  */
 export function startShowcaseAutoSync() {
-  clearInterval(g.__showcaseTimer);
-  const minutes = getSettings().showcaseSyncMinutes ?? 60;
-  if (!minutes) return;
-  g.__showcaseTimer = setInterval(() => void syncAllShowcases().catch(() => {}), minutes * 60_000);
+  if (g.__showcaseTimer) return;
+  g.__showcaseTimer = setInterval(() => void syncAllShowcases().catch(() => {}), SHOWCASE_SYNC_EVERY_MIN * 60_000);
   g.__showcaseTimer.unref?.();
 }
 

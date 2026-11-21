@@ -33,7 +33,9 @@ export async function loadBeranda() {
 
   // ---- usage: totals + per-day series (videos finished, uploads posted)
   const done = projects.filter((p) => p.status === "done");
-  const posted = uploads.filter((u) => u.status === "done");
+  // done + postedAt ahead = uploaded with TikTok's own schedule: still waiting, not posted yet
+  const live = (u: (typeof uploads)[number]) => u.status === "done" && sec(u.postedAt) > 0 && sec(u.postedAt) <= nowSec;
+  const posted = uploads.filter(live);
   const count = (rows: number[], fromDay: number) => rows.filter((d) => d >= fromDay).length;
   const doneDays = done.map((p) => dayOf(sec(p.updatedAt)));
   const postedDays = posted.map((u) => dayOf(sec(u.postedAt ?? u.scheduledAt)));
@@ -43,7 +45,7 @@ export async function loadBeranda() {
       return { day: d * DAY - WIB + 12 * 3600, n: days.filter((x) => x === d).length };
     });
 
-  const queued = uploads.filter((u) => u.status === "queued" || u.status === "uploading").sort((a, b) => sec(a.scheduledAt) - sec(b.scheduledAt));
+  const queued = uploads.filter((u) => u.status === "queued" || u.status === "uploading" || (u.status === "done" && !live(u))).sort((a, b) => sec(a.scheduledAt) - sec(b.scheduledAt));
   const accountName = new Map(social.map((a) => [a.id, a]));
 
   // ---- TikTok performance per account: latest stat vs ~7 days ago, follower history, post totals, top posts

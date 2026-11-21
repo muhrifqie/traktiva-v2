@@ -1,15 +1,14 @@
 import Link from "next/link";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { Store } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { PlatformIcon } from "@/components/platform-icon";
 import { db } from "@/lib/db";
-import { accounts, showcaseProducts } from "@/lib/db/schema";
+import { accounts, showcaseProducts, uploadJobs } from "@/lib/db/schema";
 import { PRESETS } from "@/lib/presets";
 import type { ShopOverview } from "@/lib/platforms/tiktok-shop";
-import { getSettings, SYNC_CHOICES } from "@/lib/settings";
 import { getShopCache } from "@/lib/showcase";
-import { AddProductsButton, AutoSyncSelect, ShowcaseGrid, SyncButton } from "./showcase-grid";
+import { AddProductsButton, LiveSync, ShowcaseGrid, SyncButton } from "./showcase-grid";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +24,10 @@ export default async function ShowcasePage({ searchParams }: PageProps<"/showcas
   // account performance lives on Profil & Postingan; here the overview only tells "synced at least once"
   const overview = current ? await getShopCache<ShopOverview>(current.id, "overview") : null;
   const lastSync = rows.reduce<Date | null>((m, r) => (!m || r.syncedAt > m ? r.syncedAt : m), null);
+  // how many videos with each product link went out from Jadwal on this account (live vs. waiting at TikTok)
+  const done = current ? await db.select({ productId: uploadJobs.productId, postedAt: uploadJobs.postedAt }).from(uploadJobs).where(and(eq(uploadJobs.accountId, current.id), eq(uploadJobs.status, "done"))) : [];
+  const now = new Date();
+  const tally = (pid: string, live: boolean) => done.filter((j) => j.productId === pid && j.postedAt && (j.postedAt <= now) === live).length;
   const concepts = PRESETS.filter((p) => p.available).map((p) => ({ id: p.id, title: p.title, bestFor: p.bestFor }));
 
   return (
@@ -59,10 +62,13 @@ export default async function ShowcasePage({ searchParams }: PageProps<"/showcas
               </Link>
             ))}
             <span className="ml-auto" />
-            <AutoSyncSelect value={getSettings().showcaseSyncMinutes ?? 60} choices={[...SYNC_CHOICES]} />
-            <span className="text-xs text-muted-foreground">
-              {rows.length} produk di etalase{lastSync ? ` · sinkron ${fmt.format(lastSync)}` : ""}
-            </span>
+            {current.status === "active" && lastSync ? (
+              <LiveSync accountId={current.id} lastSync={lastSync.getTime()} count={rows.length} />
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                {rows.length} produk di etalase{lastSync ? ` · sinkron ${fmt.format(lastSync)}` : ""}
+              </span>
+            )}
           </div>
 
           <ShowcaseGrid
@@ -82,6 +88,8 @@ export default async function ShowcasePage({ searchParams }: PageProps<"/showcas
               cover: r.cover,
               labels: r.labels,
               hasDetail: !!r.detail,
+              posted: tally(r.productId, true),
+              scheduled: tally(r.productId, false),
             }))}
             neverSynced={!lastSync && !overview} // every sync stores the overview, even for an empty showcase
           />
