@@ -2,17 +2,34 @@
 // on WaroengPay's page → the signed `payment.paid` webhook (or a status poll) marks the order paid and creates a new
 // license in the member's account, or extends the license being renewed.
 //
-// OFF until the owner sets, on the license server: WAROENGPAY_API_KEY (wp_live_… or wp_test_… for sandbox),
-// WAROENGPAY_WEBHOOK_SECRET (whsec_… / whsec_test_…), SITE_URL, and switches it on in Pengaturan → Pembayaran.
+// OFF until the owner sets, on the license server, env WAROENGPAY_API_KEY (wp_live_… or wp_test_… for sandbox),
+// WAROENGPAY_WEBHOOK_SECRET (whsec_… / whsec_test_…), SITE_URL, or the same in DATA_DIR/waroengpay.json (600:
+// { "apiKey", "webhookSecret", "base"?, "siteUrl"? }), and switches it on in Pengaturan → Pembayaran.
+// Webhooks need a trusted TLS certificate on SITE_URL (WaroengPay rejects self-signed ones), so pending orders are
+// also polled every minute (syncPendingOrders): payment is picked up within ~1 minute either way.
 // Safety rules from WaroengPay's docs: match by invoice id (never by reference), check the amount, ignore events of
 // the other mode (test vs live), process each event once, re-check with the API when in doubt.
 import crypto from "node:crypto";
-import { audit, createLicenses, db, getPlans, getSetting, loadSecrets } from "./lib.mjs";
+import fs from "node:fs";
+import path from "node:path";
+import { audit, createLicenses, DATA_DIR, db, getPlans, getSetting, loadSecrets } from "./lib.mjs";
 
-const BASE = () => (process.env.WAROENGPAY_BASE || "https://waroengpay.com").replace(/\/+$/, "");
-const KEY = () => process.env.WAROENGPAY_API_KEY || "";
-const SECRET = () => process.env.WAROENGPAY_WEBHOOK_SECRET || "";
-const SITE = () => (process.env.SITE_URL || "https://43.156.15.173:8443").replace(/\/+$/, "");
+/** DATA_DIR/waroengpay.json, re-read when it changes (keys can be rotated without a restart). */
+let fileCfg = { at: 0, v: {} };
+function cfg() {
+  const f = path.join(DATA_DIR, "waroengpay.json");
+  try {
+    const m = fs.statSync(f).mtimeMs;
+    if (m !== fileCfg.at) fileCfg = { at: m, v: JSON.parse(fs.readFileSync(f, "utf8")) };
+  } catch {
+    fileCfg = { at: 0, v: {} };
+  }
+  return fileCfg.v;
+}
+const BASE = () => (process.env.WAROENGPAY_BASE || cfg().base || "https://waroengpay.com").replace(/\/+$/, "");
+const KEY = () => process.env.WAROENGPAY_API_KEY || cfg().apiKey || "";
+const SECRET = () => process.env.WAROENGPAY_WEBHOOK_SECRET || cfg().webhookSecret || "";
+const SITE = () => (process.env.SITE_URL || cfg().siteUrl || "https://43.156.15.173:8443").replace(/\/+$/, "");
 /** wp_test_ keys create sandbox invoices only (never money); the server then only accepts sandbox events. */
 export const testMode = () => KEY().startsWith("wp_test_");
 
@@ -110,6 +127,14 @@ function fulfil(order, eventId, data) {
     db.exec("ROLLBACK");
     throw e;
   }
+}
+
+/** Poll WaroengPay for pending orders of the last 2 hours (fallback for webhooks that cannot reach us). */
+export async function syncPendingOrders() {
+  if (!KEY()) return 0;
+  const rows = db.prepare("SELECT * FROM orders WHERE status = 'pending' AND created_at > unixepoch() - 7200 ORDER BY created_at LIMIT 20").all();
+  for (const o of rows) await syncOrder(o);
+  return rows.length;
 }
 
 /** Webhook from WaroengPay (forwarded by the web app with the raw body + headers). */

@@ -242,6 +242,12 @@ try {
     assert.ok(after.expires_at >= bought.expires_at + 30 * 86400 - 5);
     const orders = await mget("/internal/member/orders", mlog.session);
     assert.deepEqual(orders.orders.map((o) => o.status).sort(), ["mismatch", "paid", "paid"]);
+    // no webhook at all (self-signed certificate): paid at WaroengPay → picked up by polling the invoice
+    const polled = await memberOrder({ plan: "bulanan" });
+    Object.assign(wpInvoices.at(-1), { status: "paid" });
+    const view = (await mget("/internal/member/orders", mlog.session)).orders.find((o) => o.id === polled.id);
+    assert.equal(view.status, "paid");
+    assert.ok(view.license_id);
 
     // hardware lock + admin role + "ganti lisensi"
     const adminKey = admin("create", "--plan", "lifetime", "--devices", "2", "--role", "admin", "--note", "owner").split(" ")[0];

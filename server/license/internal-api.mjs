@@ -8,7 +8,7 @@ import http from "node:http";
 import path from "node:path";
 import { appInfo, audit, hwTolerance, createLicenses, DATA_DIR, db, getPlans, getSetting, hashKey, hashPassword, loadSecrets, normalizeKey, setPlans, setSetting, verifyPassword } from "./lib.mjs";
 import { createPasswordToken, memberRoutes, runReminders } from "./members.mjs";
-import { handleWebhook, paymentsConfigured, paymentsReady, testMode } from "./payments.mjs";
+import { handleWebhook, paymentsConfigured, paymentsReady, syncPendingOrders, testMode } from "./payments.mjs";
 
 const PORT = Number(process.env.INTERNAL_PORT || 3822);
 const HOST = "127.0.0.1";
@@ -474,6 +474,9 @@ function match(method, pathname) {
   }
   return null;
 }
+
+// online payments: poll pending orders every minute (webhooks need a trusted certificate on SITE_URL)
+setInterval(() => void syncPendingOrders().catch((e) => console.error("[orders]", e instanceof Error ? e.message : e)), 60_000).unref();
 
 // expiry reminders: hourly (no-op while switched off in Pengaturan)
 setInterval(() => void runReminders().catch((e) => console.error("[reminders]", e instanceof Error ? e.message : e)), 3600_000).unref();
