@@ -130,6 +130,61 @@ function Shell({ at, children }: { at?: number; children: React.ReactNode }) {
   );
 }
 
+/** Beranda card: the 4 best-selling TikTok Shop products (KaloData, last 30 days). */
+export async function KaloTopCard() {
+  const p = await rows<KaloTopProduct>(() => kaloTopProducts("ID"), "kalo:tops:product:ID:p1");
+  const products = p?.rows ?? [];
+  return (
+    <TopShell at={p?.at}>
+      {products.length ? (
+        <ol className="space-y-2.5">
+          {products.slice(0, 4).map((r, i) => (
+            <li key={r.id}>
+              <Link href={`/riset/tiktok?tab=cari&q=${encodeURIComponent(r.product_title.slice(0, 60))}`} className="flex items-center gap-2 rounded-lg py-0.5 hover:bg-accent/50">
+                <span className="w-4 text-center text-xs font-semibold text-muted-foreground tabular-nums">{i + 1}</span>
+                {/* eslint-disable-next-line @next/next/no-img-element -- KaloData CDN */}
+                <img src={productImg(r.id)} alt="" loading="lazy" referrerPolicy="no-referrer" className="size-11 shrink-0 rounded-lg bg-muted object-cover" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium" title={r.product_title}>{r.product_title}</span>
+                  <span className="block text-xs text-muted-foreground tabular-nums">
+                    <b className="text-foreground">{r.revenue}</b> · {compact.format(r.sale)} terjual · {r.unit_price}
+                  </span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="flex flex-1 items-center text-xs text-muted-foreground">Belum ada data. Tambahkan sesi KaloData di Riset Produk.</p>
+      )}
+    </TopShell>
+  );
+}
+
+function TopShell({ at, children }: { at?: number; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col rounded-xl border bg-card p-4">
+      <div className="mb-3 flex items-center gap-2 text-[13px] font-medium text-muted-foreground">
+        <Flame className="size-4 text-black dark:text-white" />
+        Produk terlaris · KaloData 30 hari
+        {at ? <span className="font-normal">· {time.format(at)}</span> : null}
+        <Link href="/riset/tiktok" className="ml-auto flex items-center gap-0.5 hover:text-foreground">
+          Lihat <ArrowUpRight className="size-3" />
+        </Link>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+export function KaloTopSkeleton() {
+  return (
+    <TopShell>
+      <div className="h-36 animate-pulse rounded-lg bg-muted/60" />
+    </TopShell>
+  );
+}
+
 export function KaloInsightSkeleton() {
   return (
     <Shell>

@@ -188,7 +188,7 @@ export function PresetGallery({ mine }: { mine: MyConcept[] }) {
   const pick = (id: string) => run(id, () => createProject(id));
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
       {mine.map((c) => (
         <MyConceptCard key={c.id} c={c} busy={pending} onUse={() => run(c.id, () => createProjectFromConcept(c.id))} />
       ))}
@@ -202,7 +202,8 @@ export function PresetGallery({ mine }: { mine: MyConcept[] }) {
             <div className={`relative grid gap-1 bg-muted/60 p-1 ${frames === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
               {Array.from({ length: frames }, (_, i) => i + 1).map((n) => (
                 <div key={n} className={`relative overflow-hidden rounded-md bg-muted ${frames === 2 ? "aspect-[27/32]" : "aspect-[9/16]"}`}>
-                  <Frame src={`/presets/${p.id}-${n}.jpg`} />
+                  {/* ?v: the example files get regenerated now and then; skip the browser's old copy */}
+                  <Frame src={`/presets/${p.id}-${n}.jpg?v=3`} />
                   <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[9px] font-medium text-white">{n}</span>
                 </div>
               ))}
@@ -210,7 +211,7 @@ export function PresetGallery({ mine }: { mine: MyConcept[] }) {
               {p.badge && <span className={`absolute top-2 right-2 rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur ${BADGE[p.badge]}`}>{p.badge}</span>}
             </div>
 
-            <div className="flex flex-1 flex-col gap-2 p-3.5">
+            <div className="flex flex-1 flex-col gap-1.5 p-3">
               <p className="text-[13px] font-semibold leading-snug">{p.title}</p>
               <p className="line-clamp-2 text-xs text-muted-foreground">{p.summary}</p>
               <p className="text-xs"><span className="text-muted-foreground">Cocok untuk: </span>{p.bestFor}</p>

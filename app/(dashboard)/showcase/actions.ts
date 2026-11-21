@@ -9,8 +9,7 @@ import { db } from "@/lib/db";
 import { showcaseProducts, videoProjects } from "@/lib/db/schema";
 import { createProjectFolder, resolveMedia, writeMedia } from "@/lib/media";
 import { addToShowcase, fetchMarketRanking, removeFromShowcase } from "@/lib/platforms/tiktok-shop";
-import { SYNC_CHOICES, updateSettings } from "@/lib/settings";
-import { detailFacts, getTiktokAccount, loadProductDetail, mirrorShowcase, setShopCache, startShowcaseAutoSync, syncAccountShowcase } from "@/lib/showcase";
+import { detailFacts, getTiktokAccount, loadProductDetail, mirrorShowcase, setShopCache, syncAccountShowcase } from "@/lib/showcase";
 import { defaultOptions, presetById } from "@/lib/presets";
 
 const Id = z.number().int().positive();
@@ -51,14 +50,6 @@ export async function loadMarketRanking(accountId: number, categoryId?: string) 
   await setShopCache(acc.id, `ranking:${r.categoryId}`, r);
   revalidatePath("/riset", "layout");
   return r.categoryId;
-}
-
-export async function setShowcaseAutoSync(minutes: number) {
-  const m = z.number().int().parse(minutes);
-  if (!(SYNC_CHOICES as readonly number[]).includes(m)) throw new Error("Pilihan interval tidak dikenal.");
-  updateSettings({ showcaseSyncMinutes: m });
-  startShowcaseAutoSync();
-  revalidatePath("/showcase");
 }
 
 /** Full product detail for the showcase dialog (read from TikTok once, then from the database). */

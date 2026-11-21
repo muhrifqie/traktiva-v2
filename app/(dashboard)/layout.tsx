@@ -11,12 +11,17 @@ import { ServerBanner } from "@/components/server-banner";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { db } from "@/lib/db";
 import { accounts, googleAccounts, videoProjects } from "@/lib/db/schema";
+import { startProfileAutoSync } from "@/lib/profile-autosync";
+import { startShowcaseAutoSync } from "@/lib/showcase";
 import { ADMIN_PANEL_URL, licenseView, serverInfo } from "@/lib/server-info";
 import pkg from "@/package.json";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardLayout({ children }: LayoutProps<"/">) {
+  // background syncs (no-ops when already running): also covers a server started before they existed
+  startProfileAutoSync();
+  startShowcaseAutoSync();
   const [social, google, [{ videos }]] = await Promise.all([
     db
       .select({ id: accounts.id, platform: accounts.platform, username: accounts.username, displayName: accounts.displayName, avatarUrl: accounts.avatarUrl, status: accounts.status })

@@ -13,6 +13,8 @@ const num = new Intl.NumberFormat("id-ID");
 const when = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
 
 /** Full product page of a showcase product: read from TikTok on first open, saved in the database for the AI. */
+const FRESH_MS = 5 * 60_000; // a detail read in the last 5 minutes is current enough
+
 export function ProductDetailDialog({ product, onClose, onMakeVideo }: {
   product: { id: number; productId: string; title: string; cover: string | null } | null;
   onClose: () => void;
@@ -46,6 +48,11 @@ export function ProductDetailDialog({ product, onClose, onMakeVideo }: {
         setData(d);
         setError(null);
         setImg(0);
+        // shown from the database first; then re-read from TikTok (price, stock, commission) when not just read
+        if (Date.now() - d.detailAt > FRESH_MS) {
+          const fresh = await getShowcaseDetail(id, true);
+          if (live) setData(fresh);
+        }
       } catch (e) {
         if (live) setError(e instanceof Error ? e.message : "Gagal mengambil detail");
       }

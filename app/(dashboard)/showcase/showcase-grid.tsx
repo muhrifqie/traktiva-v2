@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { mediaUrl } from "@/lib/media-url";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import { confirmDialog } from "@/components/confirm-dialog";
-import { addShowcaseProducts, createProjectFromProduct, removeShowcaseProducts, setShowcaseAutoSync, syncShowcase } from "./actions";
+import { addShowcaseProducts, createProjectFromProduct, removeShowcaseProducts, syncShowcase } from "./actions";
 import { ProductDetailDialog } from "./product-detail";
 
 type Product = {
@@ -25,6 +25,8 @@ type Product = {
   cover: string | null;
   labels: string[];
   hasDetail: boolean;
+  posted: number; // videos with this product link already live on this account (Jadwal)
+  scheduled: number; // uploaded, TikTok publishes them later
 };
 type Concept = { id: string; title: string; bestFor: string };
 
@@ -141,7 +143,12 @@ export function ShowcaseGrid({ accountId, products, concepts, neverSynced }: { a
               <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 pt-6 pb-1.5 text-left text-[11px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
                 {p.hasDetail ? "Lihat detail" : "Lihat detail lengkap"}
               </span>
-              {p.hasDetail && <span className="absolute right-2 bottom-2 rounded bg-black/70 px-1.5 py-px text-[10px] text-white group-hover:opacity-0" title="Detail lengkap tersimpan, dipakai AI">Detail ✓</span>}
+              {(p.posted > 0 || p.scheduled > 0) && (
+                <span className="absolute right-2 bottom-2 flex flex-col items-end gap-1 group-hover:opacity-0">
+                  {p.posted > 0 && <span className="rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-semibold text-[#4ade80] backdrop-blur" title="Video dengan produk ini yang sudah tayang di akun ini">▶ {p.posted} video terposting</span>}
+                  {p.scheduled > 0 && <span className="rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-semibold text-[#4ade80] backdrop-blur" title="Sudah diunggah, tayang sesuai jadwal di TikTok">🕒 {p.scheduled} terjadwal</span>}
+                </span>
+              )}
             </button>
             <div className="flex flex-1 flex-col gap-1 p-2.5">
               <button type="button" onClick={() => setViewing(p)} className="line-clamp-2 text-left text-xs leading-snug font-medium hover:underline" title={p.title}>{p.title}</button>
@@ -355,33 +362,49 @@ export function AddProductsButton({ accountId }: { accountId: number }) {
   );
 }
 
-const SYNC_LABEL: Record<number, string> = { 0: "Mati", 15: "Tiap 15 menit", 30: "Tiap 30 menit", 60: "Tiap 1 jam", 180: "Tiap 3 jam", 360: "Tiap 6 jam" };
+const STALE_MS = 3 * 60_000; // older than this: re-read the showcase as soon as the page is looked at
+const LOOK_EVERY_MS = 5 * 60_000; // while the page stays open
+const syncFmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
 
-/** Auto-sync interval picker (applies to every TikTok account). */
-export function AutoSyncSelect({ value, choices }: { value: number; choices: number[] }) {
+/**
+ * Keeps the showcase live without a setting: when the page opens, when the window comes back into view and every
+ * few minutes while it is open, the showcase is re-read from TikTok Shop if the last sync is older than 3 minutes.
+ * Adding/removing products and opening a product refresh it right away too (actions.ts, product-detail.tsx).
+ */
+export function LiveSync({ accountId, lastSync, count }: { accountId: number; lastSync: number | null; count: number }) {
   const router = useRouter();
-  const [pending, start] = useTransition();
+  const [syncing, setSyncing] = useState(false);
+  const busy = useRef(false);
+  const last = useRef(lastSync);
+  useEffect(() => {
+    last.current = lastSync;
+  }, [lastSync]);
+  useEffect(() => {
+    const look = () => {
+      if (busy.current || document.visibilityState !== "visible") return;
+      if (last.current && Date.now() - last.current < STALE_MS) return;
+      busy.current = true;
+      setSyncing(true);
+      syncShowcase(accountId)
+        .then(() => router.refresh())
+        .catch(() => {}) // profile busy or TikTok slow: the next look retries
+        .finally(() => {
+          busy.current = false;
+          setSyncing(false);
+        });
+    };
+    look();
+    const id = setInterval(look, LOOK_EVERY_MS);
+    document.addEventListener("visibilitychange", look);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", look);
+    };
+  }, [accountId, router]);
   return (
-    <label className="flex h-8 items-center gap-1.5 rounded-lg border bg-card px-2.5 text-xs text-muted-foreground" title="Etalase semua akun TikTok disinkronkan otomatis di latar belakang selama aplikasi terbuka">
-      <RefreshCw className={`size-3.5 ${pending ? "animate-spin" : ""}`} /> Sinkron otomatis
-      <select
-        value={value}
-        disabled={pending}
-        onChange={(e) =>
-          start(async () => {
-            try {
-              await setShowcaseAutoSync(Number(e.target.value));
-              toast.success(Number(e.target.value) ? `Sinkron otomatis ${SYNC_LABEL[Number(e.target.value)].toLowerCase()}` : "Sinkron otomatis dimatikan");
-              router.refresh();
-            } catch (err) {
-              toast.error(err instanceof Error ? err.message : "Gagal");
-            }
-          })
-        }
-        className="bg-transparent font-medium text-foreground outline-none"
-      >
-        {choices.map((m) => <option key={m} value={m}>{SYNC_LABEL[m] ?? `${m} menit`}</option>)}
-      </select>
-    </label>
+    <span className="flex items-center gap-1.5 text-xs text-muted-foreground" title="Etalase disinkronkan otomatis saat halaman dibuka, saat produk ditambah/dihapus, dan saat produk diklik">
+      <RefreshCw className={`size-3.5 ${syncing ? "animate-spin text-brand-light" : ""}`} />
+      {count} produk di etalase · {syncing ? "menyinkronkan..." : lastSync ? `sinkron otomatis ${syncFmt.format(lastSync)}` : "sinkron otomatis"}
+    </span>
   );
 }

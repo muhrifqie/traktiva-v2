@@ -22,9 +22,8 @@ type VoiceSettings = {
 export type MyConcept = { id: string; name: string; idea: string; scenes: number; background: string; audio: "on" | "off"; createdAt: number };
 /** ChatGPT web account (its own Chrome profile) used as the writer; null = Gemini writes. */
 export type ChatgptSettings = { profileKey: string; email: string | null; connectedAt: number };
-type Settings = { showcaseSyncMinutes: number /* 0 = off */; activeAccountId?: number | null /* social account shown in the sidebar */; myConcepts?: MyConcept[]; voice: VoiceSettings; editTemplates?: EditTemplate[]; chatgpt?: ChatgptSettings | null; writing?: WritingRules };
-const DEFAULTS: Settings = { showcaseSyncMinutes: 60, voice: { provider: "flow" } };
-export const SYNC_CHOICES = [0, 15, 30, 60, 180, 360] as const;
+type Settings = { activeAccountId?: number | null /* social account shown in the sidebar */; myConcepts?: MyConcept[]; voice: VoiceSettings; editTemplates?: EditTemplate[]; chatgpt?: ChatgptSettings | null; writing?: WritingRules };
+const DEFAULTS: Settings = { voice: { provider: "flow" } };
 const FILE = path.join(/* turbopackIgnore: true */ DATA_DIR, "settings.json");
 
 const g = globalThis as unknown as { __settings?: Settings; __settingsMtime?: number; __activeGoogle?: number };

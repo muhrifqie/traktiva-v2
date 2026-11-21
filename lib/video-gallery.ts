@@ -90,8 +90,10 @@ export async function listVideoGallery(): Promise<GalleryVideo[]> {
     if (!st) continue;
     // its uploads: same project + same label (the newest decides the status)
     const mine = meta?.projectId ? jobs.filter((j) => j.projectId === meta.projectId && (j.label ?? "Video utama") === meta.label && j.status !== "cancelled") : [];
-    const posted = mine.find((j) => j.status === "done");
-    const queued = mine.find((j) => j.status === "queued" || j.status === "uploading");
+    // done + postedAt ahead = uploaded with TikTok's own schedule: still "terjadwal" until that time passes
+    const live = (j: (typeof mine)[number]) => j.status === "done" && !!j.postedAt && j.postedAt.getTime() <= Date.now();
+    const posted = mine.find(live);
+    const queued = mine.find((j) => j.status === "queued" || j.status === "uploading" || (j.status === "done" && !live(j)));
     out.push({
       rel: `${VIDEO_GALLERY}/${f}`,
       projectId: meta?.projectId ?? null,

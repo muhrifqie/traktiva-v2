@@ -263,6 +263,8 @@ export const uploadJobs = sqliteTable("upload_jobs", {
   productId: text("product_id"), // TikTok Shop product to link (keranjang); null = no product link
   productTitle: text("product_title"),
   hook: text("hook"), // opening line of the video (for the performance stats)
+  music: integer("music", { mode: "boolean" }).notNull().default(false), // add a random trending "JJ" sound in TikTok's editor
+  musicVolume: integer("music_volume").notNull().default(0), // dB of that sound in TikTok's editor (-60…20)
   scheduledAt: integer("scheduled_at", { mode: "timestamp" }).notNull(),
   status: text("status", { enum: ["queued", "uploading", "done", "failed", "cancelled"] }).notNull().default("queued"),
   progress: text("progress"),
