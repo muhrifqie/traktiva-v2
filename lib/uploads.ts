@@ -15,7 +15,11 @@ export const MIN_GAP_MIN = 20; // minutes between two posts of the same account 
 export const SCHEDULE_LEAD_MIN = 20;
 /** When to let TikTok publish a job: its time if far enough ahead, else null (= post now). */
 const scheduleFor = (scheduledAt: Date) => (scheduledAt.getTime() - Date.now() >= SCHEDULE_LEAD_MIN * 60_000 ? scheduledAt.getTime() : null);
-const g = globalThis as unknown as { __uploadTimer?: ReturnType<typeof setInterval>; __uploadBusy?: boolean };
+/** TikTok Studio only schedules ~10 days ahead: a job further out waits in the queue until it is within this range. */
+export const SCHEDULE_MAX_DAYS = 9;
+/** Pause between two uploads (any account): a burst of uploads from one PC looks automated and raises the limit risk. */
+const UPLOAD_SPACING_MS = 3 * 60_000;
+const g = globalThis as unknown as { __uploadTimer?: ReturnType<typeof setInterval>; __uploadBusy?: boolean; __uploadEndedAt?: number };
 
 async function setJob(id: number, patch: Partial<typeof uploadJobs.$inferInsert>) {
   await db.update(uploadJobs).set(patch).where(eq(uploadJobs.id, id));
@@ -25,15 +29,18 @@ async function setJob(id: number, patch: Partial<typeof uploadJobs.$inferInsert>
 export const isUploadBusy = () => !!g.__uploadBusy;
 
 /**
- * Upload every waiting job, oldest time first. Safe to call any time (no-op while another upload runs).
- * Jobs scheduled ahead go to TikTok now with TikTok's own schedule; jobs due now keep the per-account gap.
+ * Upload the next waiting job, oldest time first: one per tick, at least UPLOAD_SPACING_MS after the previous upload.
+ * Safe to call any time (no-op while another upload runs). Jobs scheduled ahead (up to SCHEDULE_MAX_DAYS) go to TikTok
+ * with TikTok's own schedule; jobs due now keep the per-account gap; jobs further out wait.
  */
 export async function tickUploads() {
   if (g.__uploadBusy) return;
   g.__uploadBusy = true;
   try {
+    if (Date.now() - (g.__uploadEndedAt ?? 0) < UPLOAD_SPACING_MS) return;
     const waiting = await db.select().from(uploadJobs).where(eq(uploadJobs.status, "queued")).orderBy(asc(uploadJobs.scheduledAt)).limit(10);
     for (const job of waiting) {
+      if (job.scheduledAt.getTime() - Date.now() > SCHEDULE_MAX_DAYS * 86_400_000) continue; // too far for TikTok's schedule yet
       const acc = await db.select().from(accounts).where(eq(accounts.id, job.accountId)).get();
       if (!acc?.sessionKey || acc.status !== "active") {
         await setJob(job.id, { status: "failed", error: "Akun TikTok tidak aktif atau perlu login ulang (Akun Sosial)." });
@@ -49,7 +56,12 @@ export async function tickUploads() {
           .get();
         if (last?.postedAt && Date.now() - last.postedAt.getTime() < MIN_GAP_MIN * 60_000) continue;
       }
+      // re-read right before uploading: it may have been cancelled or deleted since the list was taken
+      const fresh = await db.select({ status: uploadJobs.status }).from(uploadJobs).where(eq(uploadJobs.id, job.id)).get();
+      if (fresh?.status !== "queued") continue;
       await runJob(job.id, acc.sessionKey);
+      g.__uploadEndedAt = Date.now();
+      break; // the next one waits UPLOAD_SPACING_MS (later tick)
     }
   } finally {
     g.__uploadBusy = false;
@@ -62,7 +74,8 @@ export function kickUploads() {
 }
 
 async function runJob(id: number, sessionKey: string, dryRun = false, postNow = false) {
-  const job = (await db.select().from(uploadJobs).where(eq(uploadJobs.id, id)).get())!;
+  const job = await db.select().from(uploadJobs).where(eq(uploadJobs.id, id)).get();
+  if (!job) return; // deleted meanwhile
   await setJob(id, { status: "uploading", progress: "Menyiapkan...", error: null, attempts: job.attempts + 1 });
   let last = 0;
   const onProgress = (stage: string) => {
@@ -100,6 +113,7 @@ export async function runJobNow(id: number, dryRun = false) {
   try {
     await runJob(id, acc.sessionKey, dryRun, !dryRun);
   } finally {
+    if (!dryRun) g.__uploadEndedAt = Date.now();
     g.__uploadBusy = false;
   }
 }

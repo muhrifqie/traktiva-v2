@@ -121,7 +121,7 @@ function volumeTrack(v: number) {
   return `linear-gradient(to right, var(--track) ${a}%, var(--primary) ${a}%, var(--primary) ${b}%, var(--track) ${b}%)`;
 }
 const LEAD_MIN = 20; // = SCHEDULE_LEAD_MIN in lib/uploads.ts: closer than this posts right away
-const MAX_AHEAD_DAYS = 10; // TikTok Studio's schedule limit
+const MAX_AHEAD_DAYS = 9; // = SCHEDULE_MAX_DAYS in lib/uploads.ts (TikTok Studio schedules ~10 days ahead)
 const SCHEDULED = { label: "Terjadwal di TikTok", cls: "bg-status-ok/12 text-status-ok" };
 const STATUS: Record<Job["status"], { label: string; cls: string }> = {
   queued: { label: "Antre", cls: "bg-[#5e6ad2]/12 text-[#7b86f0]" },
@@ -155,7 +155,7 @@ export function JadwalBoard({
   const [productId, setProductId] = useState("");
   const [productTitle, setProductTitle] = useState("");
   const [music, setMusic] = useState(false);
-  const [musicVolume, setMusicVolume] = useState(0);
+  const [musicVolume, setMusicVolume] = useState(-20); // under the voice-over; 0 dB = as loud as the video's own audio
   const [volDraft, setVolDraft] = useState<string | null>(null); // what is being typed in the dB box ("-", "-1" …)
   const [titleIdea, setTitleIdea] = useState(0); // which curiousTitles() idea is shown
   const [at, setAt] = useState("");
@@ -244,7 +244,7 @@ export function JadwalBoard({
     ...(!caption.trim() ? [{ text: "Caption masih kosong." }] : !/#\S/.test(caption) ? [{ text: "Belum ada hashtag; 3–5 hashtag produk membantu video ditemukan." }] : []),
     ...(!productId && etalase.some((e) => e.accountId === accountId && usable(e)) ? [{ text: "Tanpa produk keranjang: penonton tidak bisa langsung beli dari video ini." }] : []),
     ...(Number.isFinite(startMs) && startMs < now + LEAD_MIN * 60_000 ? [{ text: `Kurang dari ${LEAD_MIN} menit lagi: video langsung diposting sekarang (TikTok butuh jeda untuk menjadwalkan).` }] : []),
-    ...(Number.isFinite(startMs) && startMs + (picked.length - 1) * gap * 60_000 > now + MAX_AHEAD_DAYS * 86_400_000 ? [{ text: `TikTok hanya bisa menjadwalkan maksimal ±${MAX_AHEAD_DAYS} hari ke depan. Pilih tanggal yang lebih dekat.` }] : []),
+    ...(Number.isFinite(startMs) && startMs + (picked.length - 1) * gap * 60_000 > now + MAX_AHEAD_DAYS * 86_400_000 ? [{ text: `TikTok hanya menerima jadwal ±${MAX_AHEAD_DAYS} hari ke depan: video yang lebih jauh menunggu di antrean dan diunggah otomatis begitu masuk jangkauan (app harus terbuka saat itu).` }] : []),
     ...(sameDay + picked.length > maxPerDay ? [{ text: `Hari itu akun ini sudah punya ${sameDay} posting; lebih dari ${maxPerDay} sehari terlihat seperti spam.` }] : []),
     ...(clash ? [{ text: `Sudah ada jadwal “${clash.title || clash.productTitle || clash.label || "Video"}” di akun ini jam ${when.format(clash.scheduledAt)} (lihat daftar di bawah); beri jarak minimal ${minGap} menit.`, fix: tip?.slots[0] ? { label: "Pakai slot kosong", run: () => setAt(toLocal(new Date(tip.slots[0]))) } : undefined }] : []),
   ];
