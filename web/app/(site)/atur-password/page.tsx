@@ -19,7 +19,7 @@ export default async function SetPassword({ searchParams }: { searchParams: Prom
     }
   }
   return (
-    <AuthShell eyebrow="Atur password" title="Buat password untuk akunmu." points={["Link ini hanya bisa dipakai sekali", "Berlaku 30 menit sejak dibuat", "Setelah itu kamu langsung masuk"]}>
+    <AuthShell card="Atur password" eyebrow="Atur password" title="Buat password untuk akunmu." points={["Link ini hanya bisa dipakai sekali", "Berlaku 30 menit sejak dibuat", "Setelah itu kamu langsung masuk"]}>
       {email ? (
         <SetPasswordForm token={token} email={email} />
       ) : (

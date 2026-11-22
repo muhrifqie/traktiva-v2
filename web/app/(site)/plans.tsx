@@ -2,10 +2,11 @@ import Link from "next/link";
 import { Check } from "lucide-react";
 import { rupiah } from "@/lib/format";
 import { waLink, type Plan, type PublicInfo } from "@/lib/license-api";
+import { appUrl } from "@/lib/app-url";
 
 /** Where a plan's buy button goes: online checkout (QRIS) when sold online, else the seller's WhatsApp. */
 export function buyHref(info: PublicInfo | null, p: Plan) {
-  if (info?.buyOnline && p.price >= 1000) return `/beli?plan=${p.id}`;
+  if (info?.buyOnline && p.price >= 1000) return appUrl(`/beli?plan=${p.id}`);
   return waLink(info?.site, `Halo, saya mau beli lisensi Traktiva paket ${p.label}.`);
 }
 
@@ -27,7 +28,7 @@ export function PlanCard({ p, href, featured }: { p: Plan; href: string | null; 
       <p className="mt-6 text-3xl font-semibold tabular-nums">{p.price ? rupiah(p.price) : "Hubungi kami"}</p>
       <p className={`mt-1 h-5 text-sm ${featured ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{monthly ? `≈ ${rupiah(monthly)} / bulan` : ""}</p>
       {href ? (
-        href.startsWith("/") ? (
+        !/^https?:\/\/(wa\.me|api\.whatsapp)/.test(href) ? (
           <Link href={href} className={`mt-6 inline-flex h-12 items-center justify-center rounded-lg font-semibold ${featured ? "bg-primary-foreground text-primary hover:opacity-90" : "bg-foreground text-background hover:opacity-90"}`}>Beli {p.label}</Link>
         ) : (
           <a href={href} target="_blank" rel="noreferrer" className={`mt-6 inline-flex h-12 items-center justify-center rounded-lg font-semibold ${featured ? "bg-primary-foreground text-primary hover:opacity-90" : "bg-foreground text-background hover:opacity-90"}`}>Beli {p.label}</a>

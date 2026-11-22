@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Check, Download, KeyRound, UserPlus, Wallet } from "lucide-react";
+import { appUrl } from "@/lib/app-url";
 import { NEEDS, STEPS } from "../content";
 import { CtaBand, PageHero, Section, WRAP } from "../_ui";
 
@@ -59,7 +60,7 @@ export default function HowItWorks() {
           </div>
         </div>
         <div className="mt-8 flex flex-wrap gap-3">
-          <Link href="/daftar" className="site-pill">Daftar gratis <ArrowRight className="size-4" /></Link>
+          <Link href={appUrl("/daftar")} className="site-pill">Daftar gratis <ArrowRight className="size-4" /></Link>
           <Link href="/fitur" className="site-pill-outline">Lihat semua fitur</Link>
         </div>
       </Section>

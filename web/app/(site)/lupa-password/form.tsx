@@ -6,7 +6,7 @@ import { Loader2, MailCheck } from "lucide-react";
 import { Turnstile } from "@/components/turnstile";
 import { forgotPassword } from "../actions";
 
-const field = "h-12 rounded-2xl border border-white/15 bg-black/30 px-4 text-[16px] outline-none placeholder:text-white/25 focus:border-[var(--site-signal)]";
+import { field } from "../masuk/shell";
 
 /** Email → 6-digit code by email → new password. The email is kept across both steps. */
 export function ForgotForm({ turnstile }: { turnstile: string }) {
@@ -32,17 +32,17 @@ export function ForgotForm({ turnstile }: { turnstile: string }) {
   if (!codeStep)
     return (
       <form action={action} className="grid gap-4">
-        <p className="text-[15px] text-[var(--site-body)]">Masukkan email akunmu. Kami kirim kode 6 angka untuk membuat password baru.</p>
-        <label className="grid gap-2 text-[15px] font-medium">
+        <p className="text-sm text-muted-foreground">Masukkan email akunmu. Kami kirim kode 6 angka untuk membuat password baru.</p>
+        <label className="grid gap-1.5 text-sm font-medium">
           Email
           <input name="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" maxLength={254} placeholder="kamu@email.com" className={field} />
         </label>
         <Turnstile siteKey={turnstile} resetKey={state} />
-        {state && !state.ok && <p className="text-[14px] text-red-300" role="alert">{state.message}</p>}
+        {state && !state.ok && <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-sm text-red-600 dark:text-red-300" role="alert">{state.message}</p>}
         <button type="submit" disabled={pending} className="site-pill w-full disabled:opacity-60">
           {pending && <Loader2 className="size-4 animate-spin" />} Kirim kode
         </button>
-        <Link href="/masuk" className="text-[14px] text-[var(--site-muted)] underline hover:text-white">Kembali ke halaman masuk</Link>
+        <Link href="/masuk" className="text-sm text-muted-foreground underline hover:text-foreground">Kembali ke halaman masuk</Link>
       </form>
     );
 
@@ -54,19 +54,19 @@ export function ForgotForm({ turnstile }: { turnstile: string }) {
         <MailCheck className="mt-0.5 size-4 shrink-0 text-[var(--site-signal)]" />
         <span>{state?.ok ? state.message : "Masukkan kode dari email."} <b className="font-medium text-white">{email}</b></span>
       </p>
-      <label className="grid gap-2 text-[15px] font-medium">
+      <label className="grid gap-1.5 text-sm font-medium">
         Kode 6 angka
         <input name="otp" required autoFocus inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} placeholder="123456" className={`${field} h-14 text-center font-mono text-[24px] tracking-[0.4em]`} />
       </label>
-      <label className="grid gap-2 text-[15px] font-medium">
+      <label className="grid gap-1.5 text-sm font-medium">
         Password baru
         <input name="password" type="password" required minLength={8} maxLength={200} autoComplete="new-password" placeholder="Minimal 8 karakter" className={field} />
       </label>
-      <label className="grid gap-2 text-[15px] font-medium">
+      <label className="grid gap-1.5 text-sm font-medium">
         Ulangi password baru
         <input name="again" type="password" required minLength={8} maxLength={200} autoComplete="new-password" className={field} />
       </label>
-      {state && !state.ok && <p className="text-[14px] text-red-300" role="alert">{state.message}</p>}
+      {state && !state.ok && <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-sm text-red-600 dark:text-red-300" role="alert">{state.message}</p>}
       <button type="submit" disabled={pending} className="site-pill w-full disabled:opacity-60">
         {pending && <Loader2 className="size-4 animate-spin" />} Simpan password & masuk
       </button>

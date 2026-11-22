@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import { appUrl } from "@/lib/app-url";
 
 const wrap = "mx-auto max-w-6xl px-5 md:px-8";
 
@@ -65,7 +66,7 @@ export function CtaBand({ title = "Produk sudah ada. Tinggal videonya.", sub = "
         </div>
         <div className="flex flex-wrap gap-2.5">
           <Link href="/harga" className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#fff] px-5 text-sm font-semibold text-[#106e3a] hover:opacity-90">Lihat paket <ArrowRight className="size-4" /></Link>
-          <Link href="/daftar" className="inline-flex h-11 items-center rounded-lg border border-[#fff]/40 px-5 text-sm font-semibold hover:border-[#fff]">Daftar gratis</Link>
+          <Link href={appUrl("/daftar")} className="inline-flex h-11 items-center rounded-lg border border-[#fff]/40 px-5 text-sm font-semibold hover:border-[#fff]">Daftar gratis</Link>
         </div>
       </div>
     </section>

@@ -2,11 +2,14 @@
 
 import { useActionState, useState } from "react";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Turnstile } from "@/components/turnstile";
 import { login, register, setPasswordFromLink } from "../actions";
 
-const field = "h-12 rounded-2xl border border-white/15 bg-black/30 px-4 text-[16px] outline-none placeholder:text-white/25 focus:border-[var(--site-signal)]";
+import { field } from "./shell";
+
+const label = "grid gap-1.5 text-sm font-medium";
+const errorBox = "rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-sm text-red-600 dark:text-red-300";
 
 /** Google mark (official colors) for the sign-in button. */
 function GoogleG() {
@@ -23,9 +26,22 @@ function GoogleG() {
 export function GoogleButton({ next, label }: { next: string; label: string }) {
   return (
     // a plain link: the OAuth start is a top-level navigation to /api/auth/google (sets state, redirects to Google)
-    <a href={`/api/auth/google?next=${encodeURIComponent(next)}`} className="flex h-12 w-full items-center justify-center gap-3 rounded-lg border border-white/20 bg-white text-[16px] font-semibold text-black hover:opacity-90">
+    <a href={`/api/auth/google?next=${encodeURIComponent(next)}`} className="flex h-11 w-full items-center justify-center gap-3 rounded-lg border bg-background text-[15px] font-semibold hover:border-foreground/40">
       <GoogleG /> {label}
     </a>
+  );
+}
+
+/** Password input with a show/hide toggle. */
+function PasswordInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <input {...props} type={show ? "text" : "password"} className={`${field} pr-11`} />
+      <button type="button" onClick={() => setShow(!show)} aria-label={show ? "Sembunyikan password" : "Tampilkan password"} className="absolute inset-y-0 right-0 grid w-11 place-items-center text-muted-foreground hover:text-foreground">
+        {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+      </button>
+    </div>
   );
 }
 
@@ -33,49 +49,52 @@ export function AuthForm({ mode, next, google, turnstile }: { mode: "login" | "r
   const [state, action, pending] = useActionState(mode === "login" ? login : register, null);
   const [email, setEmail] = useState(""); // controlled: kept after a failed attempt
   const [name, setName] = useState("");
+  const login_ = mode === "login";
   return (
     <div className="grid gap-5">
       {google && (
         <>
-          <GoogleButton next={next} label={mode === "login" ? "Masuk dengan Google" : "Daftar dengan Google"} />
-          <div className="flex items-center gap-3 text-[13px] text-[var(--site-muted)]">
-            <span className="h-px flex-1 bg-white/10" /> atau pakai email <span className="h-px flex-1 bg-white/10" />
+          <GoogleButton next={next} label={login_ ? "Masuk dengan Google" : "Daftar dengan Google"} />
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="h-px flex-1 bg-border" /> atau pakai email <span className="h-px flex-1 bg-border" />
           </div>
         </>
       )}
       <form action={action} className="grid gap-4">
         <input type="hidden" name="next" value={next} />
-        {mode === "register" && (
-          <label className="grid gap-2 text-[15px] font-medium">
+        {!login_ && (
+          <label className={label}>
             Nama
             <input name="name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" maxLength={80} placeholder="Nama kamu" className={field} />
           </label>
         )}
-        <label className="grid gap-2 text-[15px] font-medium">
+        <label className={label}>
           Email
-          <input name="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" maxLength={254} placeholder="kamu@email.com" className={field} />
+          <input name="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus={!google} autoComplete="email" maxLength={254} placeholder="kamu@email.com" className={field} />
         </label>
-        <label className="grid gap-2 text-[15px] font-medium">
-          Password
-          <input name="password" type="password" required minLength={mode === "register" ? 8 : 1} maxLength={200} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder={mode === "register" ? "Minimal 8 karakter" : ""} className={field} />
-        </label>
-        {mode === "login" && <Link href="/lupa-password" className="-mt-2 justify-self-end text-[14px] text-[var(--site-body)] underline hover:text-white">Lupa password?</Link>}
+        <div className={label}>
+          <span className="flex items-center justify-between">
+            <label htmlFor="password">Password</label>
+            {login_ && <Link href="/lupa-password" className="text-xs font-normal text-muted-foreground hover:text-foreground hover:underline">Lupa password?</Link>}
+          </span>
+          <PasswordInput id="password" name="password" required minLength={login_ ? 1 : 8} maxLength={200} autoComplete={login_ ? "current-password" : "new-password"} placeholder={login_ ? "" : "Minimal 8 karakter"} />
+        </div>
         <Turnstile siteKey={turnstile} resetKey={state} />
-        {mode === "register" && (
-          <p className="text-[13px] text-[var(--site-muted)]">
-            Dengan membuat akun, kamu setuju dengan <Link href="/ketentuan" className="underline hover:text-white">Ketentuan Layanan</Link> dan <Link href="/privasi" className="underline hover:text-white">Kebijakan Privasi</Link>.
+        {state && !state.ok && <p className={errorBox} role="alert">{state.message}</p>}
+        <button type="submit" disabled={pending} className="site-pill w-full disabled:opacity-60">
+          {pending && <Loader2 className="size-4 animate-spin" />} {login_ ? "Masuk" : "Buat akun gratis"}
+        </button>
+        {!login_ && (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Dengan membuat akun, kamu setuju dengan <Link href="/ketentuan" className="underline hover:text-foreground">Ketentuan Layanan</Link> dan <Link href="/privasi" className="underline hover:text-foreground">Kebijakan Privasi</Link>.
           </p>
         )}
-        {state && !state.ok && <p className="text-[14px] text-red-300" role="alert">{state.message}</p>}
-        <button type="submit" disabled={pending} className="site-pill w-full disabled:opacity-60">
-          {pending && <Loader2 className="size-4 animate-spin" />} {mode === "login" ? "Masuk" : "Buat akun"}
-        </button>
       </form>
-      <p className="text-[14px] text-[var(--site-muted)]">
-        {mode === "login" ? (
-          <>Belum punya akun? <Link href={`/daftar?next=${encodeURIComponent(next)}`} className="text-[var(--site-body)] underline hover:text-white">Daftar gratis</Link></>
+      <p className="border-t pt-5 text-center text-sm text-muted-foreground">
+        {login_ ? (
+          <>Belum punya akun? <Link href={`/daftar?next=${encodeURIComponent(next)}`} className="font-semibold text-foreground hover:underline">Daftar gratis</Link></>
         ) : (
-          <>Sudah punya akun? <Link href={`/masuk?next=${encodeURIComponent(next)}`} className="text-[var(--site-body)] underline hover:text-white">Masuk</Link></>
+          <>Sudah punya akun? <Link href={`/masuk?next=${encodeURIComponent(next)}`} className="font-semibold text-foreground hover:underline">Masuk</Link></>
         )}
       </p>
     </div>
@@ -88,17 +107,17 @@ export function SetPasswordForm({ token, email }: { token: string; email: string
   return (
     <form action={action} className="grid gap-4">
       <input type="hidden" name="token" value={token} />
-      <p className="text-[15px] text-[var(--site-body)]">Akun: <b className="font-medium text-white">{email}</b></p>
-      <label className="grid gap-2 text-[15px] font-medium">
+      <p className="text-sm text-muted-foreground">Akun: <b className="font-medium text-foreground">{email}</b></p>
+      <label className={label}>
         Password baru
         <input name="password" type="password" required minLength={10} maxLength={200} autoComplete="new-password" placeholder="Minimal 10 karakter" className={field} />
       </label>
-      <label className="grid gap-2 text-[15px] font-medium">
+      <label className={label}>
         Ulangi password
         <input name="again" type="password" required minLength={10} maxLength={200} autoComplete="new-password" className={field} />
       </label>
-      <p className="text-[13px] text-[var(--site-muted)]">Pakai kalimat panjang yang hanya kamu tahu, dan simpan di password manager.</p>
-      {state && !state.ok && <p className="text-[14px] text-red-300" role="alert">{state.message}</p>}
+      <p className="text-xs text-muted-foreground">Pakai kalimat panjang yang hanya kamu tahu, dan simpan di password manager.</p>
+      {state && !state.ok && <p className={errorBox} role="alert">{state.message}</p>}
       <button type="submit" disabled={pending} className="site-pill w-full disabled:opacity-60">
         {pending && <Loader2 className="size-4 animate-spin" />} Simpan password & masuk
       </button>

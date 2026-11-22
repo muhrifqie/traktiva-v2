@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { memberMe } from "@/lib/license-api";
-import { SiteNav, type NavUser, type Theme } from "./site-nav";
+import { SiteNav, type Hosts, type NavUser, type Theme } from "./site-nav";
+
+/** app. origin from SITE_URL, the marketing origin is the same without "app." (both "" in dev = relative links). */
+const APP = (process.env.SITE_URL || "").replace(/\/+$/, "");
+const HOSTS: Hosts = { app: APP, main: APP.replace("://app.", "://") };
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +18,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
   const theme: Theme = (await cookies()).get("trk_theme")?.value === "light" ? "light" : "dark";
   return (
     <div className="site creator min-h-screen">
-      <SiteNav user={nav} theme={theme} />
+      <SiteNav user={nav} theme={theme} hosts={HOSTS} />
       {children}
       <footer className="border-t bg-card">
         <div className="mx-auto grid max-w-6xl gap-10 px-5 py-16 md:grid-cols-[2fr_1fr_1fr_1fr] md:px-8">
@@ -27,9 +31,9 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
             <p className="max-w-sm text-muted-foreground">Studio video affiliate TikTok Shop di PC kamu. Dari etalase sampai jadwal upload.</p>
           </div>
           {[
-            ["Produk", [["/fitur", "Fitur"], ["/platform", "Platform"], ["/cara-kerja", "Cara kerja"], ["/harga", "Harga"], ["/faq", "FAQ"]]],
-            ["Pembeli", [["/masuk", "Masuk"], ["/daftar", "Daftar akun"], ["/lisensi", "Lisensi & key"], ["/bantuan", "Panduan & download"]]],
-            ["Traktiva", [["/kontak", "Kontak"], ["/privasi", "Kebijakan Privasi"], ["/ketentuan", "Ketentuan Layanan"]]],
+            ["Produk", [[HOSTS.main + "/fitur", "Fitur"], [HOSTS.main + "/platform", "Platform"], [HOSTS.main + "/cara-kerja", "Cara kerja"], [HOSTS.main + "/harga", "Harga"], [HOSTS.main + "/faq", "FAQ"]]],
+            ["Pembeli", [[HOSTS.app + "/masuk", "Masuk"], [HOSTS.app + "/daftar", "Daftar akun"], [HOSTS.app + "/lisensi", "Lisensi & key"], [HOSTS.app + "/bantuan", "Panduan & download"]]],
+            ["Traktiva", [[HOSTS.main + "/kontak", "Kontak"], [HOSTS.main + "/privasi", "Kebijakan Privasi"], [HOSTS.main + "/ketentuan", "Ketentuan Layanan"]]],
           ].map(([title, links]) => (
             <div key={title as string} className="grid content-start gap-3">
               <p className="text-base font-semibold">{title as string}</p>

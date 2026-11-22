@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowRight, Check, KeyRound, QrCode, Smartphone, Wallet } from "lucide-react";
 import { rupiah } from "@/lib/format";
 import { publicInfo } from "@/lib/license-api";
+import { appUrl } from "@/lib/app-url";
 import { buyHref, featuredId, PlanCard } from "../plans";
 
 export const metadata: Metadata = {
@@ -135,7 +136,7 @@ export default async function Pricing() {
       <section className="px-5 pb-24 md:px-10">
         <div className="reveal mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-6 rounded-xl bg-leaf px-8 py-12 text-[#fff] md:px-14">
           <h2 className="max-w-2xl text-2xl leading-tight font-semibold md:text-3xl">Siap bikin video pertamamu?</h2>
-          <Link href="/daftar?next=/lisensi" className="inline-flex h-12 items-center gap-2 rounded-lg bg-[#fff] px-6 font-semibold text-[#106e3a] hover:opacity-90">Daftar gratis <ArrowRight className="size-4" /></Link>
+          <Link href={appUrl("/daftar?next=/lisensi")} className="inline-flex h-12 items-center gap-2 rounded-lg bg-[#fff] px-6 font-semibold text-[#106e3a] hover:opacity-90">Daftar gratis <ArrowRight className="size-4" /></Link>
         </div>
       </section>
     </main>
