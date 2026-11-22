@@ -198,8 +198,17 @@ async function runImages(id: number, only?: number) {
     facePath = await makeAiFace(id).catch(() => undefined); // without it the scenes still render, just less consistent
   }
   const face = facePath ? await mediaDataUrl(facePath).catch(() => null) : null;
-  const FACE_NOTE = face ? ` The ${castOf(p)} is exactly the person in the first reference image (same face, facial features and skin tone); the other reference images show the product.` : "";
-  const withFace = (r: string[]) => (face ? [face, ...r] : r).slice(0, 3);
+  // the owner's own background photo: the scene is set in exactly that place
+  const bg = p.options.bgImage ? await mediaDataUrl(p.options.bgImage).catch(() => null) : null;
+  // Flow takes 3 references: face, background, then the product photos (at least one); the notes say which is which
+  const lead = [face, bg].filter((x): x is string => !!x);
+  const notes = [
+    face && ` The ${castOf(p)} is exactly the person in reference image 1 (same face, facial features and skin tone).`,
+    bg && ` The setting is exactly the place in reference image ${face ? 2 : 1} (same room or surface, colours, objects and light); place the product${face ? " and the person" : ""} naturally into it.`,
+    lead.length && ` The remaining reference image${lead.length === 2 ? " shows" : "s show"} the product.`,
+  ].filter(Boolean).join("");
+  const FACE_NOTE = notes;
+  const withFace = (r: string[]) => [...lead, ...r].slice(0, 3);
   // "generate all" leaves the user's own images alone; an explicit re-roll replaces one
   const targets = only != null ? [only].filter((i) => p.scenes[i]) : p.scenes.map((s, i) => (s.own && s.image ? -1 : i)).filter((i) => i >= 0);
   if (!targets.length) return save(id, { status: "draft", progress: null });
@@ -208,8 +217,9 @@ async function runImages(id: number, only?: number) {
   const failed = await eachScene(store, targets, async (i, onStage) => {
     // product photos keep the product exact; a style frame (from a reference video) guides the shot
     const style = store.scenes[i].styleRef ? [await mediaDataUrl(store.scenes[i].styleRef!).catch(() => null)].filter(Boolean) as string[] : [];
-    const room = (face ? 2 : 3) - style.length; // 3 references in total
-    const sceneRefs = withFace([...refs.slice(0, room), ...style]);
+    const useStyle = lead.length < 2 ? style : []; // no room for a style frame next to face + background
+    const room = Math.max(1, 3 - lead.length - useStyle.length); // 3 references in total, at least 1 product photo
+    const sceneRefs = withFace([...refs.slice(0, room), ...useStyle]);
     const url = await withRetry(() => generateFlowImage(`${store.scenes[i].imagePrompt} ${IMAGE_GUARD}${FACE_NOTE}`, sceneRefs, onStage), onStage);
     onStage("Menyimpan gambar...", 97);
     // new name each time so the browser never shows a cached older take

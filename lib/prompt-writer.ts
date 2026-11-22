@@ -8,6 +8,7 @@ import { askGemini, extractJson, type GeminiImage } from "@/lib/platforms/gemini
 import { askWriter } from "@/lib/writer";
 import { writingRules } from "@/lib/settings";
 import { applyRules, rulesPrompt } from "@/lib/writing";
+import { splitScript, withVoiceLine } from "@/lib/voice";
 import { provenHooksPrompt } from "@/lib/insights";
 import { BACKDROPS, castOf, directionOf, EXPLAIN, isSilent, presetById } from "@/lib/presets";
 
@@ -87,12 +88,13 @@ ${p.product.look ? `- LOOK (read from the product photos; follow it exactly, it 
 VIDEO CONCEPT: ${preset?.title ?? p.presetId} — ${preset?.summary ?? ""}
 ${directionOf(p) ? `CONCEPT DIRECTION (follow it; where it differs from the generic rules below, this wins): ${directionOf(p)}\n` : ""}${castOf(p) && p.options.face ? `CHARACTER FACE: a face photo of the character is given to the image model as the FIRST reference image. Every imagePrompt must say the ${castOf(p)} is exactly the person in the face reference (same face, facial features and skin tone) and keep the face clearly visible; the other reference images are the product.\n` : ""}${p.options.concept ? `OWNER'S OWN CONCEPT "${p.options.conceptName ?? ""}" (written by the seller in Indonesian; it decides the story, shots and mood, follow it closely): ${p.options.concept}\n` : ""}Audience: Indonesian TikTok shoppers. Final video = all scenes joined in order.
 ${longBrief(p)}${p.scenes.length === 1 ? `ONE-CLIP VIDEO (${p.clipSec} s, this single clip IS the whole final video): the product is visible from frame 0; in ${p.clipSec} seconds show the hook, one strong benefit in use, and end on the spoken CTA. Max ${Math.round(p.clipSec * 2.5)} spoken words.` : ""}
+${!p.options.vo && p.options.voStyle ? `VOICE-OVER STYLE chosen by the owner: ${({ hard: "hard selling (direct, urgent, push to buy now)", soft: "soft selling (relaxed personal experience, gentle invitation)", story: "storytelling (short before/after story)", problem: "problem → solution", review: "honest review after using it", edu: "educational tips, the product as the example" } as Record<string, string>)[p.options.voStyle] ?? p.options.voStyle}.\n` : ""}${p.options.vo ? `OWNER'S VOICE-OVER SCRIPT (the seller wrote exactly what is said; use these words as the spoken lines, split across the scenes in order (scene 1 gets the first part, and so on, about the same number of words each) and each scene's motion matching its words; do not add, drop or reword anything, only write numbers as digits): "${p.options.vo.replace(/"/g, "'")}"` : ""}
 ${p.options.angle ? `STORY ANGLE of this version (other versions of this product use other angles, so this one must feel clearly different): ${p.options.angle}` : ""}
 ${p.options.refCaption ? `Caption of the best-selling reference video (match its vibe, never copy it word for word): "${p.options.refCaption}"` : ""}
 Scenes marked hasStyleReference have a frame from a best-selling video attached: the shot should borrow that frame's camera angle and framing (the SET below still decides the background).
 
 SET (tidy "aesthetic product background" like affiliate product shots on Pinterest/TikTok Shop; the SAME set in every scene so the joined video looks like one shoot):
-${setLine(p.options.background)}
+${p.options.bgImage ? "- The owner gave a PHOTO of the set; it is attached to the image model as a reference. Every imagePrompt says the scene takes place in exactly that setting (same place, surfaces, colours and light, described briefly); never invent another set." : setLine(p.options.background)}
 - The product is the hero: in the foreground, sharp, centered or on the rule of thirds, standing neatly on the surface; nothing overlaps it.
 - At most 1–3 soft props behind it, slightly out of focus, colors that match the product; no clutter, no other branded products, no price tags, no text.
 - Clean, styled, calm: soft natural or warm lamp light, gentle shadows, tidy edges; hands (if any) with neat nails and simple sleeves.
@@ -240,12 +242,17 @@ ${proven}`)).text);
     }));
   let out = clean(list);
   // Gemini sometimes answers too briefly: ask once more, insisting on the length
-  if (out.some((s) => words(s.motionPrompt) < 40 || words(s.imagePrompt) < 60)) {
+  if (out.some((s) => words(s.motionPrompt) < 25 || words(s.imagePrompt) < 40)) {
     const { text: retry } = await askWriter(g.sessionKey, `${brief(p, only)}
 
 Your previous answer was too short. Every imagePrompt must be at least 90 words and every motionPrompt at least 50 words. Output ONLY the JSON.`);
     const again = clean(extractJson<WrittenScene[]>(retry));
     if (again.length >= want) out = again;
+  }
+  // the owner's own script is spoken word for word: each scene gets its part (the writer only plans the shots around it)
+  if (p.options.vo?.trim() && !isSilent(p.presetId, p.options)) {
+    const parts = splitScript(applyRules(p.options.vo, writingRules()), p.scenes.length);
+    out = out.map((s, i) => (parts[only ?? i] ? { ...s, motionPrompt: withVoiceLine(s.motionPrompt, parts[only ?? i]) } : s));
   }
   return out;
 }

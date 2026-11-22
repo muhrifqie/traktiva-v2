@@ -68,9 +68,16 @@ export async function autoFinish(id: number, step: (stage: string) => Promise<un
 async function autoFinishJob(id: number, step: (stage: string) => Promise<unknown>, opts: { written?: boolean }) {
   let p = await load(id);
   if (!opts.written) {
+    // reading the photos is done once per product: the result (or a failed try) is saved, so a re-run or a version
+    // doesn't spend another Gemini round trip (~30-60 s) on it
+    if (!p.product.look && p.product.photos.length && p.options.lookTried !== p.product.photos.join("|").slice(0, 2000)) {
+      await step("AI membaca foto produk...");
+      const look = await describeProduct(p).catch(() => null);
+      p = { ...p, product: { ...p.product, look: look ?? p.product.look }, options: { ...p.options, lookTried: p.product.photos.join("|").slice(0, 2000) } }; // new photos = read again
+      await db.update(videoProjects).set({ product: p.product, options: p.options }).where(eq(videoProjects.id, id));
+      throwIfCancelled(id);
+    }
     await step("AI menulis naskah & prompt...");
-    const look = !p.product.look && p.product.photos.length ? await describeProduct(p).catch(() => null) : null;
-    if (look) p = { ...p, product: { ...p.product, look } };
     const written = await writeScenes(p).catch(() => []); // the template prompts still work if the writer fails
     const scenes = p.scenes.map((sc, k) => (written[k]?.imagePrompt ? { ...sc, label: written[k].label, imagePrompt: written[k].imagePrompt, motionPrompt: written[k].motionPrompt } : sc));
     throwIfCancelled(id);
