@@ -268,8 +268,11 @@ export async function upsertFlowSession(input: { tokenId?: number | null; st: st
  * off). flow2api picks any session it has for each generation, so a leftover one (another laptop's account) would
  * be used silently: its credits drop unseen and the same account runs on two laptops at once.
  * Sessions younger than 5 minutes are kept: a login that is still being saved has no account row yet.
+ * Only for the bundled sidecar (see the guard): an external flow2api is left alone.
  */
 export async function pruneOrphanFlowSessions() {
+  // only the app's own bundled flow2api: a source install (C:\BOT\flow2api) or FLOW2API_URL may serve other tools
+  if (runtime()?.mode !== "sidecar" || process.env.FLOW2API_URL) return [];
   const cfg = await requireFlow2Api();
   const owned = new Set((await db.select({ t: googleAccounts.flowTokenId }).from(googleAccounts)).map((a) => a.t).filter((t): t is number => t != null));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- flow2api JSON
