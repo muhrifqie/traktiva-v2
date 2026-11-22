@@ -113,3 +113,20 @@ export function Meter({ value, warn, label }: { value: number; warn?: boolean; l
     </div>
   );
 }
+
+/** Small ⓘ with an explanation: shows on hover and on keyboard focus / tap (so it works on phones too). */
+export function Hint({ children, side = "top" }: { children: React.ReactNode; side?: "top" | "bottom" }) {
+  return (
+    <span className="group/hint relative inline-flex align-middle">
+      <button type="button" aria-label="Penjelasan" className="grid size-4 place-items-center rounded-full text-muted-foreground hover:text-foreground focus-visible:text-foreground">
+        <Info className="size-3.5" />
+      </button>
+      <span
+        role="tooltip"
+        className={`pointer-events-none absolute left-1/2 z-50 w-64 -translate-x-1/2 rounded-lg border bg-popover px-3 py-2 text-left text-xs leading-relaxed font-normal text-popover-foreground opacity-0 shadow-lg transition-opacity group-focus-within/hint:opacity-100 group-hover/hint:opacity-100 ${side === "top" ? "bottom-6" : "top-6"}`}
+      >
+        {children}
+      </span>
+    </span>
+  );
+}

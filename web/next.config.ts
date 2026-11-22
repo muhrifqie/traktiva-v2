@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: "/akun/:page(lisensi|pesanan|aktivitas|bantuan|pengaturan)/:rest*", destination: "/:page/:rest*", permanent: true },
-      { source: "/akun/download", destination: "/aplikasi", permanent: true },
+      { source: "/akun/download", destination: "/bantuan", permanent: true },
     ];
   },
   async headers() {

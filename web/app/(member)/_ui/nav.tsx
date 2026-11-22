@@ -3,16 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, AppWindow, ChevronDown, KeyRound, LayoutDashboard, LayoutGrid, LifeBuoy, LogOut, Receipt, Settings } from "lucide-react";
+import { BookOpen, ChevronDown, LayoutDashboard, LayoutGrid, LogOut, Monitor, Receipt, Settings } from "lucide-react";
 import { logout } from "@/app/(site)/actions";
 
 export const NAV = [
   { href: "/akun", label: "Ringkasan", icon: LayoutGrid },
-  { href: "/lisensi", label: "Lisensi", icon: KeyRound },
-  { href: "/aplikasi", label: "Aplikasi", icon: AppWindow },
+  { href: "/lisensi", label: "PC & lisensi", icon: Monitor },
   { href: "/pesanan", label: "Pesanan", icon: Receipt },
-  { href: "/aktivitas", label: "Aktivitas", icon: Activity },
-  { href: "/bantuan", label: "Bantuan", icon: LifeBuoy },
+  { href: "/bantuan", label: "Panduan", icon: BookOpen },
   { href: "/pengaturan", label: "Pengaturan", icon: Settings },
 ] as const;
 
@@ -20,7 +18,7 @@ type Badges = Partial<Record<string, string | number>>;
 
 const useActive = () => {
   const path = usePathname();
-  return (href: string) => (href === "/akun" ? path === "/akun" : path.startsWith(href));
+  return (href: string) => (href === "/akun" ? path === "/akun" : href === "/pengaturan" ? path.startsWith(href) || path.startsWith("/aktivitas") : path.startsWith(href));
 };
 
 /**

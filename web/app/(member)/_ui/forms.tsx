@@ -83,20 +83,19 @@ export function ClaimForm() {
   );
 }
 
-/** Free this PC's slot (two-step confirm; the server enforces the 7-day cooldown). */
-/** Reset HWID of a license (all its PCs released), with a confirm modal; disabled while the daily allowance is used. */
+/** "Pindah PC" (server: reset HWID): every PC on the license is released, with a confirm modal; once a day per license. */
 export function ResetHwidButton({ licenseId, pcs, waitText }: { licenseId: number; pcs: number; waitText: string | null }) {
-  if (waitText) return <span className="text-xs font-medium text-muted-foreground">Reset HWID lagi dalam {waitText}</span>;
-  if (!pcs) return <span className="text-xs font-medium text-muted-foreground">Belum terkunci ke PC</span>;
+  if (waitText) return <span className="text-xs font-medium text-muted-foreground">Bisa pindah PC lagi dalam {waitText}</span>;
+  if (!pcs) return <span className="text-xs font-medium text-muted-foreground">Belum dipakai di PC</span>;
   return (
     <ConfirmButton
-      title="Reset HWID lisensi ini?"
-      description={`${pcs} PC yang memakai key ini dilepas dan app di sana langsung terkunci. Setelah itu tempel key di PC baru. Bisa 1× per hari per lisensi.`}
-      confirmLabel="Ya, reset HWID"
+      title="Pindahkan key ke PC baru?"
+      description={`${pcs} PC yang memakai key ini dilepas dan app di sana langsung terkunci. Setelah itu buka app di PC baru dan tempel key-nya. Bisa 1× per hari per lisensi.`}
+      confirmLabel="Ya, lepas semua PC"
       destructive
       onConfirm={() => resetHwid(licenseId)}
     >
-      <RotateCcw /> Reset HWID
+      <RotateCcw /> Pindah PC
     </ConfirmButton>
   );
 }
@@ -106,7 +105,7 @@ export function ReleaseDevice({ id, name, allowed }: { id: string; name: string;
   return (
     <ConfirmButton
       title={`Lepas ${name}?`}
-      description="App Traktiva di PC itu langsung terkunci dan slotnya kosong lagi, jadi key bisa diaktifkan di PC lain. Bisa 1× per hari per lisensi (sama dengan Reset HWID)."
+      description="App Traktiva di PC itu langsung terkunci dan slotnya kosong lagi, jadi key bisa diaktifkan di PC lain. Bisa 1× per hari per lisensi (dihitung sama dengan Pindah PC)."
       confirmLabel="Ya, lepas PC"
       destructive
       done={`${name} dilepas`}

@@ -28,7 +28,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
           </div>
           {[
             ["Produk", [["/#fitur", "Fitur"], ["/#cara-kerja", "Cara kerja"], ["/harga", "Harga"], ["/#faq", "FAQ"]]],
-            ["Pembeli", [["/masuk", "Masuk"], ["/daftar", "Daftar akun"], ["/lisensi", "Lisensi & key"], ["/aplikasi", "Download app"]]],
+            ["Pembeli", [["/masuk", "Masuk"], ["/daftar", "Daftar akun"], ["/lisensi", "PC & lisensi"], ["/bantuan", "Download app"]]],
             ["Akun", [["/lupa-password", "Lupa password"], ["/pengaturan", "Pengaturan"], ["/pesanan", "Pesanan"]]],
           ].map(([title, links]) => (
             <div key={title as string} className="grid content-start gap-3">

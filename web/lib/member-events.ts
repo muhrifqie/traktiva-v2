@@ -6,7 +6,7 @@ type Tone = "ok" | "warn" | "bad" | "";
 const LABEL: Record<string, [string, Tone]> = {
   activated: ["PC baru diaktifkan", "ok"],
   activate_failed: ["Aktivasi PC ditolak", "bad"],
-  device_reset: ["PC dilepas (reset HWID)", "warn"],
+  device_reset: ["PC dilepas (pindah PC)", "warn"],
   device_released: ["PC dilepas", ""],
   device_changed: ["Hardware PC berubah, ditolak", "bad"],
   license_extended: ["Lisensi diperpanjang", "ok"],

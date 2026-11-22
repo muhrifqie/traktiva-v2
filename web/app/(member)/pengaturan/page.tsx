@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { KeyRound, LaptopMinimal, LogIn, UserRound } from "lucide-react";
+import Link from "next/link";
+import { Activity, ChevronRight, KeyRound, LaptopMinimal, LogIn, UserRound } from "lucide-react";
 import { asMember, requireMember, type MemberSession } from "@/lib/license-api";
 import { PasswordForm, ProfileForm } from "@/app/(member)/_ui/forms";
 import { PageTitle, Panel } from "@/app/(member)/_ui/ui";
@@ -42,6 +43,14 @@ export default async function Settings() {
       <Panel id="sesi" title="Perangkat & sesi" icon={LaptopMinimal} desc="Browser yang sedang masuk ke akun ini. Ada yang tidak kamu kenal? Keluarkan, lalu ganti password.">
         <SessionList sessions={sessions} />
       </Panel>
+      <Link href="/aktivitas" className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3.5 hover:bg-muted/40">
+        <Activity className="size-4 text-brand-light" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold">Aktivitas akun</span>
+          <span className="block text-xs text-muted-foreground">Riwayat masuk, aktivasi PC, pembayaran, dan perubahan keamanan.</span>
+        </span>
+        <ChevronRight className="size-4 text-muted-foreground" />
+      </Link>
     </div>
   );
 }

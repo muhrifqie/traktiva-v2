@@ -107,7 +107,7 @@ export function LicenseDetail({ l, plans, site, now, buyOnline, events, orders }
           <p className="p-4 text-[0.8125rem] text-muted-foreground">Belum dipakai di PC mana pun. Buka app Traktiva di PC, lalu tempel key saat diminta.</p>
         )}
         <p className="border-t px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-          Ganti PC atau upgrade RAM/disk/motherboard? Lepas PC lama (atau Reset HWID semua PC), lalu aktifkan di PC baru. Bisa 1× per hari
+          Ganti PC atau upgrade RAM/disk/motherboard? Lepas PC lama (atau Pindah PC untuk melepas semuanya), lalu tempel key di PC baru. Bisa 1× per hari
           {resetWait ? <> · <span className="text-amber-600 dark:text-amber-300">bisa lagi dalam {resetWait}</span></> : null}
           {help && <> · <a href={help} target="_blank" rel="noreferrer" className="underline hover:text-foreground">butuh bantuan</a></>}.
         </p>
