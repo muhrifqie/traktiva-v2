@@ -74,7 +74,7 @@ export function LicenseDetail({ l, plans, site, now, buyOnline, events, orders }
           <KeyBox licenseKey={l.key} hint={l.key_hint} />
           <div>
             <div className="flex items-baseline gap-2">
-              <p className="font-display text-5xl font-bold tabular-nums">{daysLeft ?? "∞"}</p>
+              <p className="text-3xl font-semibold tabular-nums">{daysLeft ?? "∞"}</p>
               <p className="text-muted-foreground">{daysLeft == null ? "aktif selamanya" : `hari tersisa · s/d ${fmtDate(l.expires_at)}`}</p>
             </div>
             <div className="mt-3"><Meter value={left} warn={daysLeft != null && daysLeft <= 7} label="Sisa masa aktif" /></div>

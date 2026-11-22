@@ -80,8 +80,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           {active.length ? (
             <>
               <p className="text-sm font-semibold opacity-80">{soonest ? `Lisensi ${soonest.planLabel} · key …${soonest.key_hint}` : "Lisensi selamanya"}</p>
-              <p className="mt-3 font-display text-6xl leading-none font-bold tabular-nums">
-                {soonestDays ?? "∞"}<span className="ml-3 text-2xl font-semibold opacity-80">{soonestDays == null ? "aktif selamanya" : "hari lagi"}</span>
+              <p className="mt-3 text-4xl leading-none font-semibold tabular-nums">
+                {soonestDays ?? "∞"}<span className="ml-2 text-base font-medium opacity-80">{soonestDays == null ? "aktif selamanya" : "hari lagi"}</span>
               </p>
               <p className="mt-3 font-medium opacity-80">
                 {soonest ? `Berlaku sampai ${fmtDate(soonest.expires_at)}. ` : ""}{active.length} lisensi aktif · {used} dari {seats} PC terpakai.
@@ -90,19 +90,19 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           ) : (
             <>
               <p className="text-sm font-semibold opacity-80">Belum ada lisensi aktif</p>
-              <p className="mt-3 font-display text-4xl leading-tight font-bold">Mulai bikin video affiliate hari ini.</p>
+              <p className="mt-3 text-2xl leading-tight font-semibold">Mulai bikin video affiliate hari ini.</p>
               <div className="mt-6 flex flex-wrap gap-2">
-                <Link href="/lisensi#beli" className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#fff] px-4 font-bold text-[#106e3a] hover:opacity-90">Beli lisensi <ArrowRight className="size-4" /></Link>
-                <Link href="/lisensi#tautkan" className="inline-flex h-10 items-center rounded-lg border border-[#fff]/40 px-4 font-bold hover:border-[#fff]">Punya key? Tautkan</Link>
+                <Link href="/lisensi#beli" className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#fff] px-4 text-[0.8125rem] font-semibold text-[#106e3a] hover:opacity-90">Beli lisensi <ArrowRight className="size-4" /></Link>
+                <Link href="/lisensi#tautkan" className="inline-flex h-10 items-center rounded-lg border border-[#fff]/40 px-4 text-[0.8125rem] font-semibold hover:border-[#fff]">Punya key? Tautkan</Link>
               </div>
             </>
           )}
           <KeyRound className="pointer-events-none absolute -right-6 -bottom-8 size-44 opacity-10" aria-hidden />
         </div>
         <div style={i(1)} className="rise flex flex-col rounded-xl border bg-card p-7">
-          <p className="flex items-center gap-2 text-sm font-semibold text-muted-foreground"><Lightbulb className="size-4 text-leaf-ink" /> Tips hari ini</p>
-          <p className="mt-3 text-lg leading-snug font-semibold">{TIPS[Math.floor(now / 86400) % TIPS.length]}</p>
-          <Link href="/bantuan" className="mt-auto pt-5 text-sm font-semibold text-leaf-ink hover:underline">Panduan lainnya →</Link>
+          <p className="flex items-center gap-2 text-sm font-semibold text-muted-foreground"><Lightbulb className="size-4 text-brand-light" /> Tips hari ini</p>
+          <p className="mt-3 text-[0.9375rem] leading-snug font-medium">{TIPS[Math.floor(now / 86400) % TIPS.length]}</p>
+          <Link href="/bantuan" className="mt-auto pt-5 text-sm font-semibold text-brand-light hover:underline">Panduan lainnya →</Link>
         </div>
       </div>
 
@@ -173,14 +173,14 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             const { icon: I } = TONE[a.level];
             return (
               <div key={a.id} className="flex gap-2.5 px-4 py-3 text-sm">
-                <I className="mt-0.5 size-4 shrink-0 text-leaf-ink" />
+                <I className="mt-0.5 size-4 shrink-0 text-brand-light" />
                 <div><p className="font-semibold">{a.title}</p>{a.body && <p className="mt-0.5 whitespace-pre-line text-muted-foreground">{a.body}</p>}</div>
               </div>
             );
           })}
           {v.latest ? (
             <div className="px-4 py-3 text-sm">
-              <p className="flex items-center gap-2 font-semibold"><Download className="size-4 text-leaf-ink" /> Traktiva v{v.latest.version} <span className="font-normal text-muted-foreground">· {fmtDate(v.latest.created_at)}</span></p>
+              <p className="flex items-center gap-2 font-semibold"><Download className="size-4 text-brand-light" /> Traktiva v{v.latest.version} <span className="font-normal text-muted-foreground">· {fmtDate(v.latest.created_at)}</span></p>
               {v.latest.notes && <p className="mt-1 line-clamp-4 whitespace-pre-line text-muted-foreground">{v.latest.notes}</p>}
               <Link href="/aplikasi" className="mt-2 inline-block text-xs font-semibold text-muted-foreground underline hover:text-foreground">Download & cara pasang</Link>
             </div>

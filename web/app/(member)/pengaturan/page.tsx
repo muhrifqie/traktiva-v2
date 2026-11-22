@@ -35,7 +35,7 @@ export default async function Settings() {
             <Method label="Email & password" on={u.hasPassword} detail={u.hasPassword ? u.email : "Belum dibuat"} />
             <Method label="Google" on={u.google} detail={u.google ? "Terhubung" : "Masuk dengan Google memakai email ini untuk menautkan"} />
           </ul>
-          <p className="mb-3 flex items-center gap-2 text-[0.8125rem] font-semibold"><KeyRound className="size-4 text-leaf-ink" /> {u.hasPassword ? "Ganti password" : "Buat password"}</p>
+          <p className="mb-3 flex items-center gap-2 text-[0.8125rem] font-semibold"><KeyRound className="size-4 text-brand-light" /> {u.hasPassword ? "Ganti password" : "Buat password"}</p>
           <PasswordForm hasPassword={u.hasPassword} />
         </Panel>
       </div>

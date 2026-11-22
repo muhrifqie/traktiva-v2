@@ -35,7 +35,7 @@ export default async function Apps() {
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rise flex flex-col rounded-xl bg-primary p-7 text-primary-foreground">
           <p className="flex items-center gap-2 text-sm font-semibold opacity-80"><MonitorDown className="size-4" /> Installer</p>
-          <h2 className="mt-3 text-4xl font-bold">{latest ? `Traktiva v${latest.version}` : "Segera tersedia"}</h2>
+          <h2 className="mt-3 text-2xl font-semibold">{latest ? `Traktiva v${latest.version}` : "Segera tersedia"}</h2>
           <p className="mt-2 font-medium opacity-80">
             {latest ? `Dirilis ${fmtDate(latest.created_at)}${latest.mandatory ? " · wajib update" : ""}` : "Link installer belum tersedia. Hubungi kami untuk link download."}
           </p>
@@ -44,7 +44,7 @@ export default async function Apps() {
           </ul>
           {latest && (
             <div className="mt-auto pt-6">
-              <a href={latest.url} target="_blank" rel="noreferrer" className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#fff] px-5 font-bold text-[#106e3a] hover:opacity-90">
+              <a href={latest.url} target="_blank" rel="noreferrer" className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#fff] px-5 text-[0.8125rem] font-semibold text-[#106e3a] hover:opacity-90">
                 <Download className="size-5" /> Download v{latest.version}
               </a>
             </div>
@@ -60,7 +60,7 @@ export default async function Apps() {
           ].map(({ icon: I, label, value, tone }) => (
             <div key={label} className="bg-card p-5">
               <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><I className="size-3.5" /> {label}</p>
-              <p className={`mt-2 font-display text-4xl font-bold tabular-nums ${tone}`}>{value}</p>
+              <p className={`mt-2 text-2xl font-semibold tabular-nums ${tone}`}>{value}</p>
             </div>
           ))}
         </Panel>
@@ -102,7 +102,7 @@ export default async function Apps() {
           v.releases.map((r, n) => (
             <details key={r.version} open={n === 0} className="group px-4 py-3.5">
               <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1">
-                <span className="font-display text-lg font-bold">v{r.version}</span>
+                <span className="text-sm font-semibold">v{r.version}</span>
                 {n === 0 && <span className="rounded-full bg-status-ok/12 px-2 py-0.5 text-[0.6875rem] font-semibold text-status-ok">Terbaru</span>}
                 {!!r.mandatory && <span className="rounded-full bg-destructive/12 px-2 py-0.5 text-[0.6875rem] font-semibold text-destructive">Wajib</span>}
                 <span className="text-sm text-muted-foreground">{fmtDate(r.created_at)}</span>

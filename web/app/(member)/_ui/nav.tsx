@@ -23,56 +23,44 @@ const useActive = () => {
   return (href: string) => (href === "/akun" ? path === "/akun" : path.startsWith(href));
 };
 
-/** Desktop: full-height sidebar with the section menu (fixed width, so the content never resizes). */
+/**
+ * Same shell as the admin panel: sidebar on the chrome colour (logo, menu, account), content in an inset panel.
+ * Phones: the sidebar becomes one scrollable row on top.
+ */
 export function AccountSidebar({ badges, footer }: { badges: Badges; footer: React.ReactNode }) {
   const on = useActive();
   return (
-    <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r bg-card lg:flex">
-      <Link href="/" className="flex h-20 shrink-0 items-center gap-3 px-6">
+    <aside className="flex min-w-0 items-center gap-1 p-2 md:flex-col md:items-stretch md:p-3">
+      <Link href="/" className="hidden items-center gap-2.5 px-2 pt-1 pb-4 md:flex">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.svg" alt="" className="size-9" />
-        <span className="font-display text-2xl font-extrabold">Traktiva</span>
+        <img src="/logo.svg" alt="" className="size-7" />
+        <div className="leading-tight">
+          <p className="text-sm font-semibold">Traktiva</p>
+          <p className="text-[0.6875rem] text-muted-foreground">Area member</p>
+        </div>
       </Link>
-      <nav aria-label="Menu akun" className="flex flex-1 flex-col gap-1 overflow-y-auto px-3">
-        {NAV.map(({ href, label, icon: Icon }, i) => (
+      <nav aria-label="Menu akun" className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none] md:flex-none md:flex-col md:overflow-visible">
+        {NAV.map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
             href={href}
             aria-current={on(href) ? "page" : undefined}
-            style={{ "--i": i } as React.CSSProperties}
-            className={`rise group flex h-11 items-center gap-3 rounded-lg px-3.5 text-[0.9375rem] font-semibold transition-colors ${
-              on(href) ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
-            }`}
+            className={`flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-[0.8125rem] transition-colors ${on(href) ? "bg-primary/18 text-foreground" : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-foreground"}`}
           >
-            <Icon className={`size-[1.1rem] ${on(href) ? "" : "text-leaf-ink"}`} /> {label}
+            <Icon className={`size-4 ${on(href) ? "text-brand-light" : ""}`} /> {label}
             {badges[href] != null && (
-              <span className={`ml-auto grid min-w-5 place-items-center rounded-full px-1.5 text-[0.6875rem] font-bold ${on(href) ? "bg-[#fff] text-primary" : "bg-primary text-primary-foreground"}`}>{badges[href]}</span>
+              <span className="ml-auto grid min-w-5 place-items-center rounded-full bg-primary px-1.5 text-[0.6875rem] font-semibold text-primary-foreground">{badges[href]}</span>
             )}
           </Link>
         ))}
       </nav>
-      <div className="border-t p-3">{footer}</div>
+      <div className="shrink-0 border-l pl-1 md:mt-auto md:border-t md:border-l-0 md:pt-3 md:pl-0">{footer}</div>
     </aside>
   );
 }
 
-/** Phones: the same menu as a row of pills under the top bar. */
-export function AccountTabs({ badges }: { badges: Badges }) {
-  const on = useActive();
-  return (
-    <nav aria-label="Menu akun" className="flex gap-1.5 overflow-x-auto px-5 pb-3 [scrollbar-width:none] lg:hidden">
-      {NAV.map(({ href, label, icon: Icon }) => (
-        <Link key={href} href={href} className={`flex h-9 shrink-0 items-center gap-2 rounded-lg px-3.5 text-sm font-semibold ${on(href) ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
-          <Icon className="size-4" /> {label}
-          {badges[href] != null && <span className="size-1.5 rounded-full bg-leaf-ink" />}
-        </Link>
-      ))}
-    </nav>
-  );
-}
-
 /** Avatar button → name/email, admin panel, settings, sign out. */
-export function AccountMenu({ name, email, avatar, isAdmin, up = false }: { name: string; email: string; avatar: string | null; isAdmin: boolean; up?: boolean }) {
+export function AccountMenu({ name, email, avatar, isAdmin }: { name: string; email: string; avatar: string | null; isAdmin: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const path = usePathname();
@@ -92,25 +80,21 @@ export function AccountMenu({ name, email, avatar, isAdmin, up = false }: { name
       document.removeEventListener("keydown", esc);
     };
   }, [open]);
-  const item = "flex h-10 items-center gap-3 rounded-lg px-3 text-sm text-muted-foreground hover:bg-muted hover:text-foreground";
+  const item = "flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-[0.8125rem] text-muted-foreground hover:bg-muted hover:text-foreground";
   return (
     <div ref={ref} className="relative">
-      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" className={`flex items-center gap-2.5 text-left ${up ? "w-full rounded-lg p-2 hover:bg-muted" : "h-10 rounded-lg border py-1 pr-2.5 pl-1 hover:border-foreground/40"}`}>
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" className="flex w-full items-center gap-2 rounded-lg p-1 text-left hover:bg-sidebar-accent md:p-1.5">
         {/* eslint-disable-next-line @next/next/no-img-element -- Google profile photo */}
-        {avatar ? <img src={avatar} alt="" referrerPolicy="no-referrer" className="size-8 rounded-full object-cover" /> : <span className="grid size-8 place-items-center rounded-full bg-primary text-sm font-bold text-primary-foreground uppercase">{(name || email)[0]}</span>}
-        {up ? (
-          <span className="min-w-0 flex-1 leading-tight">
-            <span className="block truncate text-sm font-bold">{name || email.split("@")[0]}</span>
-            <span className="block truncate text-xs text-muted-foreground">{email}</span>
-          </span>
-        ) : (
-          <span className="hidden max-w-32 truncate text-sm font-semibold sm:inline">{name || email.split("@")[0]}</span>
-        )}
-        <ChevronDown className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+        {avatar ? <img src={avatar} alt="" referrerPolicy="no-referrer" className="size-7 rounded-full object-cover" /> : <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary text-[0.6875rem] font-bold text-primary-foreground uppercase">{(name || email).slice(0, 2)}</span>}
+        <span className="hidden min-w-0 flex-1 leading-tight md:block">
+          <span className="block truncate text-xs font-semibold">{name || email.split("@")[0]}</span>
+          <span className="block truncate text-[0.6875rem] text-muted-foreground">{email}</span>
+        </span>
+        <ChevronDown className={`hidden size-4 text-muted-foreground transition-transform md:block ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div role="menu" className={`absolute z-50 w-64 rounded-xl border bg-popover p-2 shadow-2xl shadow-black/40 ${up ? "bottom-14 left-0" : "top-12 right-0"}`}>
-          <div className="px-3 pt-2 pb-3">
+        <div role="menu" className={`absolute z-50 w-64 rounded-xl border bg-popover p-1.5 shadow-lg top-11 right-0 md:top-auto md:right-auto md:bottom-12 md:left-0`}>
+          <div className="px-2.5 pt-1.5 pb-2">
             <p className="truncate text-sm font-semibold">{name || "Akun Traktiva"}</p>
             <p className="truncate text-xs text-muted-foreground">{email}</p>
           </div>

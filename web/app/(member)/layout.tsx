@@ -1,17 +1,13 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { cookies } from "next/headers";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { nowSec } from "@/lib/format";
 import { myOrders, requireMember } from "@/lib/license-api";
-import { AccountMenu, AccountSidebar, AccountTabs } from "./_ui/nav";
+import { AccountMenu, AccountSidebar } from "./_ui/nav";
 
 export const metadata: Metadata = { title: { template: "%s · Akun Traktiva", default: "Akun" }, robots: { index: false, follow: false } };
 
-/**
- * Member area, full screen in the website's own style: a fixed-width sidebar on the left (menu, theme, account) and
- * one wide content column. Phones: a top bar + menu pills instead of the sidebar.
- */
+/** Member area in the admin panel's style: sidebar on the chrome colour, content in an inset panel (full width). */
 export default async function AccountLayout({ children }: { children: React.ReactNode }) {
   const [v, orders, jar] = await Promise.all([requireMember(), myOrders(), cookies()]);
   const u = v.user;
@@ -23,33 +19,19 @@ export default async function AccountLayout({ children }: { children: React.Reac
   const menu = { name: u.name ?? "", email: u.email, avatar: u.avatar, isAdmin: u.isAdmin };
 
   return (
-    <div className="creator flex min-h-screen">
+    <div className="grid h-screen grid-cols-1 grid-rows-[auto_1fr] bg-sidebar md:grid-cols-[224px_1fr] md:grid-rows-1">
       <AccountSidebar
         badges={badges}
         footer={
-          <div className="flex items-center gap-2">
-            <div className="min-w-0 flex-1"><AccountMenu {...menu} up /></div>
-            <ThemeToggle initial={theme} className="size-10 rounded-lg" />
+          <div className="flex items-center gap-1">
+            <div className="min-w-0 md:flex-1"><AccountMenu {...menu} /></div>
+            <ThemeToggle initial={theme} className="size-8 border-0 bg-transparent shadow-none hover:bg-sidebar-accent" />
           </div>
         }
       />
-      <div className="min-w-0 flex-1">
-        <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur lg:hidden">
-          <div className="flex h-16 items-center gap-3 px-5">
-            <Link href="/" className="flex items-center gap-2.5">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.svg" alt="" className="size-8" />
-              <span className="font-display text-xl font-extrabold">Traktiva</span>
-            </Link>
-            <div className="ml-auto flex items-center gap-2">
-              <ThemeToggle initial={theme} className="size-10 rounded-lg" />
-              <AccountMenu {...menu} />
-            </div>
-          </div>
-          <AccountTabs badges={badges} />
-        </header>
-        <main className="w-full px-5 py-8 md:px-10 md:py-10 2xl:px-14">{children}</main>
-      </div>
+      <main className="overflow-auto rounded-none border-border bg-background md:m-2 md:ml-0 md:rounded-2xl md:border">
+        <div className="w-full px-5 py-6 md:px-7">{children}</div>
+      </main>
     </div>
   );
 }
