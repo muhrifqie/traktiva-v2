@@ -33,11 +33,23 @@ if ($site) {
 }
 if (-not $new.Count) { Write-Host "Tidak ada yang diubah."; exit 0 }
 
-# 3. Merge into the server file (600) and restart the website so it reads the keys
+# 3. Merge into the server file (600) and restart the website so it reads the keys.
+# The remote script travels base64-encoded (Windows PowerShell 5.1 strips quotes from arguments to native programs);
+# the keys go over stdin, so they never appear on a command line.
+$script = @'
+set -e
+export PATH=/opt/node/bin:$PATH
+umask 077
+node -e 'const fs=require("fs"),f="/srv/traktiva-license/data/web-secrets.json";let o={};try{o=JSON.parse(fs.readFileSync(f,"utf8"))}catch{}Object.assign(o,JSON.parse(fs.readFileSync(0,"utf8")));fs.writeFileSync(f,JSON.stringify(o,null,1),{mode:0o600});console.log("tersimpan:",Object.keys(o).join(", "))'
+cd /srv/traktiva-web
+pm2 delete traktiva-web >/dev/null
+pm2 start ecosystem.config.cjs >/dev/null
+pm2 save >/dev/null
+sleep 4
+curl -s -o /dev/null -w "website %{http_code}\n" http://127.0.0.1:3821/masuk
+'@
+$b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($script.Replace("`r`n", "`n")))
 $payload = $new | ConvertTo-Json -Compress
-$remote = 'export PATH=/opt/node/bin:$PATH; f=/srv/traktiva-license/data/web-secrets.json; umask 077; ' +
-  'node -e ''const fs=require("fs"),f=process.argv[1];let o={};try{o=JSON.parse(fs.readFileSync(f,"utf8"))}catch{}Object.assign(o,JSON.parse(fs.readFileSync(0,"utf8")));fs.writeFileSync(f,JSON.stringify(o,null,1),{mode:0o600});console.log("tersimpan:",Object.keys(o).join(", "))'' $f && ' +
-  'cd /srv/traktiva-web && pm2 delete traktiva-web >/dev/null && pm2 start ecosystem.config.cjs >/dev/null && pm2 save >/dev/null && sleep 4 && ' +
-  'curl -s -o /dev/null -w "website %{http_code}\n" http://127.0.0.1:3821/masuk'
-$payload | ssh traktiva $remote
+$payload | ssh traktiva "echo $b64 | base64 -d > /tmp/trk-web-secrets.sh && bash /tmp/trk-web-secrets.sh; s=`$?; rm -f /tmp/trk-web-secrets.sh; exit `$s"
+if ($LASTEXITCODE -ne 0) { Write-Host "GAGAL (kode $LASTEXITCODE). Kunci belum terpasang, coba lagi atau kirim pesan error di atas." -ForegroundColor Red; exit 1 }
 Write-Host "Selesai. Buka https://app.traktiva.site/masuk untuk mencoba." -ForegroundColor Green
