@@ -3,7 +3,7 @@
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { autoEdit } from "@/lib/autopilot";
+import { autoEdit, withSubtitleChoice } from "@/lib/autopilot";
 import { db } from "@/lib/db";
 import { videoProjects } from "@/lib/db/schema";
 import { exportEdit, prepareEdit } from "@/lib/editor";
@@ -40,6 +40,7 @@ export async function prepareQuickEdit(id: number): Promise<{ busy: true } | { b
     let edit = await prepareEdit(p); // same object back when the saved edit and its base video are still valid
     // AI voice + captions only once: if it produced nothing (silent preset, AI/Cartesia down) export as is
     if (!edit.captions.length && !edit.voices.length && !edit.autoTried) edit = { ...(await autoEdit({ ...p, edit })), autoTried: true };
+    edit = withSubtitleChoice(p, edit); // "Tanpa subtitle"
     if (edit !== p.edit) await db.update(videoProjects).set({ edit, updatedAt: new Date() }).where(eq(videoProjects.id, p.id));
     return { busy: false, edit };
   } catch (e) {
