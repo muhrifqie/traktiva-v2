@@ -11,6 +11,7 @@ import { CountryBadge, CountrySelect } from "@/components/country-select";
 import { SaveProductButton } from "@/components/save-product-button";
 import { countryOf } from "@/lib/countries";
 import { MarketTops } from "./market-tops";
+import { ShowcaseButton } from "./showcase-button";
 import { savedFilter } from "../riset/saved-list";
 import { getDetail, intentProps } from "./detail-cache";
 import { EmptyBox, iconBtn, ListBox, pillBtn, ProductRow, RefreshButton, RefreshSlot, RisetToolbar } from "./riset-ui";
@@ -71,7 +72,6 @@ export function KaloStudio({
   };
   const [pending, start] = useTransition();
   const [savedQ, setSavedQ] = useState("");
-  const [adding, setAdding] = useState<string | null>(null);
 
   const search = (text = q, cc = country) =>
     start(async () => {
@@ -90,20 +90,6 @@ export function KaloStudio({
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once on arrival
   }, []);
-  const toShowcase = (h: KaloHit) => {
-    setAdding(h.id);
-    start(async () => {
-      try {
-        const r = await kaloToShowcase(h.id);
-        if (r.ok) toast.success(`Masuk etalase @${r.account}`);
-        else toast.error(r.message);
-      } catch (e) {
-        toast.error(errMsg(e));
-      } finally {
-        setAdding(null);
-      }
-    });
-  };
 
   if (!hasSession) {
     return (
@@ -181,9 +167,7 @@ export function KaloStudio({
                         saved={savedKeys.includes(`${r.id}:${cc}`)}
                         product={{ productId: r.id, country: cc, source: "kalodata", title: r.name, image: kaloProductImg(r.id), metrics: { gmv30: money(cc).format(r.gmv30) } }}
                       />
-                      <button type="button" disabled={adding === r.id} onClick={() => toShowcase(r)} title="Tambah ke etalase TikTok" className="flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-                        {adding === r.id ? <Loader2 className="size-3.5 animate-spin" /> : <Store className="size-3.5" />} Etalase
-                      </button>
+                      <ShowcaseButton productId={r.id} />
                       <a href={productUrl(r.id)} target="_blank" rel="noreferrer" title="Buka di TikTok" className={iconBtn}><ExternalLink className="size-3.5" /></a>
                       <button type="button" title="Salin ID produk" onClick={() => { void navigator.clipboard.writeText(r.id); toast.success("ID produk disalin"); }} className={iconBtn}><Copy className="size-3.5" /></button>
                     </>
@@ -359,7 +343,7 @@ function DetailDialog({ hit, country, savedKeys, onClose }: { hit: KaloHit | nul
                   {making ? <><Loader2 className="size-3.5 animate-spin" /> Meracik bahan...</> : <><Sparkles className="size-3.5" /> Buatkan videonya</>}
                 </button>
                 <button type="button" disabled={adding} onClick={toShowcase} className="flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium hover:bg-accent disabled:opacity-60">
-                  {adding ? <Loader2 className="size-3.5 animate-spin" /> : <Store className="size-3.5" />} Etalase
+                  {adding ? <Loader2 className="size-3.5 animate-spin" /> : <Store className="size-3.5" />} Tambah ke Etalase
                 </button>
                 <a href={productUrl(hit.id)} target="_blank" rel="noreferrer" className="flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium hover:bg-accent"><ExternalLink className="size-3.5" /> Buka di TikTok</a>
                 <button type="button" onClick={() => { void navigator.clipboard.writeText(hit.id); toast.success("ID produk disalin"); }} className="flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium hover:bg-accent"><Copy className="size-3.5" /> Salin ID</button>
