@@ -41,9 +41,9 @@ export default async function Pricing() {
   const feat = featuredId(plans);
   return (
     <main>
-      <section className="mx-auto max-w-[90rem] px-5 pt-16 pb-12 text-center md:px-10 md:pt-24">
+      <section className="mx-auto max-w-6xl px-5 pt-16 pb-12 text-center md:px-8 md:pt-24">
         <p className="rise inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold text-muted-foreground">Harga sederhana · semua fitur di setiap paket</p>
-        <h1 style={{ "--i": 1 } as React.CSSProperties} className="rise mx-auto mt-6 max-w-4xl text-5xl leading-[0.95] font-extrabold md:text-7xl">
+        <h1 style={{ "--i": 1 } as React.CSSProperties} className="rise mx-auto mt-5 max-w-3xl text-3xl leading-tight font-semibold md:text-5xl">
           Bayar sesuai <span className="text-leaf-ink">masa aktif</span>, bukan per fitur.
         </h1>
         <p style={{ "--i": 2 } as React.CSSProperties} className="rise mx-auto mt-6 max-w-2xl text-lg font-medium text-muted-foreground">
@@ -51,7 +51,7 @@ export default async function Pricing() {
         </p>
       </section>
 
-      <section className="mx-auto max-w-[90rem] px-5 md:px-10">
+      <section className="mx-auto max-w-6xl px-5 md:px-8">
         {plans.length ? (
           <div className="grid gap-4 pt-4 md:grid-cols-3">
             {plans.map((p) => <PlanCard key={p.id} p={p} href={buyHref(info, p)} featured={p.id === feat} />)}
@@ -62,22 +62,22 @@ export default async function Pricing() {
       </section>
 
       {plans.length > 0 && (
-        <section className="mx-auto max-w-[90rem] px-5 py-20 md:px-10">
-          <h2 className="reveal text-3xl font-extrabold md:text-5xl">Bandingkan paket</h2>
+        <section className="mx-auto max-w-6xl px-5 py-20 md:px-8">
+          <h2 className="reveal text-2xl leading-tight font-semibold md:text-3xl">Bandingkan paket</h2>
           <div className="reveal mt-8 overflow-x-auto rounded-xl border bg-card">
             <table className="w-full min-w-[40rem] text-left">
               <thead>
                 <tr className="border-b">
                   <th className="p-5 text-sm font-semibold text-muted-foreground">Fitur</th>
                   {plans.map((p) => (
-                    <th key={p.id} className={`p-5 font-display text-lg font-bold ${p.id === feat ? "text-leaf-ink" : ""}`}>{p.label}</th>
+                    <th key={p.id} className={`p-5 text-base font-semibold ${p.id === feat ? "text-leaf-ink" : ""}`}>{p.label}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y">
                 <tr>
                   <td className="p-5 font-semibold">Harga</td>
-                  {plans.map((p) => <td key={p.id} className="p-5 font-display text-lg font-bold tabular-nums">{p.price ? rupiah(p.price) : "—"}</td>)}
+                  {plans.map((p) => <td key={p.id} className="p-5 text-base font-semibold tabular-nums">{p.price ? rupiah(p.price) : "—"}</td>)}
                 </tr>
                 <tr>
                   <td className="p-5 font-semibold">Masa aktif</td>
@@ -100,14 +100,14 @@ export default async function Pricing() {
       )}
 
       <section className="border-y bg-card py-20">
-        <div className="mx-auto max-w-[90rem] px-5 md:px-10">
-          <h2 className="reveal text-3xl font-extrabold md:text-5xl">Cara bayar</h2>
+        <div className="mx-auto max-w-6xl px-5 md:px-8">
+          <h2 className="reveal text-2xl leading-tight font-semibold md:text-3xl">Cara bayar</h2>
           <ol className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {PAY_STEPS.map(({ icon: I, title, text }, i) => (
               <li key={title} className="reveal lift rounded-xl border bg-background p-7">
                 <div className="flex items-center justify-between">
                   <span className="grid size-12 place-items-center rounded-lg bg-primary text-primary-foreground"><I className="size-6" /></span>
-                  <span className="font-display text-5xl font-extrabold text-muted-foreground/30">{i + 1}</span>
+                  <span className="text-3xl font-semibold text-muted-foreground/30">{i + 1}</span>
                 </div>
                 <p className="mt-6 text-xl font-bold">{title}</p>
                 <p className="mt-2 text-muted-foreground">{text}</p>
@@ -117,8 +117,8 @@ export default async function Pricing() {
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-[90rem] gap-10 px-5 py-20 md:px-10 lg:grid-cols-[1fr_2fr]">
-        <h2 className="text-3xl font-extrabold md:text-5xl">Soal pembayaran</h2>
+      <section className="mx-auto grid max-w-6xl gap-10 px-5 py-20 md:px-8 lg:grid-cols-[1fr_2fr]">
+        <h2 className="text-2xl leading-tight font-semibold md:text-3xl">Soal pembayaran</h2>
         <div className="grid gap-3">
           {FAQ.map(([q, a]) => (
             <details key={q} className="reveal group rounded-xl border bg-card px-6 py-5">
@@ -133,8 +133,8 @@ export default async function Pricing() {
       </section>
 
       <section className="px-5 pb-24 md:px-10">
-        <div className="reveal mx-auto flex max-w-[90rem] flex-wrap items-center justify-between gap-6 rounded-xl bg-leaf px-8 py-12 text-[#fff] md:px-14">
-          <h2 className="max-w-2xl text-3xl leading-none font-extrabold md:text-5xl">Siap bikin video pertamamu?</h2>
+        <div className="reveal mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-6 rounded-xl bg-leaf px-8 py-12 text-[#fff] md:px-14">
+          <h2 className="max-w-2xl text-2xl leading-tight font-semibold md:text-3xl">Siap bikin video pertamamu?</h2>
           <Link href="/daftar?next=/lisensi" className="inline-flex h-12 items-center gap-2 rounded-lg bg-[#fff] px-6 font-semibold text-[#106e3a] hover:opacity-90">Daftar gratis <ArrowRight className="size-4" /></Link>
         </div>
       </section>

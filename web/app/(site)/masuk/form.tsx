@@ -61,6 +61,11 @@ export function AuthForm({ mode, next, google, turnstile }: { mode: "login" | "r
         </label>
         {mode === "login" && <Link href="/lupa-password" className="-mt-2 justify-self-end text-[14px] text-[var(--site-body)] underline hover:text-white">Lupa password?</Link>}
         <Turnstile siteKey={turnstile} resetKey={state} />
+        {mode === "register" && (
+          <p className="text-[13px] text-[var(--site-muted)]">
+            Dengan membuat akun, kamu setuju dengan <Link href="/ketentuan" className="underline hover:text-white">Ketentuan Layanan</Link> dan <Link href="/privasi" className="underline hover:text-white">Kebijakan Privasi</Link>.
+          </p>
+        )}
         {state && !state.ok && <p className="text-[14px] text-red-300" role="alert">{state.message}</p>}
         <button type="submit" disabled={pending} className="site-pill w-full disabled:opacity-60">
           {pending && <Loader2 className="size-4 animate-spin" />} {mode === "login" ? "Masuk" : "Buat akun"}

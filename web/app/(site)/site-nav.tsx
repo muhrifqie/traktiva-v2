@@ -11,15 +11,15 @@ export type Theme = "dark" | "light";
 export type NavUser = { name: string; email: string; avatar: string | null; isAdmin: boolean } | null;
 
 const LINKS = [
-  ["/#fitur", "Fitur"],
-  ["/#cara-kerja", "Cara kerja"],
+  ["/fitur", "Fitur"],
+  ["/cara-kerja", "Cara kerja"],
   ["/harga", "Harga"],
-  ["/#faq", "FAQ"],
+  ["/faq", "FAQ"],
 ] as const;
 
 const ACCOUNT = [
   ["/akun", "Ringkasan", LayoutGrid],
-  ["/lisensi", "Lisensi & PC", KeyRound],
+  ["/lisensi", "Lisensi", KeyRound],
   ["/pesanan", "Pesanan", Receipt],
   ["/pengaturan", "Pengaturan", Settings],
 ] as const;
@@ -146,7 +146,7 @@ function MobileMenu({ user }: { user: NavUser }) {
 export function SiteNav({ user, theme }: { user: NavUser; theme: Theme }) {
   return (
     <header className="sticky top-0 z-50 border-b border-white/5 bg-[var(--site-canvas)]/85 backdrop-blur">
-      <nav className="relative mx-auto flex h-16 max-w-[1260px] items-center gap-6 px-5 md:px-8" aria-label="Utama">
+      <nav className="relative mx-auto flex h-16 max-w-6xl items-center gap-6 px-5 md:px-8" aria-label="Utama">
         <Link href="/" className="flex items-center gap-2.5 text-[17px] font-semibold tracking-tight">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.svg" alt="" className="size-7" />

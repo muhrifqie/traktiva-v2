@@ -18,13 +18,13 @@ export function PlanCard({ p, href, featured }: { p: Plan; href: string | null; 
   const monthly = perMonth(p);
   const perks = [`${p.days ? `${p.days} hari` : "Selamanya"} akses penuh`, `${p.devices} PC`, "Semua fitur & update", "Bantuan via WhatsApp"];
   return (
-    <div className={`reveal lift relative flex flex-col rounded-[1.75rem] border p-7 ${featured ? "border-transparent bg-primary text-primary-foreground" : "bg-card"}`}>
+    <div className={`reveal lift relative flex flex-col rounded-xl border p-7 ${featured ? "border-transparent bg-primary text-primary-foreground" : "bg-card"}`}>
       {featured && <span className="absolute -top-3 left-7 rounded-full bg-foreground px-3 py-1 text-xs font-bold text-background">Paling hemat</span>}
-      <p className="font-display text-2xl font-bold">{p.label}</p>
+      <p className="text-xl font-semibold">{p.label}</p>
       <p className={`mt-1 text-sm ${featured ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
         {p.days ? (p.days >= 365 ? "Setahun penuh, bayar sekali" : `${p.days} hari, cocok untuk mencoba`) : "Bayar sekali, pakai terus"}
       </p>
-      <p className="mt-6 font-display text-4xl font-bold tabular-nums">{p.price ? rupiah(p.price) : "Hubungi kami"}</p>
+      <p className="mt-6 text-3xl font-semibold tabular-nums">{p.price ? rupiah(p.price) : "Hubungi kami"}</p>
       <p className={`mt-1 h-5 text-sm ${featured ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{monthly ? `≈ ${rupiah(monthly)} / bulan` : ""}</p>
       {href ? (
         href.startsWith("/") ? (
