@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { asMember, licenseApi, MEMBER_COOKIE } from "@/lib/license-api";
 import { safeNext } from "@/lib/google";
-import { finishSignIn, TWOFA_COOKIE } from "@/lib/member-session";
+import { clearMemberCookie, finishSignIn, TWOFA_COOKIE } from "@/lib/member-session";
 
 export type FormResult = { ok: false; message: string } | { ok: true; message?: string } | null;
 const fail = (e: unknown): FormResult => {
@@ -83,7 +83,7 @@ export async function setPasswordFromLink(_prev: FormResult, form: FormData): Pr
 export async function logout() {
   const jar = await cookies();
   if (jar.get(MEMBER_COOKIE)) await asMember("/internal/member/logout", { method: "POST", body: {} }).catch(() => {});
-  jar.delete(MEMBER_COOKIE);
+  await clearMemberCookie();
   redirect("/masuk");
 }
 

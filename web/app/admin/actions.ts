@@ -1,5 +1,6 @@
 "use server";
 
+import { clearMemberCookie } from "@/lib/member-session";
 import { cookies, headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -45,7 +46,7 @@ export async function logout() {
   // admin through a member account: sign that account out too
   const member = jar.get(MEMBER_COOKIE)?.value;
   if (member) await licenseApi("/internal/member/logout", { method: "POST", headers: { "x-member-session": member } }).catch(() => {});
-  jar.delete(MEMBER_COOKIE);
+  await clearMemberCookie();
   redirect("/masuk");
 }
 
