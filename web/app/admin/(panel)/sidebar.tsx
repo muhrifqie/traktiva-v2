@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { House, KeyRound, LogOut, Megaphone, Receipt, Rocket, ScrollText, Settings, Users } from "lucide-react";
+import { House, KeyRound, LogOut, Mail, Megaphone, Receipt, Rocket, ScrollText, Settings, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { logout } from "../actions";
 
@@ -12,6 +12,7 @@ const NAV = [
   { href: "/admin/member", label: "Member", icon: Users },
   { href: "/admin/pesanan", label: "Pesanan", icon: Receipt },
   { href: "/admin/pengumuman", label: "Pengumuman", icon: Megaphone },
+  { href: "/admin/email", label: "Email", icon: Mail },
   { href: "/admin/rilis", label: "Rilis", icon: Rocket },
   { href: "/admin/log", label: "Log", icon: ScrollText },
   { href: "/admin/pengaturan", label: "Pengaturan", icon: Settings },

@@ -96,7 +96,7 @@ export type MemberLicense = {
   devices: MemberDevice[];
 };
 export type MemberView = {
-  user: { id: number; email: string; name: string | null; avatar: string | null; hasPassword: boolean; google: boolean; created_at: number; phone: string | null; isAdmin: boolean };
+  user: { id: number; email: string; name: string | null; avatar: string | null; hasPassword: boolean; google: boolean; created_at: number; phone: string | null; isAdmin: boolean; emailNews: boolean };
   licenses: MemberLicense[];
   plans: Plan[];
   site: Site;

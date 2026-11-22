@@ -13,6 +13,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { audit, createLicenses, DATA_DIR, db, getPlans, getSetting, loadSecrets } from "./lib.mjs";
+import { mails, notify } from "./mail.mjs";
 
 /** DATA_DIR/waroengpay.json, re-read when it changes (keys can be rotated without a restart). */
 let fileCfg = { at: 0, v: {} };
@@ -104,7 +105,7 @@ function fulfil(order, eventId, data) {
       return { ok: true, already: true };
     }
     const plan = getPlans().find((p) => p.id === fresh.plan);
-    const user = db.prepare("SELECT email FROM users WHERE id = ?").get(fresh.user_id);
+    const user = db.prepare("SELECT email, name FROM users WHERE id = ?").get(fresh.user_id);
     let licenseId = fresh.license_id;
     if (licenseId) {
       const l = db.prepare("SELECT expires_at FROM licenses WHERE id = ?").get(licenseId);
@@ -122,6 +123,9 @@ function fulfil(order, eventId, data) {
     db.prepare("UPDATE orders SET status = 'paid', paid_at = unixepoch(), event_id = ?, license_id = ? WHERE id = ?").run(eventId, licenseId, fresh.id);
     audit("order_paid", { license_id: licenseId, actor: "waroengpay", detail: `${fresh.id} Rp${fresh.base_amount}${data.late ? " (telat)" : ""}` });
     db.exec("COMMIT");
+    // receipt by email (outbox; Admin → Email → "Pembayaran")
+    const lic = db.prepare("SELECT key_hint, expires_at FROM licenses WHERE id = ?").get(licenseId);
+    notify("payment", user?.email, mails.paid(user ?? {}, { id: fresh.id, planLabel: plan?.label ?? fresh.plan, amount: data.amount ?? fresh.amount ?? fresh.base_amount, keyHint: lic?.key_hint ?? "", expiresAt: lic?.expires_at ?? null }));
     return { ok: true, licenseId };
   } catch (e) {
     db.exec("ROLLBACK");

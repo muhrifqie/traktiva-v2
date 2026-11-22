@@ -265,3 +265,43 @@ async function settingsPost(body: object): Promise<Result> {
     return fail(e);
   }
 }
+
+// ---- email (Admin → Email)
+const EmailSettings = z.object({ welcome: z.boolean(), payment: z.boolean(), reminders: z.boolean(), dailyCap: z.number().int().min(10).max(2000) });
+export async function saveEmailSettings(input: z.input<typeof EmailSettings>): Promise<Result> {
+  try {
+    await asAdmin("/internal/email/settings", { method: "POST", body: EmailSettings.parse(input) });
+    revalidatePath("/admin/email");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+const Broadcast = z.object({
+  subject: z.string().trim().min(3, "Subjek minimal 3 karakter.").max(120),
+  message: z.string().trim().min(10, "Pesan minimal 10 karakter.").max(5000),
+  audience: z.enum(["all", "active", "expiring", "none"]),
+  ctaUrl: z.union([z.literal(""), z.string().trim().url().startsWith("https://", "Link tombol harus https://")]),
+  ctaLabel: z.string().trim().max(40),
+  test: z.boolean(),
+});
+export async function sendBroadcast(input: z.input<typeof Broadcast>): Promise<Result<{ queued?: number; to?: string }>> {
+  try {
+    const r = await asAdmin<{ queued?: number; to?: string }>("/internal/email/broadcast", { method: "POST", body: Broadcast.parse(input) });
+    revalidatePath("/admin/email");
+    return { ok: true, queued: r.queued, to: r.to };
+  } catch (e) {
+    return fail(e instanceof z.ZodError ? new Error(e.issues[0]?.message ?? "Isian tidak valid.") : e);
+  }
+}
+
+export async function retryEmails(): Promise<Result<{ retried?: number }>> {
+  try {
+    const r = await asAdmin<{ retried: number }>("/internal/email/retry", { method: "POST", body: {} });
+    revalidatePath("/admin/email");
+    return { ok: true, retried: r.retried };
+  } catch (e) {
+    return fail(e);
+  }
+}

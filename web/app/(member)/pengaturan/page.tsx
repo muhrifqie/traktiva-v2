@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Activity, ChevronRight, KeyRound, LaptopMinimal, LogIn, UserRound } from "lucide-react";
+import { Activity, ChevronRight, KeyRound, LaptopMinimal, LogIn, Mail, UserRound } from "lucide-react";
 import { asMember, requireMember, type MemberSession } from "@/lib/license-api";
 import { PasswordForm, ProfileForm } from "@/app/(member)/_ui/forms";
 import { PageTitle, Panel } from "@/app/(member)/_ui/ui";
 import { SessionList } from "./sessions";
+import { EmailNews } from "./email-news";
 
 export const metadata: Metadata = { title: "Pengaturan" };
 
@@ -40,6 +41,9 @@ export default async function Settings() {
           <PasswordForm hasPassword={u.hasPassword} />
         </Panel>
       </div>
+      <Panel id="email" title="Email" icon={Mail} desc={`Dikirim ke ${u.email}`}>
+        <EmailNews on={u.emailNews} />
+      </Panel>
       <Panel id="sesi" title="Perangkat & sesi" icon={LaptopMinimal} desc="Browser yang sedang masuk ke akun ini. Ada yang tidak kamu kenal? Keluarkan, lalu ganti password.">
         <SessionList sessions={sessions} />
       </Panel>

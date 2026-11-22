@@ -6,6 +6,10 @@ import crypto from "node:crypto";
 import { appInfo, audit, db, getPlans, getSetting, hashKey, hashPassword, normalizeKey, openKey, sealKey, verifyPassword } from "./lib.mjs";
 import { createOrder, paymentsReady, syncOrder } from "./payments.mjs";
 import { emailGate } from "./verify.mjs";
+import { mails, notify, unsubValid } from "./mail.mjs";
+
+// sign-ups waiting for their email code (name + password hash), one per email; expires with the code
+db.exec("CREATE TABLE IF NOT EXISTS pending_signups (email TEXT PRIMARY KEY, name TEXT, password_hash TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()))");
 
 export const MEMBER_SESSION_TTL = 30 * 86400;
 export const SELF_RESET_COOLDOWN = 86400; // a member may reset the hardware lock of a license once a day
@@ -106,7 +110,7 @@ export function memberRoutes(h) {
       user: {
         id: user.id, email: user.email, name: user.name, avatar: user.avatar, phone: user.phone,
         hasPassword: !!user.password_hash, google: !!user.google_sub, created_at: user.created_at,
-        isAdmin: !!user.is_admin,
+        isAdmin: !!user.is_admin, emailNews: !user.email_opt_out,
       },
       licenses,
       plans,
@@ -120,6 +124,7 @@ export function memberRoutes(h) {
   }
 
   return {
+    // sign-up in two steps: details → code mailed to the address → account created only after the right code
     "POST /internal/member/register": {
       open: true,
       fn: async (req, res) => {
@@ -127,16 +132,39 @@ export function memberRoutes(h) {
         const ip = ipOf(b);
         if (limited(`reg:${ip}`)) return bad(res, "Terlalu banyak percobaan. Coba lagi 15 menit lagi.", 429);
         const email = cleanEmail(b.email);
-        const password = String(b.password ?? "");
         if (!EMAIL.test(email)) return bad(res, "Email tidak valid.");
-        if (password.length < 8 || password.length > 200) return bad(res, "Password minimal 8 karakter.");
         if (db.prepare("SELECT 1 FROM users WHERE email = ?").get(email)) {
           miss(`reg:${ip}`);
           return bad(res, "Email ini sudah terdaftar. Silakan masuk (atau pakai Google kalau dulu daftar dengan Google).", 409);
         }
-        const r = db.prepare("INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)").run(email, cleanName(b.name), hashPassword(password));
-        audit("member_registered", { ip, actor: email, detail: "email" });
-        startSession(res, db.prepare("SELECT * FROM users WHERE id = ?").get(Number(r.lastInsertRowid)), ip, "email", b.ua);
+        const otp = String(b.otp ?? "").replace(/\D/g, "").slice(0, 6);
+        if (!otp) {
+          // step 1 (and "kirim ulang"): keep the details, mail the code
+          if (!b.resend) {
+            const password = String(b.password ?? "");
+            if (password.length < 8 || password.length > 200) return bad(res, "Password minimal 8 karakter.");
+            db.prepare("INSERT OR REPLACE INTO pending_signups (email, name, password_hash) VALUES (?, ?, ?)").run(email, cleanName(b.name), hashPassword(password));
+          } else if (!db.prepare("SELECT 1 FROM pending_signups WHERE email = ?").get(email)) {
+            return bad(res, "Waktu habis. Isi formulir daftar lagi.", 410);
+          }
+          const g = await emailGate("register", email, ip);
+          if (g.otp || g.ok) return json(res, 200, { ok: true, needCode: true, email, retry_after: g.retry_after ?? 60, message: `Kode 6 angka sudah dikirim ke ${email}. Cek juga folder spam.` });
+          return bad(res, g.message || "Kode gagal dikirim. Coba lagi sebentar.", 502);
+        }
+        // step 2: the code
+        const p = db.prepare("SELECT * FROM pending_signups WHERE email = ? AND created_at > unixepoch() - 3600").get(email);
+        if (!p) return bad(res, "Waktu habis. Isi formulir daftar lagi.", 410);
+        const g = await emailGate("register", email, ip, otp);
+        if (!g.ok) {
+          miss(`reg:${ip}`);
+          return bad(res, g.message || "Kode salah atau kedaluwarsa.", 400);
+        }
+        const r = db.prepare("INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)").run(email, p.name, p.password_hash);
+        db.prepare("DELETE FROM pending_signups WHERE email = ?").run(email);
+        audit("member_registered", { ip, actor: email, detail: "email (terverifikasi)" });
+        const user = db.prepare("SELECT * FROM users WHERE id = ?").get(Number(r.lastInsertRowid));
+        notify("welcome", email, mails.welcome(user));
+        startSession(res, user, ip, "email", b.ua);
       },
     },
 
@@ -177,6 +205,7 @@ export function memberRoutes(h) {
           } else {
             db.prepare("INSERT INTO users (email, name, avatar, google_sub) VALUES (?, ?, ?, ?)").run(email, cleanName(b.name), String(b.avatar ?? "").slice(0, 500) || null, sub);
             audit("member_registered", { ip, actor: email, detail: "google" });
+            notify("welcome", email, mails.welcome({ name: cleanName(b.name) }));
           }
           user = db.prepare("SELECT * FROM users WHERE google_sub = ?").get(sub);
         }
@@ -315,6 +344,7 @@ export function memberRoutes(h) {
         db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(next), user.id);
         db.prepare("DELETE FROM user_sessions WHERE user_id = ?").run(user.id);
         audit("member_password_reset", { ip, actor: user.email, detail: "lupa password (kode email)" });
+        notify("security", user.email, mails.security(user, "dibuat ulang lewat lupa password", ip, now()));
         signIn(res, user, ip, "reset", b.ua);
       },
     },
@@ -380,6 +410,27 @@ export function memberRoutes(h) {
       json(res, 200, { ok: true });
     }),
 
+    // news & broadcast emails on/off (codes, payments, reminders and security notices are always sent)
+    "POST /internal/member/email-prefs": member(async (req, res, user) => {
+      const b = await body(req);
+      db.prepare("UPDATE users SET email_opt_out = ? WHERE id = ?").run(b.news ? 0 : 1, user.id);
+      json(res, 200, { ok: true });
+    }),
+
+    // "Berhenti berlangganan" link in broadcasts: signed per user, no sign-in needed
+    "POST /internal/email/unsubscribe": {
+      open: true,
+      fn: async (req, res) => {
+        const b = await body(req);
+        if (!unsubValid(b.u, b.t)) return bad(res, "Link tidak valid.", 400);
+        const u = db.prepare("SELECT id, email FROM users WHERE id = ?").get(Number(b.u));
+        if (!u) return bad(res, "Akun tidak ditemukan.", 404);
+        db.prepare("UPDATE users SET email_opt_out = ? WHERE id = ?").run(b.resubscribe ? 0 : 1, u.id);
+        audit("email_unsubscribed", { actor: u.email, detail: b.resubscribe ? "berlangganan lagi" : "berhenti" });
+        json(res, 200, { ok: true, email: u.email.replace(/^(.{2}).*(@.*)$/, "$1…$2") });
+      },
+    },
+
     // change (or, for Google-only accounts, set) the password; other sessions are signed out
     "POST /internal/member/password": member(async (req, res, user) => {
       const b = await body(req);
@@ -389,6 +440,7 @@ export function memberRoutes(h) {
       db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(next), user.id);
       db.prepare("DELETE FROM user_sessions WHERE user_id = ? AND id_hash <> ?").run(user.id, sha(String(req.headers["x-member-session"] ?? "")));
       audit("member_password_changed", { actor: user.email });
+      notify("security", user.email, mails.security(user, user.password_hash ? "diganti dari halaman Pengaturan" : "dibuat dari halaman Pengaturan", String(b.ip ?? "") || null, now()));
       json(res, 200, { ok: true });
     }),
   };
@@ -434,6 +486,31 @@ export async function runReminders(send = postWebhook) {
     }
   }
   return sent;
+}
+
+/**
+ * Email reminders (Admin → Email → "Pengingat"): the same three moments as WhatsApp, to every license owner with an
+ * email, through the outbox. Logged as "mail:<kind>" so WhatsApp and email are sent once each.
+ */
+export function queueEmailReminders() {
+  const plans = getPlans();
+  let queued = 0;
+  for (const r of REMINDERS) {
+    const due = db
+      .prepare(
+        `SELECT l.id, l.key_hint, l.plan, l.expires_at, u.email, u.name FROM licenses l JOIN users u ON u.id = l.user_id
+          WHERE l.status = 'active' AND l.expires_at IS NOT NULL
+            AND l.expires_at - unixepoch() > ? AND l.expires_at - unixepoch() <= ?
+            AND NOT EXISTS (SELECT 1 FROM reminder_log g WHERE g.license_id = l.id AND g.kind = ?)`,
+      )
+      .all(r.from, r.to, `mail:${r.kind}`);
+    for (const l of due) {
+      const lic = { id: l.id, keyHint: l.key_hint, expiresAt: l.expires_at, planLabel: plans.find((p) => p.id === l.plan)?.label ?? l.plan };
+      if (notify("reminders", l.email, mails.reminder({ name: l.name }, lic, r.kind))) queued++;
+      db.prepare("INSERT OR IGNORE INTO reminder_log (license_id, kind) VALUES (?, ?)").run(l.id, `mail:${r.kind}`); // also when switched off: no flood when it is turned on later
+    }
+  }
+  return queued;
 }
 
 async function postWebhook(url, payload) {

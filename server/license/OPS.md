@@ -75,3 +75,11 @@ trk extend <licenseId> <hari>
 - **03.50** `backup-harian … traktiva-license` mengunggah file terbaru ke bucket Supabase `server-backups/shopeeboosthelper/traktiva-license/` (nama folder lama tetap dipakai setelah pindah VPS) (alarm bila macet ikut sistem backup-harian).
 - Server **hanya punya kunci publik** (`backup-pub.pem`), jadi tidak bisa membuka backup-nya sendiri. **Kunci privat hanya di PC owner**: `%USERPROFILE%\.traktiva-backup\license-backup-private.pem` → simpan salinannya di tempat aman lain (password manager / USB). Hilang kunci privat = backup tidak bisa dibuka.
 - Restore (di PC owner, Git Bash): `backup-harian ambil traktiva-license <file>` di server atau scp dari `backup/`, lalu `bash server/license/restore-backup.sh <file.tar> <private.pem> <outdir>` → salin `license.db` + `secrets.json` ke `data/` → `pm2 restart traktiva-license`. Diuji 2026-11-20: kunci publik hasil restore = yang tertanam di app.
+
+## Email (sejak 2026-11-23)
+- Mesin: `mail.mjs` (template, antrean `email_outbox`, batas harian) + `smtp.mjs` (SMTP tanpa dependensi). Akun: `data/smtp.json` (600), sekarang Gmail `traktivasite@gmail.com` lewat App Password. Ganti ke domain sendiri (mis. `noreply@traktiva.site`) cukup ubah file itu.
+- **Langsung kirim**: kode daftar (`code:register`) dan kode lupa password (`code:reset`). **Lewat antrean** (1 email / 4 detik, coba ulang 1-2-4-8 menit, 5× gagal = Log `email_failed`): selamat datang, struk pembayaran, pengingat lisensi H-7/H-1/habis (log `reminder_log` kind `mail:*`), peringatan keamanan (password diganti/di-reset), broadcast.
+- **Daftar wajib OTP**: data disimpan di `pending_signups` (dibersihkan setelah 24 jam), akun baru dibuat setelah kode benar. Daftar lewat Google tanpa OTP.
+- **Panel → Email**: status (terkirim hari ini / antre / gagal + tombol coba lagi), nyala-mati email otomatis (selamat datang, pembayaran, pengingat), batas harian (default 400; Gmail gratis ±500/hari, kode ikut dihitung), broadcast (penerima: semua / lisensi aktif / habis ≤ 7 hari / belum punya lisensi, kirim tes ke diri sendiri dulu), 25 kiriman terakhir.
+- **Berhenti berlangganan**: link bertanda tangan di setiap broadcast → `app.traktiva.site/email/berhenti` (tombol, bukan link langsung), atau Pengaturan akun → Email. Kode, struk, pengingat, dan peringatan keamanan tetap dikirim.
+

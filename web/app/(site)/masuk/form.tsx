@@ -1,10 +1,10 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import Link from "next/link";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, MailCheck } from "lucide-react";
 import { Turnstile } from "@/components/turnstile";
-import { login, register, setPasswordFromLink } from "../actions";
+import { login, register, setPasswordFromLink, type RegisterResult } from "../actions";
 
 import { field } from "./shell";
 
@@ -45,11 +45,61 @@ function PasswordInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   );
 }
 
+/** Sign-up step 2: the 6-digit code from the email, "kirim ulang" with a countdown, or go back to fix the address. */
+function CodeStep({ state, action, pending, next, turnstile, onBack }: {
+  state: Extract<RegisterResult, { ok: true }> | { ok: false; message: string }; action: (f: FormData) => void; pending: boolean; next: string; turnstile: string; onBack: () => void;
+}) {
+  const [email] = useState(state.ok ? state.email : "");
+  const [wait, setWait] = useState(state.ok ? state.retryAfter : 0);
+  const [seen, setSeen] = useState(state);
+  if (seen !== state) {
+    setSeen(state);
+    if (state.ok) setWait(state.retryAfter);
+  }
+  useEffect(() => {
+    const t = setInterval(() => setWait((w) => (w > 0 ? w - 1 : 0)), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <form action={action} className="grid gap-4">
+      <input type="hidden" name="email" value={email} />
+      <input type="hidden" name="next" value={next} />
+      <p className="flex gap-2.5 rounded-lg border border-[var(--site-signal)]/25 bg-[var(--site-signal)]/[0.07] px-3 py-2.5 text-sm text-muted-foreground">
+        <MailCheck className="mt-0.5 size-4 shrink-0 text-leaf-ink" />
+        <span>Kode 6 angka sudah dikirim ke <b className="font-medium text-foreground">{email}</b>. Cek juga folder spam.</span>
+      </p>
+      <label className={label}>
+        Kode verifikasi
+        <input name="otp" required autoFocus inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} placeholder="123456" className={`${field} h-14 text-center font-mono text-[24px] tracking-[0.4em]`} />
+      </label>
+      <Turnstile siteKey={turnstile} resetKey={state} />
+      {!state.ok && <p className={errorBox} role="alert">{state.message}</p>}
+      <button type="submit" disabled={pending} className="site-pill w-full disabled:opacity-60">
+        {pending && <Loader2 className="size-4 animate-spin" />} Verifikasi & buat akun
+      </button>
+      <div className="flex items-center justify-between text-sm">
+        <button type="button" onClick={onBack} className="text-muted-foreground hover:text-foreground hover:underline">Ganti email</button>
+        <button type="submit" name="resend" value="1" formNoValidate disabled={pending || wait > 0} className="font-semibold text-foreground hover:underline disabled:font-normal disabled:text-muted-foreground disabled:no-underline">
+          {wait > 0 ? `Kirim ulang (${wait} dtk)` : "Kirim ulang kode"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export function AuthForm({ mode, next, google, turnstile }: { mode: "login" | "register"; next: string; google: boolean; turnstile: string }) {
-  const [state, action, pending] = useActionState(mode === "login" ? login : register, null);
+  // one form for both modes; sign-up answers carry step "code" after the details are accepted
+  const [state, action, pending] = useActionState((mode === "login" ? login : register) as (s: RegisterResult, f: FormData) => Promise<RegisterResult>, null);
   const [email, setEmail] = useState(""); // controlled: kept after a failed attempt
   const [name, setName] = useState("");
+  const [codeStep, setCodeStep] = useState(false); // stays on the code step after a wrong code
+  const [seen, setSeen] = useState(state);
+  if (seen !== state) {
+    setSeen(state);
+    if (state?.ok && "step" in state) setCodeStep(true);
+  }
   const login_ = mode === "login";
+  if (!login_ && codeStep && state) return <CodeStep state={state} action={action} pending={pending} next={next} turnstile={turnstile} onBack={() => setCodeStep(false)} />;
   return (
     <div className="grid gap-5">
       {google && (
@@ -82,7 +132,7 @@ export function AuthForm({ mode, next, google, turnstile }: { mode: "login" | "r
         <Turnstile siteKey={turnstile} resetKey={state} />
         {state && !state.ok && <p className={errorBox} role="alert">{state.message}</p>}
         <button type="submit" disabled={pending} className="site-pill w-full disabled:opacity-60">
-          {pending && <Loader2 className="size-4 animate-spin" />} {login_ ? "Masuk" : "Buat akun gratis"}
+          {pending && <Loader2 className="size-4 animate-spin" />} {login_ ? "Masuk" : "Lanjut, kirim kode"}
         </button>
         {!login_ && (
           <p className="text-xs leading-relaxed text-muted-foreground">

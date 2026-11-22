@@ -7,7 +7,8 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { appInfo, audit, hwTolerance, createLicenses, DATA_DIR, db, getPlans, getSetting, hashKey, hashPassword, loadSecrets, normalizeKey, setPlans, setSetting, verifyPassword } from "./lib.mjs";
-import { createPasswordToken, memberRoutes, runReminders } from "./members.mjs";
+import { createPasswordToken, memberRoutes, queueEmailReminders, runReminders } from "./members.mjs";
+import { EMAIL_DEFAULTS, emailSettings, mails, mailStatus, queueMail, sendNow, startMailer } from "./mail.mjs";
 import { handleWebhook, paymentsConfigured, paymentsReady, syncPendingOrders, testMode } from "./payments.mjs";
 
 const PORT = Number(process.env.INTERNAL_PORT || 3822);
@@ -51,6 +52,19 @@ function memberAdmin(req) {
     .get(sha(sid));
   if (!u) return null;
   return { id: null, userId: u.id, name: u.email, kind: "member" };
+}
+
+/** Broadcast audiences (members who did not switch off news). */
+const AUDIENCES = { all: "semua member", active: "lisensi aktif", expiring: "habis ≤ 7 hari", none: "belum punya lisensi" };
+function audience(a) {
+  const live = "l.status = 'active' AND (l.expires_at IS NULL OR l.expires_at > unixepoch())";
+  const where = {
+    all: "1",
+    active: `EXISTS (SELECT 1 FROM licenses l WHERE l.user_id = u.id AND ${live})`,
+    expiring: `EXISTS (SELECT 1 FROM licenses l WHERE l.user_id = u.id AND ${live} AND l.expires_at IS NOT NULL AND l.expires_at <= unixepoch() + 7 * 86400)`,
+    none: "NOT EXISTS (SELECT 1 FROM licenses l WHERE l.user_id = u.id)",
+  }[a];
+  return where ? db.prepare(`SELECT u.id, u.email, u.name FROM users u WHERE u.email_opt_out = 0 AND ${where} ORDER BY u.id`).all() : [];
 }
 
 const sessionAdmin = (sid) =>
@@ -173,6 +187,60 @@ const routes = {
       }
       if (b.action === "link") return json(res, 200, { ok: true, token: createPasswordToken(u.id, admin.name), ttl: 30 * 60 });
       bad(res, "Aksi tidak dikenal.");
+    },
+  },
+
+  // ---- email (Admin → Email): status, automatic mails, broadcast
+  "GET /internal/email": {
+    fn: async (_req, res) => json(res, 200, { ok: true, ...mailStatus(), audiences: Object.fromEntries(Object.keys(AUDIENCES).map((a) => [a, audience(a).length])) }),
+  },
+  "POST /internal/email/settings": {
+    fn: async (req, res, admin) => {
+      const b = await body(req);
+      const next = { ...emailSettings() };
+      for (const k of Object.keys(EMAIL_DEFAULTS)) if (k !== "dailyCap" && typeof b[k] === "boolean") next[k] = b[k];
+      if (b.dailyCap !== undefined) next.dailyCap = Math.min(2000, Math.max(10, Math.round(Number(b.dailyCap) || EMAIL_DEFAULTS.dailyCap)));
+      setSetting("email", next);
+      audit("email_settings", { actor: admin.name, detail: Object.entries(next).map(([k, v]) => `${k}=${v}`).join(" ") });
+      json(res, 200, { ok: true, settings: next });
+    },
+  },
+  "POST /internal/email/broadcast": {
+    fn: async (req, res, admin) => {
+      const b = await body(req);
+      const subject = String(b.subject ?? "").trim().slice(0, 120);
+      const message = String(b.message ?? "").trim().slice(0, 5000);
+      const ctaUrl = String(b.ctaUrl ?? "").trim().slice(0, 300);
+      if (subject.length < 3 || message.length < 10) return bad(res, "Isi subjek dan pesan dulu.");
+      if (ctaUrl && !/^https:\/\//.test(ctaUrl)) return bad(res, "Link tombol harus https://");
+      const content = { subject, message, ctaUrl, ctaLabel: String(b.ctaLabel ?? "").trim().slice(0, 40) };
+      if (b.test) {
+        // test to the admin's own address, right away (legacy token admins have no email)
+        const me = admin.userId ? db.prepare("SELECT * FROM users WHERE id = ?").get(admin.userId) : null;
+        if (!me) return bad(res, "Kirim tes butuh admin yang masuk lewat akun member (punya email).");
+        try {
+          await sendNow(me.email, "broadcast-test", mails.broadcast(me, content));
+        } catch (e) {
+          return bad(res, `Gagal mengirim: ${e instanceof Error ? e.message : e}`, 502);
+        }
+        return json(res, 200, { ok: true, test: true, to: me.email });
+      }
+      if (!(b.audience in AUDIENCES)) return bad(res, "Pilih penerima.");
+      const list = audience(b.audience);
+      if (!list.length) return bad(res, "Tidak ada penerima untuk pilihan ini.");
+      const batch = `b${Date.now().toString(36)}`;
+      db.exec("BEGIN");
+      for (const u of list) queueMail(u.email, "broadcast", mails.broadcast(u, content), batch);
+      db.exec("COMMIT");
+      audit("email_broadcast", { actor: admin.name, detail: `${list.length} penerima (${AUDIENCES[b.audience]}): ${subject}`.slice(0, 200) });
+      json(res, 200, { ok: true, queued: list.length, batch });
+    },
+  },
+  "POST /internal/email/retry": {
+    fn: async (_req, res, admin) => {
+      const n = db.prepare("UPDATE email_outbox SET tries = 0, next_at = unixepoch(), error = NULL WHERE sent_at IS NULL AND tries >= 5").run().changes;
+      audit("email_retry", { actor: admin.name, detail: `${n} email` });
+      json(res, 200, { ok: true, retried: n });
     },
   },
 
@@ -466,11 +534,16 @@ setInterval(() => void syncPendingOrders().catch((e) => console.error("[orders]"
 // expiry reminders: hourly (no-op while switched off in Pengaturan)
 setInterval(() => void runReminders().catch((e) => console.error("[reminders]", e instanceof Error ? e.message : e)), 3600_000).unref();
 setTimeout(() => void runReminders().catch(() => {}), 60_000).unref();
+// email: the outbox sender + hourly reminder mails
+startMailer();
+setInterval(() => queueEmailReminders(), 3600_000).unref();
+setTimeout(() => queueEmailReminders(), 90_000).unref();
 
 setInterval(() => {
   db.prepare("DELETE FROM admin_sessions WHERE expires_at < unixepoch()").run();
   db.prepare("DELETE FROM buyer_sessions WHERE expires_at < unixepoch()").run();
   db.prepare("DELETE FROM user_sessions WHERE expires_at < unixepoch()").run();
+  db.prepare("DELETE FROM pending_signups WHERE created_at < unixepoch() - 86400").run(); // sign-ups never confirmed
 }, 3600_000).unref();
 
 http

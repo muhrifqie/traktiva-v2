@@ -20,17 +20,31 @@ const str = (f: FormData, k: string, max = 200) => String(f.get(k) ?? "").slice(
 
 type SignIn = { session?: string; maxAge?: number };
 
-export async function register(_prev: FormResult, form: FormData): Promise<FormResult> {
+export type RegisterResult = { ok: false; message: string } | { ok: true; step: "code"; email: string; message: string; retryAfter: number } | null;
+
+/** Sign-up, two steps: details (+ Turnstile) → code mailed to the address; then the code → account + signed in. */
+export async function register(_prev: RegisterResult, form: FormData): Promise<RegisterResult> {
+  const email = str(form, "email", 254).trim();
+  const resend = !!form.get("resend");
+  const otp = resend ? "" : str(form, "otp", 10).replace(/\D/g, "");
+  if (!otp) {
+    try {
+      await requireHuman(form, await ip());
+      const r = await licenseApi<{ message: string; retry_after?: number }>("/internal/member/register", {
+        method: "POST",
+        body: { name: str(form, "name", 80), email, password: str(form, "password"), resend, ip: await ip(), ua: await ua() },
+      });
+      return { ok: true, step: "code", email, message: r.message, retryAfter: r.retry_after ?? 60 };
+    } catch (e) {
+      return fail(e) as RegisterResult;
+    }
+  }
   let to: string;
   try {
-    await requireHuman(form, await ip());
-    const r = await licenseApi<SignIn>("/internal/member/register", {
-      method: "POST",
-      body: { name: str(form, "name", 80), email: str(form, "email", 254), password: str(form, "password"), ip: await ip(), ua: await ua() },
-    });
+    const r = await licenseApi<SignIn>("/internal/member/register", { method: "POST", body: { email, otp, ip: await ip(), ua: await ua() } });
     to = await finishSignIn(r, safeNext(form.get("next")));
   } catch (e) {
-    return fail(e);
+    return fail(e) as RegisterResult;
   }
   redirect(to);
 }
@@ -184,5 +198,28 @@ export async function resetHwid(licenseId: number): Promise<FormResult> {
     return { ok: true, message: `${r.released} PC dilepas. Sekarang aktifkan key di PC baru.` };
   } catch (e) {
     return fail(e instanceof z.ZodError ? new Error("Lisensi tidak valid.") : e);
+  }
+}
+
+// ---- email preferences & unsubscribe
+
+/** Info & promo emails on/off (codes, payments, reminders and security notices always arrive). */
+export async function saveEmailNews(news: boolean): Promise<FormResult> {
+  try {
+    await asMember("/internal/member/email-prefs", { method: "POST", body: { news: !!news } });
+    revalidatePath("/pengaturan");
+    return { ok: true, message: news ? "Info & promo lewat email dinyalakan." : "Kamu tidak akan menerima info & promo lagi." };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** "Berhenti berlangganan" link (signed, no sign-in needed). */
+export async function unsubscribe(u: string, t: string, resubscribe = false): Promise<{ ok: true; email: string } | { ok: false; message: string }> {
+  try {
+    const r = await licenseApi<{ email: string }>("/internal/email/unsubscribe", { method: "POST", body: { u: String(u).slice(0, 12), t: String(t).slice(0, 40), resubscribe } });
+    return { ok: true, email: r.email };
+  } catch (e) {
+    return fail(e) as { ok: false; message: string };
   }
 }

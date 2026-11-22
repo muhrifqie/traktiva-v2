@@ -130,8 +130,13 @@ try {
     const mget = (p, session) => fetch(ib + p, { headers: { authorization: `Bearer ${svc}`, "x-member-session": session } }).then((r) => r.json());
     assert.equal((await mpost("/internal/member/register", { email: "bad", password: "12345678" })).ok, false);
     assert.equal((await mpost("/internal/member/register", { email: "budi@tes.id", password: "pendek" })).ok, false);
-    const reg = await mpost("/internal/member/register", { email: "Budi@Tes.id", name: "Budi", password: "rahasia123", ip: "3.3.3.3" });
-    assert.ok(reg.ok, JSON.stringify(reg));
+    // sign-up needs the email code: step 1 mails it (no account yet), a wrong code fails, the right one creates the account
+    const reg1 = await mpost("/internal/member/register", { email: "Budi@Tes.id", name: "Budi", password: "rahasia123", ip: "3.3.3.3" });
+    assert.ok(reg1.ok && reg1.needCode && !reg1.session, JSON.stringify(reg1));
+    assert.equal((await mpost("/internal/member/login", { email: "budi@tes.id", password: "rahasia123", ip: "3.3.3.3" })).ok, false); // not created yet
+    assert.equal((await mpost("/internal/member/register", { email: "budi@tes.id", otp: "111111", ip: "3.3.3.3" })).ok, false);
+    const reg = await mpost("/internal/member/register", { email: "budi@tes.id", otp: "246810", ip: "3.3.3.3" });
+    assert.ok(reg.ok && reg.session, JSON.stringify(reg));
     assert.equal((await mpost("/internal/member/register", { email: "budi@tes.id", password: "rahasia123" })).ok, false); // duplicate (case-insensitive)
     assert.equal((await mpost("/internal/member/login", { email: "budi@tes.id", password: "salah12345", ip: "3.3.3.3" })).ok, false);
     const mlog = await mpost("/internal/member/login", { email: "BUDI@tes.id", password: "rahasia123", ip: "3.3.3.3" });
@@ -144,7 +149,8 @@ try {
     assert.deepEqual([me.user.email, me.licenses.length, me.licenses[0].id, me.licenses[0].devices.length, me.latest.version], ["budi@tes.id", 1, 1, 1, "1.2.0"]);
     assert.equal(me.licenses[0].key_hash, undefined); // never leaks the hash
     assert.deepEqual(me.releases.map((r) => r.version), ["1.2.0"]); // release history for the Aplikasi page
-    const other = await mpost("/internal/member/register", { email: "sari@tes.id", password: "rahasia123", ip: "4.4.4.4" });
+    await mpost("/internal/member/register", { email: "sari@tes.id", password: "rahasia123", ip: "4.4.4.4" });
+    const other = await mpost("/internal/member/register", { email: "sari@tes.id", otp: "246810", ip: "4.4.4.4" });
     assert.match((await mpost("/internal/member/claim", { key }, other.session)).message, /akun lain/);
     assert.equal((await mpost(`/internal/member/devices/${me.licenses[0].devices[0].id}/reset`, {}, other.session)).ok, false); // not hers
     assert.ok((await mpost(`/internal/member/devices/${me.licenses[0].devices[0].id}/reset`, {}, mlog.session)).ok);
@@ -181,6 +187,25 @@ try {
     const asAdminPost = (p, body) => fetch(ib + p, { method: "POST", headers: { authorization: `Bearer ${svc}`, "content-type": "application/json", "x-member-session": step2.session }, body: JSON.stringify(body) }).then((r) => r.json());
     assert.ok((await asAdminPost(`/internal/members/${budiId}`, { action: "link" })).token);
     assert.equal((await asAdminPost(`/internal/members/${list.members.find((m) => m.email === "owner@tes.id").id}`, { action: "role", admin: false })).ok, false); // not yourself
+
+    // email engine: welcome mails queued at sign-up, news opt-out, broadcast to an audience, unsubscribe links are signed
+    const asAdminGet = (p) => fetch(ib + p, { headers: { authorization: `Bearer ${svc}`, "x-member-session": step2.session } }).then((r) => r.json());
+    let mailSt = await asAdminGet("/internal/email");
+    assert.ok(mailSt.ok && mailSt.configured === false); // no smtp.json in the self-test: everything waits in the outbox
+    assert.ok(mailSt.recent.some((m) => m.kind === "welcome" && m.to_email === "budi@tes.id" && !m.sent_at));
+    assert.equal(mailSt.audiences.active, 1); // budi has a live license
+    assert.ok((await mpost("/internal/member/email-prefs", { news: false }, mlog.session)).ok);
+    assert.equal((await mget("/internal/member/me", mlog.session)).user.emailNews, false);
+    assert.equal((await asAdminGet("/internal/email")).audiences.active, 0); // opted out = not a broadcast recipient
+    assert.ok((await mpost("/internal/member/email-prefs", { news: true }, mlog.session)).ok);
+    assert.equal((await asAdminPost("/internal/email/broadcast", { subject: "x", message: "y" })).ok, false); // too short
+    const bc = await asAdminPost("/internal/email/broadcast", { subject: "Fitur baru", message: "Halo semua, ada fitur baru di Traktiva.", audience: "all" });
+    assert.ok(bc.ok && bc.queued >= 3, JSON.stringify(bc));
+    mailSt = await asAdminGet("/internal/email");
+    assert.ok(mailSt.recent.some((m) => m.kind === "broadcast" && m.batch === bc.batch));
+    assert.equal((await asAdminPost("/internal/email/broadcast", { subject: "Tes kirim", message: "Pesan uji untuk admin.", test: true })).ok, false); // no SMTP → refused, nothing sent
+    assert.equal((await mpost("/internal/email/unsubscribe", { u: budiId, t: "palsu" })).ok, false);
+    assert.ok((await asAdminPost("/internal/email/settings", { welcome: false, dailyCap: 50 })).settings.dailyCap === 50);
 
     // expiry reminders: off by default; on → sent once per kind to the member's WhatsApp number
     const soon = admin("create", "--plan", "bulanan", "--days", "5", "--note", "reminder").split(" ")[0];
@@ -283,6 +308,8 @@ try {
     assert.ok((await post("/v1/release", { deviceId: act2.deviceId, nonce: rn, signature: crypto.sign(null, Buffer.from(`traktiva-release:${rn}`), pc2.privateKey).toString("base64") })).ok);
     assert.equal((await loginHw(hw)).error, "device_unknown"); // slot freed, this PC needs a key again
     // forgotten password by email code; unknown emails look the same and send nothing
+    assert.deepEqual(verifySent, ["budi@tes.id", "sari@tes.id"]); // the sign-up codes
+    verifySent.length = 0;
     assert.equal((await mpost("/internal/member/forgot", { email: "tidakada@tes.id", ip: "9.9.9.9" })).otp, true);
     assert.equal(verifySent.length, 0);
     assert.equal((await mpost("/internal/member/forgot", { email: "budi@tes.id", ip: "9.9.9.9" })).otp, true);
@@ -325,7 +352,7 @@ try {
     import { emailGate } from './verify.mjs';
     const sent = []; const mailer = async (cfg, m) => sent.push(m);
     const r1 = await emailGate("reset", "a@tes.id", "1.1.1.1", "", mailer);
-    const code = sent[0].text.match(/Kode kamu: ([0-9]{6})/)[1];
+    const code = sent[0].text.match(/Kode: ([0-9]{6})/)[1];
     const again = await emailGate("reset", "a@tes.id", "1.1.1.1", "", mailer); // within 60 s
     const wrong = await emailGate("reset", "a@tes.id", "1.1.1.1", code === "000000" ? "111111" : "000000", mailer);
     const right = await emailGate("reset", "a@tes.id", "1.1.1.1", code, mailer);
