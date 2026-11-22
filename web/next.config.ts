@@ -14,6 +14,13 @@ const nextConfig: NextConfig = {
       "*.css": { loaders: ["@tailwindcss/turbopack"], as: "*.css" },
     },
   },
+  // member pages moved from /akun/<page> to /<page> (Ringkasan stays at /akun): old links and bookmarks keep working
+  async redirects() {
+    return [
+      { source: "/akun/:page(lisensi|pesanan|aktivitas|bantuan|pengaturan)/:rest*", destination: "/:page/:rest*", permanent: true },
+      { source: "/akun/download", destination: "/aplikasi", permanent: true },
+    ];
+  },
   async headers() {
     return [
       {

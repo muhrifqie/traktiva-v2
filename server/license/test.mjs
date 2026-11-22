@@ -141,8 +141,10 @@ try {
     assert.ok((await mpost("/internal/member/claim", { key: key.toLowerCase() }, mlog.session)).ok);
     assert.equal((await mpost("/internal/member/claim", { key }, mlog.session)).already, true);
     const me = await mget("/internal/member/me", mlog.session);
+    assert.equal(me.licenses[0].key, key.toUpperCase()); // a linked key is shown in full to its owner (canonical form)
     assert.deepEqual([me.user.email, me.licenses.length, me.licenses[0].id, me.licenses[0].devices.length, me.latest.version], ["budi@tes.id", 1, 1, 1, "1.2.0"]);
     assert.equal(me.licenses[0].key_hash, undefined); // never leaks the hash
+    assert.deepEqual(me.releases.map((r) => r.version), ["1.2.0"]); // release history for the Aplikasi page
     const other = await mpost("/internal/member/register", { email: "sari@tes.id", password: "rahasia123", ip: "4.4.4.4" });
     assert.match((await mpost("/internal/member/claim", { key }, other.session)).message, /akun lain/);
     assert.equal((await mpost(`/internal/member/devices/${me.licenses[0].devices[0].id}/reset`, {}, other.session)).ok, false); // not hers
@@ -150,7 +152,7 @@ try {
     const pc3 = device();
     const act3 = await post("/v1/activate", { key, devicePub: pc3.pub, deviceHash: pc3.hash });
     assert.ok(act3.ok, JSON.stringify(act3)); // the freed slot is usable again
-    assert.match((await mpost(`/internal/member/devices/${act3.deviceId}/reset`, {}, mlog.session)).message, /7 hari|hari lagi/); // cooldown
+    assert.match((await mpost(`/internal/member/devices/${act3.deviceId}/reset`, {}, mlog.session)).message, /bisa lagi dalam \d+ (jam|menit)/); // once a day
     // Google: same verified email links to the existing account; unverified is refused
     assert.equal((await mpost("/internal/member/google", { sub: "1234567890", email: "budi@tes.id", emailVerified: false })).ok, false);
     const g = await mpost("/internal/member/google", { sub: "1234567890", email: "budi@tes.id", emailVerified: true, name: "Budi G" });
@@ -231,6 +233,19 @@ try {
     const mine = await mget("/internal/member/me", mlog.session);
     const bought = mine.licenses.find((l) => l.id === done.licenseId);
     assert.ok(bought && bought.plan === "bulanan" && bought.expires_at > Date.now() / 1000 + 29 * 86400);
+    // the buyer can read the bought key again, and it activates the app
+    assert.match(bought.key, /^TRK-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+    assert.equal(bought.key.slice(-4), bought.key_hint);
+    const buyerPc = device();
+    assert.ok((await post("/v1/activate", { key: bought.key, devicePub: buyerPc.pub, deviceHash: buyerPc.hash })).ok);
+    // reset HWID of that license: every PC released, once a day; not on someone else's license
+    assert.equal((await mpost(`/internal/member/licenses/${bought.id}/reset-hwid`, {}, other.session)).ok, false);
+    const hwid = await mpost(`/internal/member/licenses/${bought.id}/reset-hwid`, {}, mlog.session);
+    assert.deepEqual([hwid.ok, hwid.released], [true, 1], JSON.stringify(hwid));
+    assert.equal((await mget("/internal/member/me", mlog.session)).licenses.find((l) => l.id === bought.id).devices.length, 0);
+    assert.match((await mpost(`/internal/member/licenses/${bought.id}/reset-hwid`, {}, mlog.session)).message, /bisa lagi dalam/);
+    const newPc = device();
+    assert.ok((await post("/v1/activate", { key: bought.key, devicePub: newPc.pub, deviceHash: newPc.hash })).ok); // the new PC activates
     // renewal extends that license; a wrong amount never delivers
     const renew = await memberOrder({ plan: "bulanan", renew: done.licenseId });
     const renewWp = wpInvoices.at(-1).id;
@@ -298,6 +313,16 @@ try {
     assert.equal((await mpost("/internal/member/sessions/revoke", { all: true }, reset.session)).removed, 1);
     assert.equal((await mget("/internal/member/me", phone.session)).ok, false);
     assert.ok((await mget("/internal/member/me", reset.session)).ok);
+
+    // activity: own account + own licenses only, never admin notes or other members
+    const act = (await mget("/internal/member/activity", reset.session)).events;
+    const kinds = new Set(act.map((e) => e.event));
+    for (const k of ["member_login", "license_claimed", "member_password_reset", "member_sessions_revoked"]) assert.ok(kinds.has(k), k);
+    assert.ok(!kinds.has("license_created") && !kinds.has("admin_login"));
+    assert.ok(act.every((e) => e.license_id == null || e.key_hint));
+    assert.ok(!act.some((e) => e.event === "license_claimed" && e.detail)); // notes stay internal
+    const sari = await mpost("/internal/member/login", { email: "sari@tes.id", password: "rahasia123", ip: "4.4.4.4" });
+    assert.ok(!(await mget("/internal/member/activity", sari.session)).events.some((e) => e.event === "license_claimed")); // not hers
     console.log("internal api ok");
   } finally {
     await new Promise((r) => (internal.once("exit", r), internal.kill()));

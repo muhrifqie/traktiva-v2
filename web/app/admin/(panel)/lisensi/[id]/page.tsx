@@ -36,7 +36,7 @@ export default async function LicenseDetail({ params }: { params: Promise<{ id: 
         <ArrowLeft className="size-3.5" /> Lisensi
       </Link>
       <PageHead title={`#${l.id} · …${l.key_hint}`}>
-        {l.role === "admin" && <span className="inline-flex h-[22px] items-center rounded-full bg-amber-300/12 px-2 text-[11px] font-semibold text-amber-200">Admin</span>}
+        {l.role === "admin" && <span className="inline-flex h-[1.375rem] items-center rounded-full bg-amber-300/12 px-2 text-[0.6875rem] font-semibold text-amber-200">Admin</span>}
         <StateBadge state={state} />
       </PageHead>
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
@@ -46,11 +46,11 @@ export default async function LicenseDetail({ params }: { params: Promise<{ id: 
             {devices.length ? (
               <ul className="divide-y">
                 {devices.map((dv) => (
-                  <li key={dv.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-[13px]">
+                  <li key={dv.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-[0.8125rem]">
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold">{dv.name ?? "Tanpa nama"} {dv.status === "reset" && <StateBadge state="reset" />}</p>
-                      <p className="font-mono text-[11px] text-muted-foreground">{dv.id.slice(0, 12)} · v{dv.app_version ?? "?"} · {dv.last_ip ?? "—"}</p>
-                      <p className="text-[11px] text-muted-foreground">{dv.hw_locked ? "🔒 Terkunci ke hardware (motherboard, CPU, RAM, disk, BIOS)" : "Belum terkunci hardware (diaktifkan dari versi app lama)"}</p>
+                      <p className="font-mono text-[0.6875rem] text-muted-foreground">{dv.id.slice(0, 12)} · v{dv.app_version ?? "?"} · {dv.last_ip ?? "—"}</p>
+                      <p className="text-[0.6875rem] text-muted-foreground">{dv.hw_locked ? "🔒 Terkunci ke hardware (motherboard, CPU, RAM, disk, BIOS)" : "Belum terkunci hardware (diaktifkan dari versi app lama)"}</p>
                     </div>
                     <OnlineBadge at={dv.last_seen} now={now} />
                     {dv.status === "active" && <DeviceReset id={dv.id} name={dv.name ?? "perangkat ini"} />}
@@ -67,7 +67,7 @@ export default async function LicenseDetail({ params }: { params: Promise<{ id: 
           </section>
         </div>
         <aside className="grid content-start gap-4">
-          <dl className="grid gap-2.5 rounded-xl border bg-card p-4 text-[13px]">
+          <dl className="grid gap-2.5 rounded-xl border bg-card p-4 text-[0.8125rem]">
             {facts.map(([k, v]) => (
               <div key={k} className="flex justify-between gap-3">
                 <dt className="text-muted-foreground">{k}</dt>

@@ -9,7 +9,7 @@ export function AuthShell({ eyebrow, title, points, children }: { eyebrow: strin
           {points.map((p) => <li key={p}>{p}</li>)}
         </ul>
       </div>
-      <div className="rounded-3xl bg-[var(--site-card)] p-7 md:p-9">{children}</div>
+      <div className="rounded-xl bg-[var(--site-card)] p-7 md:p-9">{children}</div>
     </main>
   );
 }

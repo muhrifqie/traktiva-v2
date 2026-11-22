@@ -22,7 +22,7 @@ function GoogleG() {
 export function GoogleButton({ next, label }: { next: string; label: string }) {
   return (
     // a plain link: the OAuth start is a top-level navigation to /api/auth/google (sets state, redirects to Google)
-    <a href={`/api/auth/google?next=${encodeURIComponent(next)}`} className="flex h-12 w-full items-center justify-center gap-3 rounded-full border border-white/20 bg-white text-[16px] font-semibold text-black hover:opacity-90">
+    <a href={`/api/auth/google?next=${encodeURIComponent(next)}`} className="flex h-12 w-full items-center justify-center gap-3 rounded-lg border border-white/20 bg-white text-[16px] font-semibold text-black hover:opacity-90">
       <GoogleG /> {label}
     </a>
   );

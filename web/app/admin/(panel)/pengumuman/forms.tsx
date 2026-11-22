@@ -46,7 +46,7 @@ export function NewAnnouncement() {
             </button>
           ))}
         </div>
-        <p className="text-[11px] text-muted-foreground">{level === "critical" ? "Darurat tidak bisa ditutup pengguna sampai kamu matikan." : "Pengguna bisa menutupnya."}</p>
+        <p className="text-[0.6875rem] text-muted-foreground">{level === "critical" ? "Darurat tidak bisa ditutup pengguna sampai kamu matikan." : "Pengguna bisa menutupnya."}</p>
       </div>
       <label className="grid gap-1.5 text-xs font-medium">
         Tayang selama (hari)
@@ -66,12 +66,12 @@ export function AnnouncementRow({ a, meta }: { a: Announcement; meta: string }) 
     });
   const lv = levelOf(a.level);
   return (
-    <li className={`flex flex-wrap items-start gap-3 px-4 py-3 text-[13px] ${a.active ? "" : "opacity-55"}`}>
-      <span className={`mt-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${lv.cls}`}>{lv.label}</span>
+    <li className={`flex flex-wrap items-start gap-3 px-4 py-3 text-[0.8125rem] ${a.active ? "" : "opacity-55"}`}>
+      <span className={`mt-0.5 rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold ${lv.cls}`}>{lv.label}</span>
       <div className="min-w-0 flex-1">
-        <p className="font-semibold">{a.title}{!a.active && <span className="ml-2 text-[11px] font-normal text-muted-foreground">(tidak tayang)</span>}</p>
+        <p className="font-semibold">{a.title}{!a.active && <span className="ml-2 text-[0.6875rem] font-normal text-muted-foreground">(tidak tayang)</span>}</p>
         {a.body && <p className="mt-0.5 line-clamp-2 whitespace-pre-line text-muted-foreground">{a.body}</p>}
-        <p className="mt-1 text-[11px] text-muted-foreground">{meta}</p>
+        <p className="mt-1 text-[0.6875rem] text-muted-foreground">{meta}</p>
       </div>
       <div className="flex gap-1">
         <Button size="sm" variant="outline" disabled={pending} onClick={() => run(a.active ? "off" : "on")}>

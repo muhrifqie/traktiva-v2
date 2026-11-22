@@ -3,13 +3,18 @@
 // Licenses are claimed into an account with their key; the desktop app still activates with the key.
 // A member may free one PC of a license per 7 days themselves (more = through the admin).
 import crypto from "node:crypto";
-import { appInfo, audit, db, getPlans, getSetting, hashKey, hashPassword, normalizeKey, verifyPassword } from "./lib.mjs";
+import { appInfo, audit, db, getPlans, getSetting, hashKey, hashPassword, normalizeKey, openKey, sealKey, verifyPassword } from "./lib.mjs";
 import { newTotpSecret, totpUri, verifyTotp } from "./totp.mjs";
 import { createOrder, paymentsReady, syncOrder } from "./payments.mjs";
 import { emailGate } from "./verify.mjs";
 
 export const MEMBER_SESSION_TTL = 30 * 86400;
-export const SELF_RESET_COOLDOWN = 7 * 86400;
+export const SELF_RESET_COOLDOWN = 86400; // a member may reset the hardware lock of a license once a day
+/** "bisa lagi dalam 5 jam" / "… 40 menit" for a cooldown that ends at `until` (unix s). */
+const waitText = (until, t) => {
+  const s = until - t;
+  return s >= 3600 ? `${Math.ceil(s / 3600)} jam` : `${Math.max(1, Math.ceil(s / 60))} menit`;
+};
 export const PASSWORD_LINK_TTL = 30 * 60;
 const TICKET_TTL = 5 * 60_000; // password/Google OK, waiting for the 2FA code
 
@@ -23,6 +28,14 @@ export function createPasswordToken(userId, createdBy) {
   return token;
 }
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
+
+/** Audit events a member sees about their own account and licenses (Ringkasan → Aktivitas). */
+const MEMBER_EVENTS = [
+  "activated", "activate_failed", "device_reset", "device_released", "device_changed", "license_extended", "license_claimed",
+  "license_suspended", "license_active", "license_revoked", "order_paid", "member_registered", "member_login", "member_login_failed",
+  "member_google_linked", "member_password_changed", "member_password_set", "member_password_reset", "member_2fa_enabled",
+  "member_2fa_disabled", "member_2fa_reset", "member_sessions_revoked",
+];
 
 /** Routes for internal-api.mjs. `h` = its helpers (json, bad, body, sha, now, failsOf, fails, licenseRow, secrets). */
 export function memberRoutes(h) {
@@ -91,6 +104,7 @@ export function memberRoutes(h) {
         used: l.used,
         created_at: l.created_at,
         canResetAt: nextReset > t ? nextReset : null, // null = may free a PC now
+        key: openKey(secrets.pepper, db.prepare("SELECT key_enc FROM licenses WHERE id = ?").get(l.id)?.key_enc), // null = older key, only the hint
         devices: db
           .prepare("SELECT id, name, app_version, created_at, last_seen, hw IS NOT NULL AS hw_locked FROM devices WHERE license_id = ? AND status = 'active' ORDER BY created_at DESC")
           .all(l.id),
@@ -108,6 +122,8 @@ export function memberRoutes(h) {
       site: getSetting("site", {}),
       announcements: info.announcements,
       latest: info.latest,
+      // release history for the member's "Aplikasi" page (newest first)
+      releases: db.prepare("SELECT version, url, notes, mandatory, created_at FROM releases ORDER BY id DESC LIMIT 12").all(),
       buyOnline: paymentsReady(),
     };
   }
@@ -198,21 +214,44 @@ export function memberRoutes(h) {
         return bad(res, "Key lisensi tidak dikenal.", 404);
       }
       if (lic.user_id && lic.user_id !== user.id) return bad(res, "Key ini sudah terdaftar di akun lain. Hubungi penjual kalau ini key milikmu.", 409);
-      if (lic.user_id === user.id) return json(res, 200, { ok: true, already: true });
-      db.prepare("UPDATE licenses SET user_id = ? WHERE id = ?").run(user.id, lic.id);
+      const n = normalizeKey(b.key).replace(/^TRK/, "");
+      const seal = sealKey(secrets.pepper, `TRK-${n.match(/.{1,4}/g).join("-")}`); // canonical TRK-XXXX-XXXX-XXXX-XXXX
+      if (lic.user_id === user.id) {
+        db.prepare("UPDATE licenses SET key_enc = ? WHERE id = ? AND key_enc IS NULL").run(seal, lic.id);
+        return json(res, 200, { ok: true, already: true });
+      }
+      db.prepare("UPDATE licenses SET user_id = ?, key_enc = coalesce(key_enc, ?) WHERE id = ?").run(user.id, seal, lic.id);
       audit("license_claimed", { license_id: lic.id, ip: String(b.ip ?? "").slice(0, 64) || null, actor: user.email });
       json(res, 200, { ok: true, already: false });
     }),
 
-    // free one PC of a license (the buyer changed PC / hardware); once per license per 7 days
+    // reset the hardware lock of a license (the buyer changed PC / hardware): every PC on it is released, so the key
+    // activates on the new PC. Once a day per license (shared with the single-PC release below).
+    "POST /internal/member/licenses/:id/reset-hwid": member(async (req, res, user, id) => {
+      const b = await body(req);
+      const l = db.prepare("SELECT id, user_id, status, self_reset_at FROM licenses WHERE id = ?").get(Number(id));
+      if (!l || l.user_id !== user.id) return bad(res, "Lisensi tidak ditemukan.", 404);
+      if (l.status === "revoked") return bad(res, "Lisensi ini sudah dicabut.", 409);
+      const t = now();
+      if (l.self_reset_at && l.self_reset_at + SELF_RESET_COOLDOWN > t) {
+        return bad(res, `Reset HWID bisa lagi dalam ${waitText(l.self_reset_at + SELF_RESET_COOLDOWN, t)}. Kalau mendesak, hubungi penjual.`, 429);
+      }
+      const pcs = db.prepare("SELECT id, name FROM devices WHERE license_id = ? AND status = 'active'").all(l.id);
+      if (!pcs.length) return bad(res, "Belum ada PC yang terkunci ke key ini. Langsung aktifkan saja di PC baru.", 409);
+      db.prepare("UPDATE devices SET status = 'reset' WHERE license_id = ? AND status = 'active'").run(l.id);
+      db.prepare("UPDATE licenses SET self_reset_at = ? WHERE id = ?").run(t, l.id);
+      audit("device_reset", { license_id: l.id, ip: String(b.ip ?? "").slice(0, 64) || null, actor: user.email, detail: `reset HWID: ${pcs.map((p) => p.name ?? "PC").join(", ")} (oleh pembeli)` });
+      json(res, 200, { ok: true, released: pcs.length });
+    }),
+
+    // free one PC of a license; same once-a-day allowance as the license reset above
     "POST /internal/member/devices/:id/reset": member(async (req, res, user, id) => {
       const b = await body(req);
       const d = db.prepare("SELECT d.*, l.user_id, l.self_reset_at FROM devices d JOIN licenses l ON l.id = d.license_id WHERE d.id = ? AND d.status = 'active'").get(String(id));
       if (!d || d.user_id !== user.id) return bad(res, "Perangkat tidak ditemukan.", 404);
       const t = now();
       if (d.self_reset_at && d.self_reset_at + SELF_RESET_COOLDOWN > t) {
-        const days = Math.ceil((d.self_reset_at + SELF_RESET_COOLDOWN - t) / 86400);
-        return bad(res, `Reset mandiri bisa lagi ${days} hari lagi. Kalau mendesak, hubungi penjual.`, 429);
+        return bad(res, `Reset HWID bisa lagi dalam ${waitText(d.self_reset_at + SELF_RESET_COOLDOWN, t)}. Kalau mendesak, hubungi penjual.`, 429);
       }
       db.prepare("UPDATE devices SET status = 'reset' WHERE id = ?").run(d.id);
       db.prepare("UPDATE licenses SET self_reset_at = ? WHERE id = ?").run(t, d.license_id);
@@ -328,6 +367,25 @@ export function memberRoutes(h) {
         signIn(res, user, ip, "reset", b.ua);
       },
     },
+
+    // activity of this account and its licenses (Ringkasan timeline, license detail history). Only events about the
+    // member's own things; admin-only details (notes, reasons, admin names) are not sent.
+    "GET /internal/member/activity": member(async (_req, res, user) => {
+      const rows = db
+        .prepare(
+          `SELECT e.id, e.at, e.event, e.license_id, e.device_id, e.detail, l.key_hint, d.name AS device_name,
+                  CASE WHEN e.event IN ('member_login', 'member_login_failed') THEN e.ip END AS ip
+             FROM audit_events e
+             LEFT JOIN licenses l ON l.id = e.license_id
+             LEFT JOIN devices d ON d.id = e.device_id
+            WHERE e.event IN (${MEMBER_EVENTS.map(() => "?").join(",")})
+              AND ((e.license_id IN (SELECT id FROM licenses WHERE user_id = ?) AND e.event NOT LIKE 'member_%') OR (e.license_id IS NULL AND e.actor = ?))
+            ORDER BY e.at DESC, e.id DESC LIMIT 200`,
+        )
+        .all(...MEMBER_EVENTS, user.id, user.email);
+      const keep = new Set(["license_extended", "order_paid", "member_sessions_revoked"]); // details safe to show the member
+      json(res, 200, { ok: true, events: rows.map((r) => ({ ...r, detail: keep.has(r.event) ? r.detail : null })) });
+    }),
 
     // web sessions of this account (Pengaturan → Perangkat & sesi)
     "GET /internal/member/sessions": member(async (req, res, user) => {

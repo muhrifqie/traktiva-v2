@@ -51,7 +51,7 @@ Server lisensi app desktop Traktiva V2 (aktivasi key, sesi, heartbeat). Desain: 
 
 ## Lupa password & sesi (sejak 2026-11-21)
 - **Lupa password** (`/lupa-password`): kode 6 angka lewat **Waroengku Verify** (`purpose: "reset"`, SMTP SumoPod, pengirim `Traktiva <noreply@shopeeboost.com>`). Klien `traktiva` di `serverku:/srv/waroeng-verify/clients.json`; kunci ada di `data/verify.json` (600: `{ "url": "https://waroengin.com/_verify", "key": "…" }`) atau env `VERIFY_URL`/`VERIFY_KEY`. Batas dari pusat: kode 10 menit, 5 salah, kirim ulang 60 dtk, 5 kode/jam/email. Email tak terdaftar dijawab sama (tanpa kirim). Berhasil → semua sesi lain keluar.
-- **Perangkat & sesi** (/akun/pengaturan): `user_sessions` menyimpan `created_at, last_seen, ip, ua`; member bisa mengeluarkan sesi lain.
+- **Perangkat & sesi** (/pengaturan): `user_sessions` menyimpan `created_at, last_seen, ip, ua`; member bisa mengeluarkan sesi lain.
 
 ## Admin (CLI, di server)
 ```bash

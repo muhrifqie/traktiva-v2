@@ -27,7 +27,7 @@ export function Sidebar({ name }: { name: string }) {
         <img src="/logo.svg" alt="" className="size-7" />
         <div className="leading-tight">
           <p className="text-sm font-semibold">Traktiva</p>
-          <p className="text-[11px] text-muted-foreground">Admin lisensi</p>
+          <p className="text-[0.6875rem] text-muted-foreground">Admin lisensi</p>
         </div>
       </div>
       <nav className="flex gap-1 md:flex-col">
@@ -35,14 +35,14 @@ export function Sidebar({ name }: { name: string }) {
           <Link
             key={href}
             href={href}
-            className={`flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition-colors ${on(href) ? "bg-primary/18 text-foreground" : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-foreground"}`}
+            className={`flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-[0.8125rem] transition-colors ${on(href) ? "bg-primary/18 text-foreground" : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-foreground"}`}
           >
             <Icon className={`size-4 ${on(href) ? "text-brand-light" : ""}`} /> {label}
           </Link>
         ))}
       </nav>
       <form action={logout} className="ml-auto flex items-center gap-2 border-border md:mt-auto md:ml-0 md:border-t md:px-1 md:pt-3">
-        <span className="grid size-7 place-items-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">{name.slice(0, 2).toUpperCase()}</span>
+        <span className="grid size-7 place-items-center rounded-full bg-primary text-[0.6875rem] font-bold text-primary-foreground">{name.slice(0, 2).toUpperCase()}</span>
         <span className="hidden truncate text-xs md:inline">{name}</span>
         <Button type="submit" variant="ghost" size="icon-sm" className="md:ml-auto" title="Keluar" aria-label="Keluar">
           <LogOut />

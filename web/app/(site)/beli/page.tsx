@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { rupiah } from "@/lib/format";
 import { requireMember } from "@/lib/license-api";
-import { BuyButton } from "../akun/forms";
+import { BuyButton } from "@/app/(member)/_ui/forms";
 import { AuthShell } from "../masuk/shell";
 
 export const metadata: Metadata = { title: "Beli lisensi", robots: { index: false, follow: false } };

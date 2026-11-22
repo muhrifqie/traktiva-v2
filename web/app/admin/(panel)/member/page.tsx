@@ -26,7 +26,7 @@ export default async function Members({ searchParams }: { searchParams: Promise<
         <Input name="q" defaultValue={q} placeholder="Cari email atau nama" className="pl-8" />
       </form>
       <div className="overflow-x-auto rounded-xl border bg-card">
-        <table className="w-full text-[13px]">
+        <table className="w-full text-[0.8125rem]">
           <thead className="border-b text-left text-xs text-muted-foreground">
             <tr className="[&>th]:px-4 [&>th]:py-2.5 [&>th]:font-medium">
               <th>Akun</th><th>Masuk lewat</th><th>Lisensi</th><th>Daftar</th><th>Login terakhir</th><th className="text-right">Aksi</th>
@@ -38,10 +38,10 @@ export default async function Members({ searchParams }: { searchParams: Promise<
                 <td className="max-w-72">
                   <p className="truncate font-semibold">
                     {m.email}
-                    {!!m.is_admin && <span className="ml-2 rounded-full bg-amber-300/12 px-1.5 py-px text-[10px] font-semibold text-amber-200">Admin</span>}
-                    {!!m.totp && <span className="ml-1.5 rounded-full bg-status-ok/12 px-1.5 py-px text-[10px] font-semibold text-status-ok">2FA</span>}
+                    {!!m.is_admin && <span className="ml-2 rounded-full bg-amber-300/12 px-1.5 py-px text-[0.625rem] font-semibold text-amber-200">Admin</span>}
+                    {!!m.totp && <span className="ml-1.5 rounded-full bg-status-ok/12 px-1.5 py-px text-[0.625rem] font-semibold text-status-ok">2FA</span>}
                   </p>
-                  <p className="truncate text-[11px] text-muted-foreground">{[m.name, m.phone && `WA ${m.phone}`].filter(Boolean).join(" · ") || "—"}</p>
+                  <p className="truncate text-[0.6875rem] text-muted-foreground">{[m.name, m.phone && `WA ${m.phone}`].filter(Boolean).join(" · ") || "—"}</p>
                 </td>
                 <td className="text-muted-foreground">{[m.has_password && "Email", m.google && "Google"].filter(Boolean).join(" + ") || "Belum atur password"}</td>
                 <td className="tabular-nums">{m.licenses}</td>

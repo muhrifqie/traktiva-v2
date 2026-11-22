@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronDown, KeyRound, LayoutDashboard, LayoutGrid, LogOut, Menu, Moon, Receipt, Settings, Sun, X } from "lucide-react";
+import { ChevronDown, KeyRound, LayoutDashboard, LayoutGrid, LogOut, Menu, Receipt, Settings, X } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { logout } from "./actions";
 
 export type Theme = "dark" | "light";
@@ -12,15 +13,15 @@ export type NavUser = { name: string; email: string; avatar: string | null; isAd
 const LINKS = [
   ["/#fitur", "Fitur"],
   ["/#cara-kerja", "Cara kerja"],
-  ["/#harga", "Harga"],
+  ["/harga", "Harga"],
   ["/#faq", "FAQ"],
 ] as const;
 
 const ACCOUNT = [
   ["/akun", "Ringkasan", LayoutGrid],
-  ["/akun/lisensi", "Lisensi & PC", KeyRound],
-  ["/akun/pesanan", "Pesanan", Receipt],
-  ["/akun/pengaturan", "Pengaturan", Settings],
+  ["/lisensi", "Lisensi & PC", KeyRound],
+  ["/pesanan", "Pesanan", Receipt],
+  ["/pengaturan", "Pengaturan", Settings],
 ] as const;
 
 /** Popover that closes on outside click, Escape, and navigation. */
@@ -53,7 +54,7 @@ function Initial({ user, size = "size-8" }: { user: NonNullable<NavUser>; size?:
   return <span className={`${size} grid place-items-center rounded-full bg-[var(--site-glow)] text-[13px] font-semibold uppercase`}>{(user.name || user.email)[0]}</span>;
 }
 
-const item = "flex h-10 items-center gap-3 rounded-xl px-3 text-[14px] text-[var(--site-body)] hover:bg-white/[0.06] hover:text-white";
+const item = "flex h-10 items-center gap-3 rounded-lg px-3 text-sm text-muted-foreground hover:bg-muted hover:text-foreground";
 
 function AccountItems({ user }: { user: NonNullable<NavUser> }) {
   return (
@@ -61,7 +62,7 @@ function AccountItems({ user }: { user: NonNullable<NavUser> }) {
       {ACCOUNT.map(([href, label, Icon]) => (
         <Link key={href} href={href} className={item}>
           <Icon className="size-4" /> {label}
-          {href === "/akun/pengaturan" && user.alert && <span className="ml-auto size-2 rounded-full bg-amber-300" />}
+          {href === "/pengaturan" && user.alert && <span className="ml-auto size-2 rounded-full bg-amber-300" />}
         </Link>
       ))}
       {user.isAdmin && (
@@ -83,7 +84,7 @@ function UserMenu({ user }: { user: NonNullable<NavUser> }) {
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="flex h-10 items-center gap-2 rounded-full border border-white/12 py-1 pr-3 pl-1 hover:border-white/30"
+        className="flex h-10 items-center gap-2 rounded-lg border border-white/12 py-1 pr-3 pl-1 hover:border-white/30"
       >
         <span className="relative">
           <Initial user={user} />
@@ -93,7 +94,7 @@ function UserMenu({ user }: { user: NonNullable<NavUser> }) {
         <ChevronDown className={`size-4 text-[var(--site-muted)] transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div role="menu" className="absolute top-12 right-0 w-64 rounded-2xl border border-white/10 bg-[var(--site-card)] p-2 shadow-2xl shadow-black/60">
+        <div role="menu" className="absolute top-12 right-0 w-64 rounded-xl border border-white/10 bg-[var(--site-card)] p-2 shadow-2xl shadow-black/60">
           <div className="px-3 pt-2 pb-3">
             <p className="truncate text-[14px] font-medium">{user.name || "Akun Traktiva"}</p>
             <p className="truncate text-[12px] text-[var(--site-muted)]">{user.email}</p>
@@ -145,27 +146,6 @@ function MobileMenu({ user }: { user: NavUser }) {
   );
 }
 
-/** Dark/light switch: cookie for the next server render, attribute for this page right away. */
-function ThemeToggle({ initial }: { initial: Theme }) {
-  const [theme, setTheme] = useState(initial);
-  const next: Theme = theme === "light" ? "dark" : "light";
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        document.cookie = `trk_theme=${next}; path=/; max-age=31536000; samesite=lax`;
-        document.querySelector(".site")?.setAttribute("data-theme", next);
-        setTheme(next);
-      }}
-      aria-label={next === "light" ? "Ganti ke tampilan terang" : "Ganti ke tampilan gelap"}
-      title={next === "light" ? "Tampilan terang" : "Tampilan gelap"}
-      className="grid size-10 shrink-0 place-items-center rounded-full border border-white/12 text-[var(--site-body)] hover:border-white/30 hover:text-white"
-    >
-      {theme === "light" ? <Moon className="size-[18px]" /> : <Sun className="size-[18px]" />}
-    </button>
-  );
-}
-
 export function SiteNav({ user, theme }: { user: NavUser; theme: Theme }) {
   return (
     <header className="sticky top-0 z-50 border-b border-white/5 bg-[var(--site-canvas)]/85 backdrop-blur">
@@ -183,7 +163,7 @@ export function SiteNav({ user, theme }: { user: NavUser; theme: Theme }) {
           </div>
         )}
         <div className="ml-auto flex items-center gap-2 sm:gap-3">
-          <ThemeToggle initial={theme} />
+          <ThemeToggle initial={theme} className="size-10 rounded-lg" />
           {user ? (
             <UserMenu user={user} />
           ) : (
