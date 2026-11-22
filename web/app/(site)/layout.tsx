@@ -27,7 +27,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
             <p className="max-w-sm text-muted-foreground">Studio video affiliate TikTok Shop di PC kamu. Dari etalase sampai jadwal upload.</p>
           </div>
           {[
-            ["Produk", [["/fitur", "Fitur"], ["/cara-kerja", "Cara kerja"], ["/harga", "Harga"], ["/faq", "FAQ"]]],
+            ["Produk", [["/fitur", "Fitur"], ["/platform", "Platform"], ["/cara-kerja", "Cara kerja"], ["/harga", "Harga"], ["/faq", "FAQ"]]],
             ["Pembeli", [["/masuk", "Masuk"], ["/daftar", "Daftar akun"], ["/lisensi", "Lisensi & key"], ["/bantuan", "Panduan & download"]]],
             ["Traktiva", [["/kontak", "Kontak"], ["/privasi", "Kebijakan Privasi"], ["/ketentuan", "Ketentuan Layanan"]]],
           ].map(([title, links]) => (

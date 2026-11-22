@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, CalendarClock, Check, Clapperboard, Heart, MessageCircle, Music2, Share2, ShoppingBag, Store } from "lucide-react";
+import { ArrowRight, Check, Store } from "lucide-react";
 import { publicInfo } from "@/lib/license-api";
 import { FAQ_TOP, FEATURES, STEPS } from "./content";
 import { buyHref, featuredId, PlanCard } from "./plans";
+import { PlatformGrid, PlatformOrbit } from "./platforms-ui";
 import { CtaBand, FaqList, Section, WRAP } from "./_ui";
 
 export const metadata: Metadata = {
@@ -11,28 +12,6 @@ export const metadata: Metadata = {
   description: "App Windows untuk bikin dan menjadwalkan video affiliate TikTok Shop dengan AI: riset produk, sampai 5 versi video per produk, suara & subtitle otomatis, upload terjadwal.",
   alternates: { canonical: "https://traktiva.site/" },
 };
-
-/** Hero art: three vertical videos made from one product, in TikTok's frame. Flat colors only, no motion. */
-const PHONES = [
-  { tag: "A", hook: "Blender 6 mata pisau, 30 detik jadi jus", bg: "bg-[#1f3d1a]", tilt: "-rotate-3 translate-y-4" },
-  { tag: "B", hook: "Capek nyuci blender besar? Ini solusinya", bg: "bg-[#106e3a]", tilt: "z-10" },
-  { tag: "C", hook: "Review jujur setelah 2 minggu pakai", bg: "bg-[#2b2f2a]", tilt: "rotate-3 translate-y-4" },
-];
-
-function Phone({ tag, hook, bg, tilt }: (typeof PHONES)[number]) {
-  return (
-    <div className={`relative aspect-[9/16] w-[30%] max-w-[12rem] shrink-0 overflow-hidden rounded-[1.4rem] border-4 border-[#0a0b0a] ${bg} ${tilt}`}>
-      <Clapperboard className="absolute top-1/2 left-1/2 size-7 -translate-1/2 text-[#fff] opacity-25" />
-      <span className="absolute top-3 left-3 rounded-full bg-[#000]/60 px-2 py-0.5 text-[0.625rem] font-semibold text-[#fff]">Versi {tag}</span>
-      <div className="absolute right-2 bottom-16 grid gap-3 text-[#fff]/90"><Heart className="size-4" /><MessageCircle className="size-4" /><Share2 className="size-4" /></div>
-      <div className="absolute inset-x-3 bottom-3 grid gap-1.5">
-        <p className="text-[0.6875rem] leading-tight font-semibold text-[#fff]">{hook}</p>
-        <span className="flex w-fit items-center gap-1 rounded-md bg-[#ff9f1c] px-1.5 py-0.5 text-[0.5625rem] font-bold text-black"><ShoppingBag className="size-2.5" /> Cek keranjang</span>
-        <span className="flex items-center gap-1 text-[0.5625rem] text-[#fff]/80"><Music2 className="size-2.5" /> suara asli · Traktiva</span>
-      </div>
-    </div>
-  );
-}
 
 export default async function Landing() {
   const info = await publicInfo();
@@ -51,7 +30,7 @@ export default async function Landing() {
             Video affiliate TikTok Shop, <span className="text-leaf-ink">dibuat otomatis.</span>
           </h1>
           <p style={{ "--i": 2 } as React.CSSProperties} className="rise mt-5 max-w-lg text-base leading-relaxed text-muted-foreground md:text-lg">
-            Pilih produk dari etalase. Traktiva membuat sampai 5 video lengkap dengan suara dan subtitle, lalu menjadwalkannya ke TikTok.
+            Pilih produk dari etalase. Traktiva membuat sampai 5 video lengkap dengan suara dan subtitle, lalu menjadwalkannya ke TikTok. Platform lain menyusul.
           </p>
           <div style={{ "--i": 3 } as React.CSSProperties} className="rise mt-8 flex flex-wrap items-center gap-3">
             <Link href="/harga" className="site-pill">Lihat paket <ArrowRight className="size-4" /></Link>
@@ -63,11 +42,8 @@ export default async function Landing() {
             ))}
           </ul>
         </div>
-        <div style={{ "--i": 2 } as React.CSSProperties} className="rise relative hidden items-end justify-center gap-3 rounded-xl border bg-card px-6 pt-10 pb-14 sm:flex md:gap-5" aria-hidden>
-          {PHONES.map((p) => <Phone key={p.tag} {...p} />)}
-          <div className="absolute -bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm font-semibold whitespace-nowrap">
-            <CalendarClock className="size-4 text-leaf-ink" /> 3 video terjadwal · 19.00
-          </div>
+        <div style={{ "--i": 2 } as React.CSSProperties} className="rise hidden sm:block">
+          <PlatformOrbit />
         </div>
       </section>
 
@@ -84,8 +60,13 @@ export default async function Landing() {
         </div>
       </Section>
 
-      {/* 3 · how it works */}
-      <Section id="cara-kerja" title="Dari etalase ke FYP dalam 4 langkah." action={{ href: "/cara-kerja", label: "Lihat detailnya" }}>
+      {/* 3 · platforms */}
+      <Section id="platform" title="Satu video, banyak platform." sub="Sekarang TikTok. Berikutnya Shopee Video, lalu platform lain dari video yang sama." action={{ href: "/platform", label: "Lihat roadmap" }}>
+        <PlatformGrid />
+      </Section>
+
+      {/* 4 · how it works */}
+      <Section id="cara-kerja" title="Dari etalase ke FYP dalam 4 langkah." action={{ href: "/cara-kerja", label: "Lihat detailnya" }} tint>
         <ol className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {STEPS.map((s, i) => (
             <li key={s.title} className="reveal rounded-xl border bg-card p-6">
@@ -97,8 +78,8 @@ export default async function Landing() {
         </ol>
       </Section>
 
-      {/* 4 · pricing */}
-      <Section id="harga" title="Pilih paket, langsung jalan." sub="Semua fitur ada di setiap paket. Bedanya cuma masa aktif dan jumlah PC." action={{ href: "/harga", label: "Bandingkan paket" }} tint>
+      {/* 5 · pricing */}
+      <Section id="harga" title="Pilih paket, langsung jalan." sub="Semua fitur ada di setiap paket. Bedanya cuma masa aktif dan jumlah PC." action={{ href: "/harga", label: "Bandingkan paket" }}>
         {plans.length ? (
           <div className="grid gap-4 md:grid-cols-3">
             {plans.map((p) => <PlanCard key={p.id} p={p} href={buyHref(info, p)} featured={p.id === feat} />)}
@@ -109,8 +90,8 @@ export default async function Landing() {
         <p className="mt-6 text-sm text-muted-foreground">Bayar QRIS dari semua e-wallet & m-banking. Key langsung masuk ke akunmu setelah lunas.</p>
       </Section>
 
-      {/* 5 · faq */}
-      <Section id="faq" title="Pertanyaan yang sering muncul" action={{ href: "/faq", label: "Semua pertanyaan" }}>
+      {/* 6 · faq */}
+      <Section id="faq" title="Pertanyaan yang sering muncul" action={{ href: "/faq", label: "Semua pertanyaan" }} tint>
         <FaqList items={FAQ_TOP} />
       </Section>
 

@@ -12,6 +12,7 @@ export type NavUser = { name: string; email: string; avatar: string | null; isAd
 
 const LINKS = [
   ["/fitur", "Fitur"],
+  ["/platform", "Platform"],
   ["/cara-kerja", "Cara kerja"],
   ["/harga", "Harga"],
   ["/faq", "FAQ"],
