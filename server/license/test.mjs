@@ -318,6 +318,28 @@ try {
   } finally {
     await new Promise((r) => (internal.once("exit", r), internal.kill()));
   }
+
+  // own SMTP mode (smtp.json present): codes made and checked here, limits enforced, mail goes through the mailer
+  fs.writeFileSync(path.join(dir, "smtp.json"), JSON.stringify({ host: "smtp.test", user: "kirim@tes.id", pass: "x" }));
+  const mail = execFileSync(process.execPath, ["--disable-warning=ExperimentalWarning", "--input-type=module", "-e", `
+    import { emailGate } from './verify.mjs';
+    const sent = []; const mailer = async (cfg, m) => sent.push(m);
+    const r1 = await emailGate("reset", "a@tes.id", "1.1.1.1", "", mailer);
+    const code = sent[0].subject.slice(0, 6);
+    const again = await emailGate("reset", "a@tes.id", "1.1.1.1", "", mailer); // within 60 s
+    const wrong = await emailGate("reset", "a@tes.id", "1.1.1.1", code === "000000" ? "111111" : "000000", mailer);
+    const right = await emailGate("reset", "a@tes.id", "1.1.1.1", code, mailer);
+    const reuse = await emailGate("reset", "a@tes.id", "1.1.1.1", code, mailer);
+    const down = await emailGate("reset", "b@tes.id", "1.1.1.1", "", async () => { throw new Error("535 auth"); });
+    console.log(JSON.stringify({ r1, sent: sent.length, to: sent[0].to, codeOk: /^[0-9]{6}$/.test(code), inHtml: sent[0].html.includes(code), again, wrong, right, reuse, down }));`],
+    { env: { ...process.env, LICENSE_DATA_DIR: dir }, cwd: import.meta.dirname, encoding: "utf8" });
+  const m = JSON.parse(mail);
+  assert.ok(m.r1.otp && m.sent === 1 && m.to === "a@tes.id" && m.codeOk && m.inHtml, mail);
+  assert.ok(!m.again.ok && m.again.retry_after > 0); // resend gap
+  assert.ok(!m.wrong.ok && /Sisa 4/.test(m.wrong.message));
+  assert.ok(m.right.ok && !m.reuse.ok); // one use
+  assert.equal(m.down.error, "verify_down"); // SMTP failure → friendly message, nothing stored
+  console.log("email codes ok");
 } finally {
   // wait for the server to exit: on Windows its open DB file blocks deleting the temp dir
   wpMock.close();

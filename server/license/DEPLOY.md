@@ -14,7 +14,7 @@ Host traktiva
 
 Key baru: `ssh-keygen -t ed25519 -f ~/.ssh/traktiva`, kirim isi `.pub` ke yang sudah punya akses untuk ditambah ke `~/.ssh/authorized_keys`. Password SSH dimatikan; 5× gagal = IP diblokir 1 jam (fail2ban).
 
-**Jangan** sentuh `/srv/traktiva-license/data` (DB, `secrets.json`, `service-token`, `waroengpay.json`, `verify.json`) dan sertifikat 8443 (`/etc/nginx/ssl/traktiva-license.*`): kunci publik & sidik jari sertifikat tertanam di installer.
+**Jangan** sentuh `/srv/traktiva-license/data` (DB, `secrets.json`, `service-token`, `waroengpay.json`, `verify.json`, `smtp.json`, `web-secrets.json`) dan sertifikat 8443 (`/etc/nginx/ssl/traktiva-license.*`): kunci publik & sidik jari sertifikat tertanam di installer.
 
 ## Alamat
 
@@ -34,7 +34,7 @@ DNS di Cloudflare: record A `@ www app admin api download` → `43.133.142.25`, 
 ## 1. Server lisensi
 
 ```bash
-scp server/license/{lib,server,admin,internal-api,members,payments,verify,test}.mjs traktiva:/tmp/trk-deploy/
+scp server/license/{lib,server,admin,internal-api,members,payments,verify,smtp,test}.mjs traktiva:/tmp/trk-deploy/
 ssh traktiva
 cd /tmp/trk-deploy && node test.mjs                                                # harus: license server ok / internal api ok
 cd /srv/traktiva-license && ./backup.sh                                            # backup terenkripsi dulu
