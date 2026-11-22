@@ -4,7 +4,6 @@
 // A member may free one PC of a license per 7 days themselves (more = through the admin).
 import crypto from "node:crypto";
 import { appInfo, audit, db, getPlans, getSetting, hashKey, hashPassword, normalizeKey, openKey, sealKey, verifyPassword } from "./lib.mjs";
-import { newTotpSecret, totpUri, verifyTotp } from "./totp.mjs";
 import { createOrder, paymentsReady, syncOrder } from "./payments.mjs";
 import { emailGate } from "./verify.mjs";
 
@@ -16,7 +15,6 @@ const waitText = (until, t) => {
   return s >= 3600 ? `${Math.ceil(s / 3600)} jam` : `${Math.max(1, Math.ceil(s / 60))} menit`;
 };
 export const PASSWORD_LINK_TTL = 30 * 60;
-const TICKET_TTL = 5 * 60_000; // password/Google OK, waiting for the 2FA code
 
 /** One-time "atur password" link token for a member (admin panel / CLI). Returns the plain token (shown once). */
 export function createPasswordToken(userId, createdBy) {
@@ -33,15 +31,14 @@ const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
 const MEMBER_EVENTS = [
   "activated", "activate_failed", "device_reset", "device_released", "device_changed", "license_extended", "license_claimed",
   "license_suspended", "license_active", "license_revoked", "order_paid", "member_registered", "member_login", "member_login_failed",
-  "member_google_linked", "member_password_changed", "member_password_set", "member_password_reset", "member_2fa_enabled",
-  "member_2fa_disabled", "member_2fa_reset", "member_sessions_revoked",
+  "member_google_linked", "member_password_changed", "member_password_set", "member_password_reset",
+  "member_sessions_revoked",
 ];
 
 /** Routes for internal-api.mjs. `h` = its helpers (json, bad, body, sha, now, failsOf, fails, licenseRow, secrets). */
 export function memberRoutes(h) {
   const { json, bad, body, sha, now, failsOf, fails, licenseRow, secrets } = h;
 
-  const tickets = new Map(); // ticket -> { userId, how, until, tries }
   const userOf = (req) => {
     const sid = String(req.headers["x-member-session"] ?? "");
     if (!sid) return null;
@@ -49,14 +46,8 @@ export function memberRoutes(h) {
     if (user) db.prepare("UPDATE user_sessions SET last_seen = unixepoch() WHERE id_hash = ? AND (last_seen IS NULL OR last_seen < unixepoch() - 300)").run(sha(sid));
     return user;
   };
-  /** Signed in with password/Google/link: straight in, or a 2FA ticket when the account has an authenticator. */
-  const signIn = (res, user, ip, how, ua) => {
-    if (!user.totp_secret) return startSession(res, user, ip, how, ua);
-    const ticket = crypto.randomBytes(24).toString("base64url");
-    if (tickets.size > 5000) tickets.clear();
-    tickets.set(ticket, { userId: user.id, how, ua, until: Date.now() + TICKET_TTL, tries: 0 });
-    json(res, 200, { ok: true, needCode: true, ticket });
-  };
+  /** Signed in with password/Google/link. */
+  const signIn = (res, user, ip, how, ua) => startSession(res, user, ip, how, ua);
   const startSession = (res, user, ip, how, ua) => {
     const sid = crypto.randomBytes(32).toString("base64url");
     db.prepare("INSERT INTO user_sessions (id_hash, user_id, expires_at, created_at, last_seen, ip, ua) VALUES (?, ?, ?, unixepoch(), unixepoch(), ?, ?)").run(
@@ -115,7 +106,7 @@ export function memberRoutes(h) {
       user: {
         id: user.id, email: user.email, name: user.name, avatar: user.avatar, phone: user.phone,
         hasPassword: !!user.password_hash, google: !!user.google_sub, created_at: user.created_at,
-        isAdmin: !!user.is_admin, totp: !!user.totp_secret,
+        isAdmin: !!user.is_admin,
       },
       licenses,
       plans,
@@ -259,47 +250,7 @@ export function memberRoutes(h) {
       json(res, 200, { ok: true });
     }),
 
-    // second step of sign-in for accounts with an authenticator
-    "POST /internal/member/login/2fa": {
-      open: true,
-      fn: async (req, res) => {
-        const b = await body(req);
-        const ip = ipOf(b);
-        const t = tickets.get(String(b.ticket ?? ""));
-        if (!t || t.until < Date.now()) return bad(res, "Waktu habis. Masuk lagi dari awal.", 401);
-        const user = db.prepare("SELECT * FROM users WHERE id = ?").get(t.userId);
-        if (!user || !verifyTotp(user.totp_secret, b.code)) {
-          if (++t.tries >= 5) tickets.delete(String(b.ticket));
-          audit("member_2fa_failed", { ip, actor: user?.email ?? "?" });
-          return bad(res, t.tries >= 5 ? "Terlalu banyak kode salah. Masuk lagi dari awal." : "Kode salah. Cek jam HP dan coba kode terbaru.", 401);
-        }
-        tickets.delete(String(b.ticket));
-        startSession(res, user, ip, `${t.how}+2fa`, t.ua);
-      },
-    },
-
-    // authenticator: setup (pending secret + QR link), enable with a first code, disable with a code
-    "POST /internal/member/2fa/setup": member(async (_req, res, user) => {
-      const secret = newTotpSecret();
-      db.prepare("UPDATE users SET totp_pending = ? WHERE id = ?").run(secret, user.id);
-      json(res, 200, { ok: true, secret, uri: totpUri(secret, user.email) });
-    }),
-    "POST /internal/member/2fa/enable": member(async (req, res, user) => {
-      const b = await body(req);
-      if (!user.totp_pending || !verifyTotp(user.totp_pending, b.code)) return bad(res, "Kode salah. Pindai QR lagi lalu masukkan kode 6 angka terbaru.");
-      db.prepare("UPDATE users SET totp_secret = totp_pending, totp_pending = NULL WHERE id = ?").run(user.id);
-      audit("member_2fa_enabled", { actor: user.email });
-      json(res, 200, { ok: true });
-    }),
-    "POST /internal/member/2fa/disable": member(async (req, res, user) => {
-      const b = await body(req);
-      if (!verifyTotp(user.totp_secret, b.code)) return bad(res, "Kode salah.");
-      db.prepare("UPDATE users SET totp_secret = NULL, totp_pending = NULL WHERE id = ?").run(user.id);
-      audit("member_2fa_disabled", { actor: user.email });
-      json(res, 200, { ok: true });
-    }),
-
-    // one-time "atur password" link: check, then set (signs the member in, via 2FA when enabled)
+    // one-time "atur password" link: check, then set (signs the member in)
     "POST /internal/member/password-token/check": {
       open: true,
       fn: async (req, res) => {

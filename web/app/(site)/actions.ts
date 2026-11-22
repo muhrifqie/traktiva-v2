@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { asMember, licenseApi, MEMBER_COOKIE } from "@/lib/license-api";
 import { safeNext } from "@/lib/google";
-import { clearMemberCookie, finishSignIn, TWOFA_COOKIE } from "@/lib/member-session";
+import { clearMemberCookie, finishSignIn } from "@/lib/member-session";
 
 export type FormResult = { ok: false; message: string } | { ok: true; message?: string } | null;
 const fail = (e: unknown): FormResult => {
@@ -17,7 +17,7 @@ const ip = async () => (await headers()).get("x-real-ip") ?? "local";
 const ua = async () => ((await headers()).get("user-agent") ?? "").slice(0, 300);
 const str = (f: FormData, k: string, max = 200) => String(f.get(k) ?? "").slice(0, max);
 
-type SignIn = { session?: string; maxAge?: number; needCode?: boolean; ticket?: string };
+type SignIn = { session?: string; maxAge?: number };
 
 export async function register(_prev: FormResult, form: FormData): Promise<FormResult> {
   let to: string;
@@ -47,26 +47,7 @@ export async function login(_prev: FormResult, form: FormData): Promise<FormResu
   redirect(to);
 }
 
-/** Second step: the 6-digit code from the authenticator app. */
-export async function verifyCode(_prev: FormResult, form: FormData): Promise<FormResult> {
-  const jar = await cookies();
-  let saved: { ticket?: string; next?: string } = {};
-  try {
-    saved = JSON.parse(jar.get(TWOFA_COOKIE)?.value ?? "{}");
-  } catch {}
-  if (!saved.ticket) return { ok: false, message: "Waktu habis. Masuk lagi dari awal." };
-  let to: string;
-  try {
-    const r = await licenseApi<SignIn>("/internal/member/login/2fa", { method: "POST", body: { ticket: saved.ticket, code: str(form, "code", 10).replace(/\s/g, ""), ip: await ip(), ua: await ua() } });
-    jar.delete(TWOFA_COOKIE);
-    to = await finishSignIn(r, safeNext(saved.next));
-  } catch (e) {
-    return fail(e);
-  }
-  redirect(to);
-}
-
-/** "Atur password" link: set the password, then signed in (via the code step when 2FA is on). */
+/** "Atur password" link: set the password, then signed in. */
 export async function setPasswordFromLink(_prev: FormResult, form: FormData): Promise<FormResult> {
   const password = str(form, "password");
   if (password !== str(form, "again")) return { ok: false, message: "Ulangi password dengan sama persis." };
@@ -133,41 +114,6 @@ export async function changePassword(_prev: FormResult, form: FormData): Promise
   }
 }
 
-// ---- verifikasi 2 langkah (authenticator app)
-
-export type TwoFaSetup = { ok: true; secret: string; qr: string } | { ok: false; message: string };
-
-/** New secret + QR (SVG) to scan; nothing changes until a first code is confirmed. */
-export async function startTwoFa(): Promise<TwoFaSetup> {
-  try {
-    const r = await asMember<{ secret: string; uri: string }>("/internal/member/2fa/setup", { method: "POST", body: {} });
-    const QRCode = (await import("qrcode")).default;
-    const qr = await QRCode.toString(r.uri, { type: "svg", margin: 1, color: { dark: "#000000", light: "#ffffff" } });
-    return { ok: true, secret: r.secret, qr };
-  } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Gagal" };
-  }
-}
-
-export async function enableTwoFa(_prev: FormResult, form: FormData): Promise<FormResult> {
-  try {
-    await asMember("/internal/member/2fa/enable", { method: "POST", body: { code: str(form, "code", 10).replace(/\s/g, "") } });
-    revalidatePath("/", "layout");
-    return { ok: true, message: "Verifikasi 2 langkah aktif." };
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-export async function disableTwoFa(_prev: FormResult, form: FormData): Promise<FormResult> {
-  try {
-    await asMember("/internal/member/2fa/disable", { method: "POST", body: { code: str(form, "code", 10).replace(/\s/g, "") } });
-    revalidatePath("/", "layout");
-    return { ok: true, message: "Verifikasi 2 langkah dimatikan." };
-  } catch (e) {
-    return fail(e);
-  }
-}
 
 // ---- beli / perpanjang online (WaroengPay QRIS)
 

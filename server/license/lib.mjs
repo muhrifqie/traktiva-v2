@@ -103,8 +103,8 @@ if (!db.prepare("SELECT 1 FROM pragma_table_info('licenses') WHERE name = 'role'
 // hardware fingerprint taken at activation: JSON { board, boardSerial, cpu, ram, disk, bios } of hashes (old rows may also hold an ignored "guid")
 if (!db.prepare("SELECT 1 FROM pragma_table_info('devices') WHERE name = 'hw'").get()) db.exec("ALTER TABLE devices ADD COLUMN hw TEXT");
 // member accounts: owner of a license (claimed on the website) + last self-service device reset (7-day cooldown)
-// member accounts: admin role (signs into /admin with the member session), TOTP 2FA, WhatsApp number for reminders
-for (const [col, type] of [["is_admin", "INTEGER NOT NULL DEFAULT 0"], ["totp_secret", "TEXT"], ["totp_pending", "TEXT"], ["phone", "TEXT"]]) {
+// member accounts: admin role (signs into /admin with the member session), WhatsApp number for reminders
+for (const [col, type] of [["is_admin", "INTEGER NOT NULL DEFAULT 0"], ["phone", "TEXT"]]) {
   if (!db.prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = ?").get(col)) db.exec(`ALTER TABLE users ADD COLUMN ${col} ${type}`);
 }
 db.exec(`

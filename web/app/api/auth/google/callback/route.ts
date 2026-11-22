@@ -13,8 +13,8 @@ export async function GET(req: NextRequest) {
     const { profile, next } = await googleFinish(req.nextUrl.searchParams, jar.get(GOOGLE_STATE_COOKIE)?.value);
     jar.delete({ name: GOOGLE_STATE_COOKIE, path: "/api/auth/google" });
     const ip = (await headers()).get("x-real-ip") ?? "local";
-    const r = await licenseApi<{ session?: string; maxAge?: number; needCode?: boolean; ticket?: string }>("/internal/member/google", { method: "POST", body: { ...profile, ip, ua: ((await headers()).get("user-agent") ?? "").slice(0, 300) } });
-    return NextResponse.redirect(new URL(await finishSignIn(r, next), origin)); // account with 2FA → code step
+    const r = await licenseApi<{ session?: string; maxAge?: number }>("/internal/member/google", { method: "POST", body: { ...profile, ip, ua: ((await headers()).get("user-agent") ?? "").slice(0, 300) } });
+    return NextResponse.redirect(new URL(await finishSignIn(r, next), origin));
   } catch (e) {
     jar.delete({ name: GOOGLE_STATE_COOKIE, path: "/api/auth/google" });
     return fail(e instanceof Error ? e.message : "Gagal masuk dengan Google.");

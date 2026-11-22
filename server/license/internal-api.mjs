@@ -42,10 +42,7 @@ async function body(req) {
   return raw ? JSON.parse(raw) : {};
 }
 
-/** Admin rules (Pengaturan → Keamanan): member admins need an authenticator unless switched off. */
-const security = () => ({ requireAdmin2fa: true, ...getSetting("security", {}) });
-
-/** A signed-in member with the admin role → admin identity (actor = their email); "need_2fa" when 2FA is required. */
+/** A signed-in member with the admin role → admin identity (actor = their email). */
 function memberAdmin(req) {
   const sid = String(req.headers["x-member-session"] ?? "");
   if (!sid) return null;
@@ -53,7 +50,6 @@ function memberAdmin(req) {
     .prepare("SELECT u.* FROM user_sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.expires_at > unixepoch() AND u.is_admin = 1")
     .get(sha(sid));
   if (!u) return null;
-  if (security().requireAdmin2fa && !u.totp_secret) return "need_2fa";
   return { id: null, userId: u.id, name: u.email, kind: "member" };
 }
 
@@ -143,12 +139,12 @@ const routes = {
       const rows = db
         .prepare(
           `SELECT u.id, u.email, u.name, u.phone, u.is_admin, u.created_at, u.last_login, u.password_hash IS NOT NULL AS has_password,
-                  u.google_sub IS NOT NULL AS google, u.totp_secret IS NOT NULL AS totp,
+                  u.google_sub IS NOT NULL AS google,
                   (SELECT count(*) FROM licenses l WHERE l.user_id = u.id) AS licenses
              FROM users u ${q ? "WHERE u.email LIKE ? OR u.name LIKE ?" : ""} ORDER BY u.is_admin DESC, u.id DESC LIMIT 300`,
         )
         .all(...(q ? [`%${q}%`, `%${q}%`] : []));
-      json(res, 200, { ok: true, members: rows, security: security() });
+      json(res, 200, { ok: true, members: rows });
     },
   },
   // create a member account (no password yet: send them an "atur password" link)
@@ -176,12 +172,6 @@ const routes = {
         return json(res, 200, { ok: true });
       }
       if (b.action === "link") return json(res, 200, { ok: true, token: createPasswordToken(u.id, admin.name), ttl: 30 * 60 });
-      if (b.action === "reset2fa") {
-        db.prepare("UPDATE users SET totp_secret = NULL, totp_pending = NULL WHERE id = ?").run(u.id);
-        db.prepare("DELETE FROM user_sessions WHERE user_id = ?").run(u.id);
-        audit("member_2fa_reset", { actor: admin.name, detail: u.email });
-        return json(res, 200, { ok: true });
-      }
       bad(res, "Aksi tidak dikenal.");
     },
   },
@@ -324,7 +314,6 @@ const routes = {
         site: getSetting("site", {}),
         remote: getSetting("remote", {}),
         hwid: { tolerance: hwTolerance() },
-        security: security(),
         reminders: { enabled: false, webhook: "", ...getSetting("reminders", {}) },
         payments: { enabled: !!getSetting("payments", {}).enabled, configured: paymentsConfigured(), testMode: testMode() },
         admins: db.prepare("SELECT name, created_at, last_login FROM admins ORDER BY id").all(),
@@ -332,15 +321,11 @@ const routes = {
   },
   "POST /internal/settings": {
     fn: async (req, res, admin) => {
-      const { plans, site, remote, hwid, security: sec, reminders, payments } = await body(req);
+      const { plans, site, remote, hwid, reminders, payments } = await body(req);
       if (payments !== undefined) {
         if (payments?.enabled && !paymentsConfigured()) return bad(res, "Isi WAROENGPAY_API_KEY dan WAROENGPAY_WEBHOOK_SECRET di server dulu.");
         setSetting("payments", { enabled: !!payments?.enabled });
         audit("payments_updated", { actor: admin.name, detail: payments?.enabled ? `bayar online aktif${testMode() ? " (mode uji)" : ""}` : "bayar online mati" });
-      }
-      if (sec !== undefined) {
-        setSetting("security", { requireAdmin2fa: sec?.requireAdmin2fa !== false });
-        audit("security_updated", { actor: admin.name, detail: sec?.requireAdmin2fa === false ? "2FA admin opsional" : "2FA admin wajib" });
       }
       if (reminders !== undefined) {
         const webhook = String(reminders?.webhook ?? "").trim().slice(0, 300);
@@ -498,11 +483,7 @@ http
     let admin = null;
     if (!r.open) {
       admin = sessionAdmin(String(req.headers["x-admin-session"] ?? ""));
-      if (!admin) {
-        const m = memberAdmin(req);
-        if (m === "need_2fa") return json(res, 403, { ok: false, code: "need_2fa", message: "Aktifkan verifikasi 2 langkah di halaman Akun dulu untuk membuka panel admin." });
-        admin = m;
-      }
+      if (!admin) admin = memberAdmin(req);
       if (!admin) return bad(res, "Sesi admin habis. Masuk lagi.", 401);
     }
     try {

@@ -18,7 +18,7 @@ export default async function AccountLayout({ children }: { children: React.Reac
   const now = nowSec();
   const ending = v.licenses.filter((l) => l.status !== "revoked" && l.expires_at != null && l.expires_at - now < 7 * 86400).length;
   const unpaid = orders.filter((o) => o.status === "pending").length;
-  const badges = { "/lisensi": ending || undefined, "/pesanan": unpaid || undefined, "/pengaturan": u.isAdmin && !u.totp ? "!" : undefined };
+  const badges = { "/lisensi": ending || undefined, "/pesanan": unpaid || undefined };
   const theme = jar.get("trk_theme")?.value === "light" ? "light" : "dark";
   const menu = { name: u.name ?? "", email: u.email, avatar: u.avatar, isAdmin: u.isAdmin };
 

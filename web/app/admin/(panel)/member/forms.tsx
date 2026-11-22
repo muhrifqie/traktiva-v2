@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Copy, Link2, Loader2, ShieldOff, UserCog, UserPlus } from "lucide-react";
+import { Copy, Link2, Loader2, UserCog, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -70,7 +70,7 @@ export function CreateMember() {
             <label className="grid gap-1.5 text-xs font-medium">Nama<Input maxLength={80} value={name} onChange={(e) => setName(e.target.value)} /></label>
             <label className="flex items-start gap-2.5 rounded-lg border p-3 text-xs">
               <input type="checkbox" checked={admin} onChange={(e) => setAdmin(e.target.checked)} className="mt-0.5 accent-[var(--primary)]" />
-              <span><b className="font-semibold">Admin</b><br /><span className="text-muted-foreground">Bisa membuka panel ini (wajib verifikasi 2 langkah). Hanya untuk tim sendiri.</span></span>
+              <span><b className="font-semibold">Admin</b><br /><span className="text-muted-foreground">Bisa membuka panel ini. Hanya untuk tim sendiri.</span></span>
             </label>
             <DialogFooter><Button type="submit" disabled={pending}>{pending ? <Loader2 className="animate-spin" /> : <UserPlus />} Buat & ambil link</Button></DialogFooter>
           </form>
@@ -82,7 +82,7 @@ export function CreateMember() {
 
 type Ask = { title: string; body: string; label: string; danger?: boolean; input: Parameters<typeof memberAction>[1]; done: string };
 
-export function MemberRowActions({ id, email, admin, totp, self }: { id: number; email: string; admin: boolean; totp: boolean; self: boolean }) {
+export function MemberRowActions({ id, email, admin, self }: { id: number; email: string; admin: boolean; self: boolean }) {
   const [link, setLink] = useState<string | null>(null);
   const [ask, setAsk] = useState<Ask | null>(null);
   const [pending, start] = useTransition();
@@ -100,15 +100,8 @@ export function MemberRowActions({ id, email, admin, totp, self }: { id: number;
       {!self && (
         <Button size="sm" variant="ghost" disabled={pending} onClick={() => setAsk(admin
           ? { title: `Cabut admin dari ${email}?`, body: "Akun ini langsung keluar dari semua perangkat.", label: "Cabut admin", danger: true, input: { action: "role", admin: false }, done: "Peran admin dicabut" }
-          : { title: `Jadikan ${email} admin?`, body: "Akun ini bisa mengelola semua lisensi dan member (setelah memasang 2FA).", label: "Jadikan admin", input: { action: "role", admin: true }, done: "Sekarang admin" })}>
+          : { title: `Jadikan ${email} admin?`, body: "Akun ini bisa mengelola semua lisensi dan member.", label: "Jadikan admin", input: { action: "role", admin: true }, done: "Sekarang admin" })}>
           <UserCog /> {admin ? "Cabut admin" : "Jadikan admin"}
-        </Button>
-      )}
-      {totp && !self && (
-        <Button size="sm" variant="ghost" disabled={pending} onClick={() => setAsk({
-          title: `Reset 2FA ${email}?`, body: "Untuk HP authenticator yang hilang. Akun keluar dari semua perangkat dan harus memasang 2FA lagi.", label: "Reset 2FA", danger: true, input: { action: "reset2fa" }, done: "2FA direset",
-        })}>
-          <ShieldOff /> Reset 2FA
         </Button>
       )}
       <Dialog open={!!ask} onOpenChange={(o) => !o && !pending && setAsk(null)}>

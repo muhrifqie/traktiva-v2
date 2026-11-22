@@ -17,7 +17,7 @@ export default function LoginPage() {
         <a href="/masuk?next=/admin" className="block rounded-lg border px-3 py-2.5 text-[0.8125rem] font-medium hover:bg-accent">
           Masuk dengan akun member (email / Google)
         </a>
-        <p className="text-[0.6875rem] text-muted-foreground">Akun member perlu peran admin + verifikasi 2 langkah. Lupa password? Minta owner kirim link atur password.</p>
+        <p className="text-[0.6875rem] text-muted-foreground">Akun member perlu peran admin. Lupa password? Minta owner kirim link atur password.</p>
       </div>
     </main>
   );

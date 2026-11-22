@@ -56,7 +56,7 @@ export type AdminIdentity = { name: string; kind: "admin" | "member"; headers: R
 /**
  * The logged-in admin, or a redirect. Called by every admin page AND every server action (authorization never relies
  * on middleware alone). Two ways in: the legacy admin login (trk_admin), or a member account with the admin role
- * (trk_member) — the license server checks the role and, by default, that the account has 2FA switched on.
+ * (trk_member) — the license server checks the role.
  */
 export async function requireAdmin(): Promise<AdminIdentity> {
   const jar = await cookies();
@@ -70,7 +70,6 @@ export async function requireAdmin(): Promise<AdminIdentity> {
       const me = await licenseApi<{ name: string; kind: "admin" | "member" }>("/internal/admin/me", { headers });
       return { name: me.name, kind: me.kind, headers };
     } catch (e) {
-      if (e instanceof ApiError && e.code === "need_2fa") redirect("/pengaturan?perlu2fa=1#keamanan");
       if (!(e instanceof ApiError && e.status === 401)) throw e;
     }
   }
@@ -97,7 +96,7 @@ export type MemberLicense = {
   devices: MemberDevice[];
 };
 export type MemberView = {
-  user: { id: number; email: string; name: string | null; avatar: string | null; hasPassword: boolean; google: boolean; created_at: number; phone: string | null; isAdmin: boolean; totp: boolean };
+  user: { id: number; email: string; name: string | null; avatar: string | null; hasPassword: boolean; google: boolean; created_at: number; phone: string | null; isAdmin: boolean };
   licenses: MemberLicense[];
   plans: Plan[];
   site: Site;

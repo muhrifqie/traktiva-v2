@@ -34,7 +34,7 @@ DNS di Cloudflare: record A `@ www app admin api download` → `43.133.142.25`, 
 ## 1. Server lisensi
 
 ```bash
-scp server/license/{lib,server,admin,internal-api,members,payments,totp,verify,test}.mjs traktiva:/tmp/trk-deploy/
+scp server/license/{lib,server,admin,internal-api,members,payments,verify,test}.mjs traktiva:/tmp/trk-deploy/
 ssh traktiva
 cd /tmp/trk-deploy && node test.mjs                                                # harus: license server ok / internal api ok
 cd /srv/traktiva-license && ./backup.sh                                            # backup terenkripsi dulu

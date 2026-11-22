@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { BellRing, Cpu, Loader2, MessageCircle, Plus, Save, ShieldCheck, Trash2, Wallet } from "lucide-react";
+import { BellRing, Cpu, Loader2, MessageCircle, Plus, Save, Trash2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { saveHwid, savePayments, saveReminders, saveRemote, saveSecurity, saveSite } from "../../actions";
+import { saveHwid, savePayments, saveReminders, saveRemote, saveSite } from "../../actions";
 
 /** Flags the desktop app already reads (lib/server-info.ts → remoteFlag). Anything else is stored for future use. */
 const KNOWN: Record<string, string> = {
@@ -155,20 +155,6 @@ function useSave<T extends unknown[]>(fn: (...a: T) => Promise<{ ok: boolean; me
     if (r.ok) toast.success(done);
     else toast.error(r.message ?? "Gagal");
   })] as const;
-}
-
-export function SecurityForm({ on }: { on: boolean }) {
-  const [v, setV] = useState(on);
-  const [pending, save] = useSave(saveSecurity, "Keamanan disimpan");
-  return (
-    <section className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3">
-      <div className="flex-1">
-        <p className="flex items-center gap-1.5 text-sm font-semibold"><ShieldCheck className="size-4 text-brand-light" /> Wajib verifikasi 2 langkah untuk admin</p>
-        <p className="text-xs text-muted-foreground">Akun member berperan admin baru bisa membuka panel setelah memasang Google Authenticator. Sangat disarankan tetap aktif.</p>
-      </div>
-      <Toggle on={v} onChange={(x) => { setV(x); save(x); }} label="Wajib 2FA admin" disabled={pending} />
-    </section>
-  );
 }
 
 export function RemindersForm({ enabled, webhook }: { enabled: boolean; webhook: string }) {

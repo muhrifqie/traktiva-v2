@@ -22,9 +22,6 @@ const LABEL: Record<string, [string, Tone]> = {
   member_password_changed: ["Password diganti", ""],
   member_password_set: ["Password diatur lewat link", ""],
   member_password_reset: ["Password direset lewat email", "warn"],
-  member_2fa_enabled: ["Verifikasi 2 langkah aktif", "ok"],
-  member_2fa_disabled: ["Verifikasi 2 langkah dimatikan", "warn"],
-  member_2fa_reset: ["Verifikasi 2 langkah direset admin", "warn"],
   member_sessions_revoked: ["Perangkat lain dikeluarkan", ""],
 };
 

@@ -1,15 +1,15 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
-import { Check, Copy, Eye, EyeOff, KeyRound, Link2, Loader2, QrCode, RotateCcw, ShieldCheck, ShieldOff, Unplug, Wallet } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, KeyRound, Link2, Loader2, RotateCcw, Unplug, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   resetHwid,
-  buyPlan, changePassword, claimKey, disableTwoFa, enableTwoFa, resetMyDevice, saveProfile, startTwoFa, type FormResult, type TwoFaSetup,
+  buyPlan, changePassword, claimKey, resetMyDevice, saveProfile, type FormResult,
 } from "@/app/(site)/actions";
 
 const label = "grid gap-1.5 text-xs font-medium";
@@ -154,57 +154,6 @@ export function PasswordForm({ hasPassword }: { hasPassword: boolean }) {
       <Button type="submit" variant="outline" disabled={pending} className="justify-self-start">
         {pending ? <Loader2 className="animate-spin" /> : <KeyRound />} {hasPassword ? "Ganti password" : "Buat password"}
       </Button>
-    </form>
-  );
-}
-
-const CodeInput = () => (
-  <Input name="code" required inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} placeholder="123456" aria-label="Kode 6 angka" className="w-32 text-center font-mono tracking-[0.3em]" />
-);
-
-/** Authenticator 2FA: scan a QR, confirm with a first code; turning it off needs a current code too. */
-export function TwoFaForm({ on }: { on: boolean }) {
-  const [setup, setSetup] = useState<TwoFaSetup | null>(null);
-  const [loading, start] = useTransition();
-  const [enState, enable, enPending] = useActionState(enableTwoFa, null);
-  const [offState, disable, offPending] = useActionState(disableTwoFa, null);
-
-  if (on)
-    return (
-      <form action={disable} className="grid gap-3">
-        <p className="flex items-center gap-2 text-[0.8125rem] text-status-ok"><ShieldCheck className="size-4" /> Aktif: tiap masuk diminta kode dari aplikasi authenticator.</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <CodeInput />
-          <Button type="submit" variant="outline" disabled={offPending}>{offPending ? <Loader2 className="animate-spin" /> : <ShieldOff />} Matikan</Button>
-        </div>
-        <Note state={offState} />
-      </form>
-    );
-
-  if (!setup?.ok)
-    return (
-      <div className="grid gap-3">
-        {setup && !setup.ok && <p className="text-[0.8125rem] text-destructive" role="alert">{setup.message}</p>}
-        <Button type="button" variant="outline" disabled={loading} onClick={() => start(async () => setSetup(await startTwoFa()))} className="justify-self-start">
-          {loading ? <Loader2 className="animate-spin" /> : <QrCode />} Pasang verifikasi 2 langkah
-        </Button>
-      </div>
-    );
-
-  return (
-    <form action={enable} className="grid gap-4 sm:grid-cols-[auto_1fr]">
-      {/* SVG made on our server from the otpauth URI (qrcode lib); no third-party QR service sees the secret */}
-      <div className="size-40 rounded-lg border bg-white p-2 [&>svg]:size-full" dangerouslySetInnerHTML={{ __html: setup.qr }} />
-      <div className="grid content-start gap-3 text-[0.8125rem]">
-        <p>1. Scan QR ini di Google Authenticator, Authy, atau 1Password.</p>
-        <p className="text-xs text-muted-foreground">Tidak bisa scan? Masukkan kode ini: <span className="font-mono break-all text-foreground select-all">{setup.secret}</span></p>
-        <p>2. Masukkan kode 6 angka yang muncul.</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <CodeInput />
-          <Button type="submit" disabled={enPending}>{enPending ? <Loader2 className="animate-spin" /> : <ShieldCheck />} Aktifkan</Button>
-        </div>
-        <Note state={enState} />
-      </div>
     </form>
   );
 }

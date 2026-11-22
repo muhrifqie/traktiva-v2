@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Activity, ArrowRight, Check, ChevronRight, Download, KeyRound, Lightbulb, Megaphone, Monitor, Receipt, ShieldCheck, Timer, Wallet } from "lucide-react";
+import { Activity, ArrowRight, Check, ChevronRight, Download, KeyRound, Lightbulb, Megaphone, Monitor, Receipt, Timer, Wallet } from "lucide-react";
 import { fmtDate, licenseState, nowSec } from "@/lib/format";
 import { myActivity, myOrders, requireMember } from "@/lib/license-api";
 import { KeyBox, ResetHwidButton } from "@/app/(member)/_ui/forms";
@@ -47,7 +47,6 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     { done: v.licenses.length > 0, label: "Punya lisensi", href: "/lisensi" },
     { done: v.licenses.some((l) => l.devices.length > 0), label: "Aktif di PC", href: "/aplikasi" },
     { done: !!u.phone, label: "Nomor WhatsApp", href: "/pengaturan#profil" },
-    { done: u.totp, label: "Verifikasi 2 langkah", href: "/pengaturan#keamanan" },
   ];
   const news = v.announcements.filter((a) => a.level !== "critical");
 
@@ -67,11 +66,6 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               : justPaid.status === "pending"
                 ? "Pembayaran belum masuk. Kalau sudah bayar, tunggu ±1 menit lalu muat ulang halaman ini."
                 : `Pesanan ${ORDER_LABEL[justPaid.status][0].toLowerCase()}.`}
-          </Notice>
-        )}
-        {u.isAdmin && !u.totp && (
-          <Notice tone="warn" icon={ShieldCheck}>
-            Akun admin wajib verifikasi 2 langkah sebelum membuka panel. <Link href="/pengaturan#keamanan" className="font-semibold underline">Pasang sekarang</Link>
           </Notice>
         )}
         <EndingNotice licenses={v.licenses} now={now} />
@@ -117,12 +111,12 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <Stat icon={KeyRound} label="Lisensi aktif" value={`${active.length}`} hint={v.licenses.length > active.length ? `${v.licenses.length - active.length} tidak aktif` : v.licenses.length ? "Semua aktif" : "Belum ada"} />
         <Stat icon={Timer} label="Sisa masa aktif terdekat" value={soonestDays != null ? `${soonestDays} hari` : active.length ? "∞" : "—"} hint={soonest ? `${soonest.planLabel} · s/d ${fmtDate(soonest.expires_at)}` : undefined} warn={soonestDays != null && soonestDays <= 7} />
         <Stat icon={Monitor} label="PC terpakai" value={`${used}/${seats}`} hint={seats > used ? `${seats - used} slot kosong` : seats ? "Semua slot terpakai" : undefined} />
-        <Stat icon={ShieldCheck} label="Keamanan akun" value={u.totp ? "2FA aktif" : "Dasar"} hint={u.totp ? "Kode authenticator saat masuk" : "Pasang 2FA di Pengaturan"} warn={u.isAdmin && !u.totp} />
+        <Stat icon={Wallet} label="Pesanan" value={`${orders.length}`} hint={orders.some((o) => o.status === "pending") ? "Ada yang belum dibayar" : orders.length ? "Semua beres" : "Belum ada"} warn={orders.some((o) => o.status === "pending")} />
       </div>
 
       {/* setup progress, only until done: one tidy strip */}
       {steps.some((s) => !s.done) && (
-        <div className="rise grid gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-4">
+        <div className="rise grid gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-3">
           {steps.map((s, n) => (
             <Link key={s.label} href={s.href} className="flex items-center gap-3 bg-card px-4 py-3.5 text-sm hover:bg-muted/50">
               <span className={`grid size-6 shrink-0 place-items-center rounded-full text-xs font-bold ${s.done ? "bg-primary text-primary-foreground" : "border text-muted-foreground"}`}>

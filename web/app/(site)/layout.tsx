@@ -10,7 +10,6 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
   const me = await memberMe().catch(() => null); // license server down → the public site still renders, signed out
   const nav: NavUser = me && {
     name: me.user.name ?? "", email: me.user.email, avatar: me.user.avatar, isAdmin: me.user.isAdmin,
-    alert: me.user.isAdmin && !me.user.totp,
   };
   const theme: Theme = (await cookies()).get("trk_theme")?.value === "light" ? "light" : "dark";
   return (

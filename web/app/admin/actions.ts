@@ -234,7 +234,6 @@ async function passwordLink(id: number) {
 const MemberAction = z.discriminatedUnion("action", [
   z.object({ action: z.literal("role"), admin: z.boolean() }),
   z.object({ action: z.literal("link") }),
-  z.object({ action: z.literal("reset2fa") }),
 ]);
 export async function memberAction(id: number, input: z.input<typeof MemberAction>): Promise<Result & { link?: string }> {
   try {
@@ -249,9 +248,6 @@ export async function memberAction(id: number, input: z.input<typeof MemberActio
   }
 }
 
-export async function saveSecurity(requireAdmin2fa: boolean): Promise<Result> {
-  return settingsPost({ security: { requireAdmin2fa: z.boolean().parse(requireAdmin2fa) } });
-}
 export async function saveReminders(enabled: boolean, webhook: string): Promise<Result> {
   const url = z.string().trim().max(300).parse(webhook);
   if (url && !/^https:\/\//.test(url)) return { ok: false, message: "Webhook harus https://" };

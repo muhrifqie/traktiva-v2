@@ -8,7 +8,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { logout } from "./actions";
 
 export type Theme = "dark" | "light";
-export type NavUser = { name: string; email: string; avatar: string | null; isAdmin: boolean; alert: boolean } | null;
+export type NavUser = { name: string; email: string; avatar: string | null; isAdmin: boolean } | null;
 
 const LINKS = [
   ["/#fitur", "Fitur"],
@@ -62,7 +62,6 @@ function AccountItems({ user }: { user: NonNullable<NavUser> }) {
       {ACCOUNT.map(([href, label, Icon]) => (
         <Link key={href} href={href} className={item}>
           <Icon className="size-4" /> {label}
-          {href === "/pengaturan" && user.alert && <span className="ml-auto size-2 rounded-full bg-amber-300" />}
         </Link>
       ))}
       {user.isAdmin && (
@@ -88,7 +87,6 @@ function UserMenu({ user }: { user: NonNullable<NavUser> }) {
       >
         <span className="relative">
           <Initial user={user} />
-          {user.alert && <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full border-2 border-[var(--site-canvas)] bg-amber-300" />}
         </span>
         <span className="max-w-32 truncate text-[14px]">{user.name || user.email.split("@")[0]}</span>
         <ChevronDown className={`size-4 text-[var(--site-muted)] transition-transform ${open ? "rotate-180" : ""}`} />
@@ -112,7 +110,6 @@ function MobileMenu({ user }: { user: NavUser }) {
     <div ref={ref} className="md:hidden">
       <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? "Tutup menu" : "Buka menu"} className="relative grid size-10 place-items-center rounded-full border border-white/12">
         {open ? <X className="size-5" /> : <Menu className="size-5" />}
-        {!open && user?.alert && <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-amber-300" />}
       </button>
       {open && (
         <div className="absolute inset-x-0 top-16 border-b border-white/8 bg-[var(--site-canvas)] px-5 pt-2 pb-5 shadow-2xl shadow-black/60">

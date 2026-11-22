@@ -7,18 +7,18 @@ import { CreateMember, MemberRowActions } from "./forms";
 
 type Member = {
   id: number; email: string; name: string | null; phone: string | null; is_admin: number; created_at: number; last_login: number | null;
-  has_password: number; google: number; totp: number; licenses: number;
+  has_password: number; google: number; licenses: number;
 };
 
 export default async function Members({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const { q = "" } = await searchParams;
-  const [{ members, security }, me] = await Promise.all([
-    asAdmin<{ members: Member[]; security: { requireAdmin2fa: boolean } }>(`/internal/members?${new URLSearchParams({ q })}`),
+  const [{ members }, me] = await Promise.all([
+    asAdmin<{ members: Member[] }>(`/internal/members?${new URLSearchParams({ q })}`),
     requireAdmin(),
   ]);
   return (
     <>
-      <PageHead title="Member" sub={`${members.length}${members.length === 300 ? "+" : ""} akun · admin ${security.requireAdmin2fa ? "wajib" : "tidak wajib"} 2FA`}>
+      <PageHead title="Member" sub={`${members.length}${members.length === 300 ? "+" : ""} akun`}>
         <CreateMember />
       </PageHead>
       <form className="relative mb-3 w-full max-w-xs">
@@ -39,7 +39,6 @@ export default async function Members({ searchParams }: { searchParams: Promise<
                   <p className="truncate font-semibold">
                     {m.email}
                     {!!m.is_admin && <span className="ml-2 rounded-full bg-amber-300/12 px-1.5 py-px text-[0.625rem] font-semibold text-amber-200">Admin</span>}
-                    {!!m.totp && <span className="ml-1.5 rounded-full bg-status-ok/12 px-1.5 py-px text-[0.625rem] font-semibold text-status-ok">2FA</span>}
                   </p>
                   <p className="truncate text-[0.6875rem] text-muted-foreground">{[m.name, m.phone && `WA ${m.phone}`].filter(Boolean).join(" · ") || "—"}</p>
                 </td>
@@ -47,7 +46,7 @@ export default async function Members({ searchParams }: { searchParams: Promise<
                 <td className="tabular-nums">{m.licenses}</td>
                 <td className="whitespace-nowrap">{fmtDate(m.created_at)}</td>
                 <td className="whitespace-nowrap text-muted-foreground">{fmtTime(m.last_login)}</td>
-                <td className="text-right"><MemberRowActions id={m.id} email={m.email} admin={!!m.is_admin} totp={!!m.totp} self={me.kind === "member" && me.name === m.email} /></td>
+                <td className="text-right"><MemberRowActions id={m.id} email={m.email} admin={!!m.is_admin} self={me.kind === "member" && me.name === m.email} /></td>
               </tr>
             ))}
           </tbody>

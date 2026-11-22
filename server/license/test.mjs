@@ -7,7 +7,6 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { totpCode } from "./totp.mjs";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trk-license-"));
 // WaroengPay stand-in (sandbox key): records invoices, answers like POST/GET /api/payments
@@ -160,7 +159,7 @@ try {
     assert.equal((await mget("/internal/member/me", g.session)).user.google, true);
     assert.equal((await mget("/internal/member/me", "palsu")).ok, false);
 
-    // member admin: CLI creates the account + one-time link → set password → panel needs 2FA → enable 2FA → 2-step login
+    // member admin: CLI creates the account + one-time link → set password → straight into the panel
     const cli = admin("member-admin", "owner@tes.id", "--name", "Owner");
     const token = cli.match(/atur-password\?t=([\w-]+)/)?.[1];
     assert.ok(token, cli);
@@ -170,22 +169,14 @@ try {
     assert.ok(set.ok && set.session, JSON.stringify(set));
     assert.equal((await mpost("/internal/member/password-token", { token, password: "PanjangSekali#2027" })).ok, false); // used once
     const adminMe = (session) => fetch(ib + "/internal/admin/me", { headers: { authorization: `Bearer ${svc}`, "x-member-session": session } }).then((r) => r.json());
-    assert.equal((await adminMe(set.session)).code, "need_2fa"); // admins must turn on 2FA first
     assert.equal((await adminMe(mlog.session)).ok, false); // a normal member is no admin
-    const setup = await mpost("/internal/member/2fa/setup", {}, set.session);
-    assert.match(setup.uri, /^otpauth:\/\/totp\/Traktiva/);
-    assert.equal((await mpost("/internal/member/2fa/enable", { code: "000000" }, set.session)).ok, false);
-    assert.ok((await mpost("/internal/member/2fa/enable", { code: totpCode(setup.secret) }, set.session)).ok);
     const me2 = await adminMe(set.session);
     assert.deepEqual([me2.ok, me2.name, me2.kind], [true, "owner@tes.id", "member"]);
-    const step1 = await mpost("/internal/member/login", { email: "owner@tes.id", password: "PanjangSekali#2026", ip: "5.5.5.5" });
-    assert.ok(step1.needCode && step1.ticket && !step1.session); // password alone is not enough now
-    assert.equal((await mpost("/internal/member/login/2fa", { ticket: step1.ticket, code: "123456" })).ok, false);
-    const step2 = await mpost("/internal/member/login/2fa", { ticket: step1.ticket, code: totpCode(setup.secret), ip: "5.5.5.5" });
-    assert.ok(step2.ok && step2.session);
+    const step2 = await mpost("/internal/member/login", { email: "owner@tes.id", password: "PanjangSekali#2026", ip: "5.5.5.5" });
+    assert.ok(step2.ok && step2.session && !step2.needCode); // password is enough
     // admin manages members: list, promote/demote, link for another account
     const list = await fetch(ib + "/internal/members", { headers: { authorization: `Bearer ${svc}`, "x-member-session": step2.session } }).then((r) => r.json());
-    assert.ok(list.members.some((m) => m.email === "owner@tes.id" && m.is_admin && m.totp));
+    assert.ok(list.members.some((m) => m.email === "owner@tes.id" && m.is_admin));
     const budiId = list.members.find((m) => m.email === "budi@tes.id").id;
     const asAdminPost = (p, body) => fetch(ib + p, { method: "POST", headers: { authorization: `Bearer ${svc}`, "content-type": "application/json", "x-member-session": step2.session }, body: JSON.stringify(body) }).then((r) => r.json());
     assert.ok((await asAdminPost(`/internal/members/${budiId}`, { action: "link" })).token);
