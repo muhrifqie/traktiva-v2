@@ -33,7 +33,7 @@ export type ProjectView = {
 };
 
 const STATUS = {
-  draft: { icon: Clock, label: (s: number) => `Draf · ${s <= 3 ? "Siapkan" : s <= 5 ? "Adegan" : "Hasil"}`, cls: "text-muted-foreground" },
+  draft: { icon: Clock, label: (s: number) => `Draf · ${s <= 3 ? "Persiapan" : s <= 5 ? "Proses render" : "Hasil"}`, cls: "text-muted-foreground" },
   running: { icon: Loader2, label: () => "Sedang dibuat", cls: "text-status-progress" },
   done: { icon: CheckCircle2, label: () => "Video jadi", cls: "text-status-ok" },
   failed: { icon: CircleAlert, label: () => "Perlu dicek", cls: "text-destructive" },
@@ -221,7 +221,7 @@ export function ProjectList({ projects, archive = false }: { projects: ProjectVi
 
                 <Link href={`/video/${p.id}`} onClick={onCard} className="space-y-0.5 p-2.5">
                   <p className="truncate text-xs font-medium">{p.name}</p>
-                  <p className="truncate text-[11px] text-muted-foreground">{p.preset} · {p.versions?.length ? `${p.versions.length + 1} video` : `${p.scenes} adegan`}</p>
+                  <p className="truncate text-[11px] text-muted-foreground">{p.preset} · {p.versions?.length ? `${p.versions.length + 1} video` : `${p.scenes} scene`}</p>
                   <p className={`truncate text-[11px] ${s.cls}`}>{p.progress ?? p.updated}</p>
                 </Link>
               </article>
@@ -298,7 +298,7 @@ export function NewProjectButton({ label = "Proyek baru" }: { label?: string }) 
             >
               <span className="grid size-9 place-items-center rounded-lg bg-muted text-black dark:text-white">{pending ? <Loader2 className="size-4.5 animate-spin" /> : <PenLine className="size-4.5" />}</span>
               <span className="text-[13px] font-semibold">Racikan sendiri</span>
-              <span className="text-xs text-muted-foreground">Tulis prompt sendiri, pakai gambarmu sendiri, atur adegan bebas.</span>
+              <span className="text-xs text-muted-foreground">Tulis prompt sendiri, pakai gambarmu sendiri, atur scene bebas.</span>
             </button>
           </div>
         </DialogContent>

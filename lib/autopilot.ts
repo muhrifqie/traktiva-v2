@@ -9,6 +9,7 @@ import { runStep } from "@/lib/projects";
 import { beginJob, inJob, throwIfCancelled } from "@/lib/jobs";
 import { describeProduct, writeScenes } from "@/lib/prompt-writer";
 import { getSettings } from "@/lib/settings";
+import { markSaved } from "@/lib/unsaved";
 
 // Autopilot: pick products from the KaloData ranking, then each becomes a finished edit with no clicks:
 // project from KaloData → storyboard (AI) → images (+QC & auto-fix) → clips → one-take voice-over → fit clips →
@@ -61,6 +62,7 @@ async function makeOne(s: AutoState, i: number) {
  * videos). `step` reports each stage. Used by Autopilot and by "Buat video sekarang" in the Studio.
  */
 export async function autoFinish(id: number, step: (stage: string) => Promise<unknown>, opts: { written?: boolean } = {}) {
+  await markSaved(id); // a video being made is a project of its own (Proyek Video), not an unsaved one
   beginJob(id);
   return inJob(id, () => autoFinishJob(id, step, opts));
 }
@@ -85,7 +87,7 @@ async function autoFinishJob(id: number, step: (stage: string) => Promise<unknow
   }
 
   throwIfCancelled(id);
-  await step("Flow membuat gambar adegan (+ cek QC)...");
+  await step("Flow membuat gambar scene (+ cek QC)...");
   await runStep(id, "images");
   p = await load(id);
   if (p.scenes.some((sc) => !sc.image)) throw new Error("Sebagian gambar gagal dibuat. Buka storyboard untuk mengulang.");

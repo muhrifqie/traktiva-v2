@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { accounts, kaloSessions, videoProjects } from "@/lib/db/schema";
+import { pruneUnsaved, UNSAVED } from "@/lib/unsaved";
 import { isCountry, SHOPEE_MARKETS, type CountryCode } from "@/lib/countries";
 import { getKv, kalo, kaloRange, setKv } from "@/lib/kalo";
 import { createProjectFolder, extractFrames, saveResult } from "@/lib/media";
@@ -234,9 +235,10 @@ export async function createProjectFromKalo(productId: string, country: string =
 
   const preset = presetById("custom")!;
   const product = { name, details: facts, price, photos: [] as string[] };
+  await pruneUnsaved();
   const [{ id: projectId }] = await db
     .insert(videoProjects)
-    .values({ presetId: preset.id, title: "", step: 4, product, options: { ...defaultOptions(preset) }, scenes: [], folder: "" })
+    .values({ presetId: preset.id, title: "", step: 4, product, options: { ...defaultOptions(preset), [UNSAVED]: "1" }, scenes: [], folder: "" })
     .returning({ id: videoProjects.id });
   const folder = await createProjectFolder(projectId, `kalo-${id}`);
 
@@ -285,6 +287,7 @@ export async function createProjectFromKalo(productId: string, country: string =
       caption,
       options: {
         ...defaultOptions(preset),
+        [UNSAVED]: "1",
         refVideo: refVideo ?? "",
         refCaption: top?.description?.slice(0, 300) ?? "",
         // median length of the product's 3 best-selling videos: the Gaya step suggests a format from it

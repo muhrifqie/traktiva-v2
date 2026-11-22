@@ -10,6 +10,7 @@ import { videoProjects } from "@/lib/db/schema";
 import { createProjectFolder } from "@/lib/media";
 import { CONCEPT_VOICES, defaultOptions, MOODS, presetById } from "@/lib/presets";
 import { getSettings, updateSettings, type MyConcept } from "@/lib/settings";
+import { pruneUnsaved, UNSAVED } from "@/lib/unsaved";
 
 // The owner's own concepts ("+ Buat konsep sendiri"): kept in settings.json, used through the free-form
 // "custom" preset. The idea text reaches the AI scene writer as options.concept.
@@ -47,12 +48,13 @@ export async function createProjectFromConcept(id: string) {
   const c = getSettings().myConcepts?.find((x) => x.id === id);
   if (!c) throw new Error("Konsep tidak ditemukan.");
   const preset = presetById("custom")!;
-  const options: Record<string, string> = { ...defaultOptions(preset), background: c.background, audio: c.audio, concept: c.idea, conceptName: c.name };
+  const options: Record<string, string> = { ...defaultOptions(preset), background: c.background, audio: c.audio, concept: c.idea, conceptName: c.name, [UNSAVED]: "1" };
   if (c.cast) options.cast = c.cast;
   if (c.mood) options.mood = c.mood;
   if (c.voice && c.voice !== "none") options.voice = c.voice;
   if (c.hook) options.hook = c.hook;
-  const scenes = Array.from({ length: c.scenes }, (_, i) => ({ label: `Adegan ${i + 1}`, imagePrompt: "", motionPrompt: "" }));
+  await pruneUnsaved();
+  const scenes = Array.from({ length: c.scenes }, (_, i) => ({ label: `Scene ${i + 1}`, imagePrompt: "", motionPrompt: "" }));
   const [{ id: projectId }] = await db
     .insert(videoProjects)
     .values({ presetId: preset.id, title: "", product: { name: "", details: "", price: "", photos: [] }, options, scenes, folder: "" })

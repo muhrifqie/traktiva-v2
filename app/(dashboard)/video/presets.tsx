@@ -70,7 +70,7 @@ export function NewConceptButton() {
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Buat konsep sendiri</DialogTitle>
-            <DialogDescription>Ceritakan video yang kamu mau. Konsepnya tersimpan sebagai kartu dan bisa dipakai berkali-kali; AI menyusun adegannya mengikuti ceritamu.</DialogDescription>
+            <DialogDescription>Ceritakan video yang kamu mau. Konsepnya tersimpan sebagai kartu dan bisa dipakai berkali-kali; AI menyusun scene-nya mengikuti ceritamu.</DialogDescription>
           </DialogHeader>
           <form
             className="space-y-3"
@@ -249,7 +249,7 @@ export function PresetGallery({ mine }: { mine: MyConcept[] }) {
               </div>
               <div className="mt-auto flex items-center gap-2 pt-2">
                 <span className="flex-1 text-[11px] text-muted-foreground">
-                  {p.available ? `${scenes} adegan · ±${scenes * 6} detik${p.silent ? " · tanpa suara" : ""}` : "Segera hadir"}
+                  {p.available ? `${scenes} scene · ±${scenes * 6} detik${p.silent ? " · tanpa suara" : ""}` : "Segera hadir"}
                 </span>
                 <button
                   type="button"

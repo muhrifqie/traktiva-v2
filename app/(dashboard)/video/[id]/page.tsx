@@ -25,7 +25,7 @@ export default async function ProjectPage({ params }: PageProps<"/video/[id]">) 
     const alive = (await db.select({ id: videoProjects.id }).from(videoProjects).where(inArray(videoProjects.id, vids))).map((r) => r.id);
     project.options = { ...project.options, versions: vids.filter((v) => alive.includes(v)).join(",") };
   }
-  // the main video and its versions B–E, for the progress list in the Adegan tab
+  // the main video and its versions B–E, for the progress list in the Proses render tab
   const mainId = Number(project.options.versionOf) || project.id;
   const main = mainId === project.id ? project : await db.select().from(videoProjects).where(eq(videoProjects.id, mainId)).get();
   const famIds = [mainId, ...(main?.options.versions ?? "").split(",").map(Number).filter(Boolean)];
@@ -44,7 +44,7 @@ export default async function ProjectPage({ params }: PageProps<"/video/[id]">) 
   const { updatedAt, ...rest } = project;
   const defaults = getSettings().voice ?? { provider: "flow" };
   const voice = projectVoice(project.options, defaults);
-  // every version A–E in full, so the Adegan tab shows all their images and clips on one page
+  // every version A–E in full, so the Proses render tab shows all their images and clips on one page
   const siblings: Sibling[] = famIds
     .map((fid, i) => {
       const r = famRows.find((x) => x.id === fid);

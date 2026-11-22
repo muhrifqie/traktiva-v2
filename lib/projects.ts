@@ -263,14 +263,14 @@ async function runImages(id: number, only?: number) {
   await save(id, {
     status: failed ? "failed" : "draft",
     progress: null,
-    error: failed ? `${failed} gambar gagal dibuat. Ubah prompt atau buat ulang adegan itu.` : null,
+    error: failed ? `${failed} gambar gagal dibuat. Ubah prompt atau buat ulang scene itu.` : null,
   });
 }
 
 async function runRender(id: number) {
   const p = await load(id);
   if (!p) return;
-  if (p.scenes.some((s) => !s.image)) throw new Error("Semua adegan perlu gambar dulu.");
+  if (p.scenes.some((s) => !s.image)) throw new Error("Semua scene perlu gambar dulu.");
   const silent = isSilent(p.presetId, p.options);
   const model = flowVideoModel(p.options, p.clipSec);
   // voice-over by Cartesia: Flow renders the clip without speech, the line is spoken by Cartesia and mixed in

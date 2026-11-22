@@ -3,6 +3,8 @@
 // Flow models follow English best; users can edit every scene before rendering. Gemini-written
 // storyboards replace these templates later; the shapes stay the same.
 
+import { applyRules } from "./writing";
+
 export type Product = { name: string; details: string; price: string; photos: string[] /* MEDIA_DIR-relative */ };
 export type Field =
   | { key: string; label: string; type: "select"; options: { value: string; label: string }[]; default: string }
@@ -208,8 +210,8 @@ export const PRESETS: Preset[] = [
     id: "pov2",
     title: "POV Tangan V2",
     badge: "Baru",
-    summary: "Tangan memegang produk di latar pilihanmu: AI membuat frame awal + prompt sekaligus. Lebih cepat, adegan lebih sedikit.",
-    bestFor: "Produk kecil apa saja. Paling cepat jadi, cukup 2 adegan.",
+    summary: "Tangan memegang produk di latar pilihanmu: AI membuat frame awal + prompt sekaligus. Lebih cepat, scene lebih sedikit.",
+    bestFor: "Produk kecil apa saja. Paling cepat jadi, cukup 2 scene.",
     pipeline: ["Produk + latar", "Gambar + prompt", "Flow"],
     available: true,
     fields: [BACKGROUND, VOICE],
@@ -269,9 +271,9 @@ export const PRESETS: Preset[] = [
     id: "custom",
     title: "Racikan Sendiri",
     badge: "Bebas",
-    summary: "Tulis prompt sendiri untuk tiap adegan, pakai gambarmu sendiri atau buatan AI. Atur jumlah dan urutan adegan sesukamu.",
+    summary: "Tulis prompt sendiri untuk tiap scene, pakai gambarmu sendiri atau buatan AI. Atur jumlah dan urutan scene sesukamu.",
     bestFor: "Yang sudah punya ide, gambar, atau gaya sendiri.",
-    pipeline: ["Adegan bebas", "Prompt sendiri", "Gambar sendiri / AI"],
+    pipeline: ["Scene bebas", "Prompt sendiri", "Gambar sendiri / AI"],
     available: true,
     custom: true,
     fields: [
@@ -288,8 +290,8 @@ export const PRESETS: Preset[] = [
       },
     ],
     scenes: () => [
-      { label: "Adegan 1", imagePrompt: "", motionPrompt: "" },
-      { label: "Adegan 2", imagePrompt: "", motionPrompt: "" },
+      { label: "Scene 1", imagePrompt: "", motionPrompt: "" },
+      { label: "Scene 2", imagePrompt: "", motionPrompt: "" },
     ],
   },
   {
@@ -384,6 +386,8 @@ export const defaultOptions = (p: Preset): Options => Object.fromEntries(p.field
 
 /** Caption template until Gemini writes captions. */
 export function draftCaption(p: Product) {
-  const tag = p.name.toLowerCase().replace(/[^a-z0-9]+/g, "");
-  return `${p.name} lagi rame banget! ${p.details ? `${p.details}. ` : ""}${p.price ? `Cuma ${p.price}. ` : ""}Cek keranjang di bawah ya 🛒\n\n#${tag || "racuntiktok"} #racuntiktok #tiktokshop #fyp`;
+  // words the platforms ban (stamina → performa, …) never reach the post, even from the product's own title
+  const name = applyRules(p.name);
+  const tag = applyRules(p.name.toLowerCase()).replace(/[^a-z0-9]+/g, "");
+  return `${name} lagi rame banget! ${p.details ? `${applyRules(p.details)}. ` : ""}${p.price ? `Cuma ${p.price}. ` : ""}Cek keranjang di bawah ya 🛒\n\n#${tag || "racuntiktok"} #racuntiktok #tiktokshop #fyp`;
 }

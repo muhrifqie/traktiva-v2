@@ -1530,7 +1530,7 @@ function useLocalFlag(key: string, fallback: boolean): [boolean, (v: boolean) =>
 function SummaryPanel({ edit, p, pro, exported, onOpen }: { edit: ProjectEdit; p: Project; pro: boolean; exported: boolean; onOpen: (t: Tab | "stiker") => void }) {
   const st = edit.captionStyle;
   const look = CAPTION_LOOKS.find((l) => l.style.preset === st.preset && l.style.font === st.font);
-  const voice = edit.voices.length === 1 && edit.voices[0].dur > 8 ? "Voice-over utuh" : edit.voices.length ? `${edit.voices.length} suara adegan` : "Tanpa voice-over";
+  const voice = edit.voices.length === 1 && edit.voices[0].dur > 8 ? "Voice-over utuh" : edit.voices.length ? `${edit.voices.length} suara scene` : "Tanpa voice-over";
   const rows: { t: Tab | "stiker"; icon: React.ComponentType<{ className?: string }>; color: string; title: string; info: string; hide?: boolean }[] = [
     { t: "teks", icon: Type, color: "#f2c94c", title: "Teks & subtitle", info: `${edit.captions.length} caption · ${look ? look.label : fontOf(st.font).label}${st.karaoke ? " · karaoke" : ""}` },
     { t: "stiker", icon: Sticker, color: "#2fa868", title: "Stiker", info: edit.overlays.length ? edit.overlays.map((o) => `“${o.text.split("\n")[0]}”`).join(" · ") : "Belum ada (video laris jarang pakai stiker)" },
@@ -1739,7 +1739,7 @@ function FxPanel({
           <button type="button" className={chip(!fx.kenburns)} onClick={() => onFx({ kenburns: false })}>Mati</button>
           <button type="button" className={chip(fx.kenburns)} onClick={() => onFx({ kenburns: true })}>Ken Burns</button>
         </div>
-        <p className="text-[11px] text-muted-foreground">Transisi dipasang di setiap pergantian adegan; durasi video tidak berubah.</p>
+        <p className="text-[11px] text-muted-foreground">Transisi dipasang di setiap pergantian scene; durasi video tidak berubah.</p>
       </div>
       <div className="space-y-2 border-t pt-2.5">
         <p className="flex items-center gap-1.5 text-xs font-medium"><Sparkles className="size-3.5" /> Format video laris</p>

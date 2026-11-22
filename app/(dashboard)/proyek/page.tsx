@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { videoProjects } from "@/lib/db/schema";
 import { presetById, projectName } from "@/lib/presets";
+import { isUnsaved } from "@/lib/unsaved";
 import { NewProjectButton, ProjectList } from "./project-list";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,8 @@ const FILTERS = [
 export default async function ProyekPage({ searchParams }: PageProps<"/proyek">) {
   const sp = await searchParams;
   const filter = FILTERS.find((f) => f.id === sp.status)?.id ?? "semua";
-  const rows = await db.select().from(videoProjects).orderBy(desc(videoProjects.updatedAt));
+  // projects opened but never saved (no "Simpan draft", no video started) are not drafts yet
+  const rows = (await db.select().from(videoProjects).orderBy(desc(videoProjects.updatedAt))).filter((p) => !isUnsaved(p.options));
   type Row = (typeof rows)[number];
   // "Jumlah video" > 1: versions B–E fold into their main project's card (Galeri Video still lists every video)
   const byId = new Map(rows.map((p) => [p.id, p]));

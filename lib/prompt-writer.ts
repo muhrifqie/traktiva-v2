@@ -236,7 +236,7 @@ ${proven}`)).text);
   if (!Array.isArray(list) || list.length < want) throw new Error("Jawaban Gemini tidak lengkap. Coba lagi.");
   const clean = (list: WrittenScene[]) =>
     list.slice(0, want).map((s, i) => ({
-      label: String(s.label || p.scenes[only ?? i]?.label || `Adegan ${i + 1}`).slice(0, 60),
+      label: String(s.label || p.scenes[only ?? i]?.label || `Scene ${i + 1}`).slice(0, 60),
       imagePrompt: fixLogoWording(String(s.imagePrompt ?? "")).slice(0, 2000),
       motionPrompt: applyRules(fixLogoWording(String(s.motionPrompt ?? "")), writingRules()).slice(0, 2000),
     }));
@@ -302,4 +302,42 @@ If there is no on-screen text, set found false and still suggest a look that fit
   if (!style.preset && !style.font) throw new Error("Gemini tidak memberi gaya yang bisa dipakai. Coba lagi.");
   const note = String(j.note ?? "").trim().slice(0, 200);
   return { style, note: j.found === false ? `Video referensi tanpa teks; gaya dipilih dari suasananya. ${note}` : note || "Gaya teks disalin dari video laris." };
+}
+
+
+/**
+ * "Tulis pakai AI" in the Studio's voice-over box: a fresh script in the chosen selling style, about the product's
+ * real details, sized to the video (~2.6 words/s). Written by the owner's own writer account (Gemini web with the
+ * Google account already used for Flow, or ChatGPT when set), so it costs the user nothing. `avoid` = the script now
+ * in the box: the new one must open differently.
+ */
+export async function writeVoScript(p: VideoProject, style: { label: string; ai: string }, seconds: number, avoid = "") {
+  const g = await geminiAccount();
+  const target = Math.max(22, Math.round(seconds * 2.6));
+  const prompt = `Write ONE Indonesian voice-over script for a ${Math.round(seconds)}-second vertical TikTok affiliate video, read by one person without pauses.
+Selling style: ${style.ai}.
+Product: ${p.product.name}. Price: ${p.product.price || "-"}.
+Details and selling points (use the most convincing 1-2, concretely, instead of generic praise like "kualitasnya bagus"): ${(p.product.details || "-").slice(0, 700)}
+${p.product.look ? `What it looks like: ${p.product.look.slice(0, 300)}` : ""}
+Rules:
+- About ${target} words and 170-230 characters (never under 160). Casual everyday Indonesian, light Jakarta slang, like talking to a friend.
+- First sentence = a hook that fits the style. Say the product's short spoken name (not the long listing title).
+- Only claim features that are in the details or the name. Never invent specs (battery, USB, size, material, ingredients); with few details, talk about the experience and use instead.
+- End with the spoken call to action from the owner's rules below. No invented discounts, stock limits, medical or absolute claims ("dijamin", "100%", "pasti", "paling"); no "stok terbatas"/"sebelum habis".
+- Write numbers with digits: prices "Rp34.900", ratings "4,8", "5.000+ terjual". Use the product price exactly as given, or no price if there is none.
+${avoid ? `- It must open and flow differently from this earlier script: "${avoid.replace(/"/g, "'").slice(0, 400)}"` : ""}
+${rulesPrompt(writingRules())}
+${await provenHooksPrompt()}
+Output ONLY JSON: {"script":"..."}`;
+  const clean = (t: string) => applyRules(String(extractJson<{ script?: string }>(t)?.script ?? "").replace(/\s+/g, " ").replace(/^["“]|["”]$/g, "").trim(), writingRules());
+  let script = clean((await askWriter(g.sessionKey, prompt)).text);
+  // the Studio needs at least 150 characters (VO_MIN_CHARS): one more try asking for a longer one
+  if (script.length >= 60 && script.length < 160) {
+    const longer = clean((await askWriter(g.sessionKey, `${prompt}
+
+Your last script was too short (${script.length} characters): "${script.replace(/"/g, "'")}". Write it again with one more concrete benefit, 170-230 characters.`)).text);
+    if (longer.length > script.length) script = longer;
+  }
+  if (script.length < 60) throw new Error("Naskah dari AI kosong. Coba lagi.");
+  return script.slice(0, 1000);
 }
