@@ -29,7 +29,7 @@ function cfg() {
 const BASE = () => (process.env.WAROENGPAY_BASE || cfg().base || "https://waroengpay.com").replace(/\/+$/, "");
 const KEY = () => process.env.WAROENGPAY_API_KEY || cfg().apiKey || "";
 const SECRET = () => process.env.WAROENGPAY_WEBHOOK_SECRET || cfg().webhookSecret || "";
-const SITE = () => (process.env.SITE_URL || cfg().siteUrl || "https://43.156.15.173:8443").replace(/\/+$/, "");
+const SITE = () => (process.env.SITE_URL || cfg().siteUrl || "https://app.traktiva.site").replace(/\/+$/, "");
 /** wp_test_ keys create sandbox invoices only (never money); the server then only accepts sandbox events. */
 export const testMode = () => KEY().startsWith("wp_test_");
 

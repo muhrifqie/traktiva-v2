@@ -445,7 +445,7 @@ export function memberRoutes(h) {
 
 // ---------------------------------------------------------------- expiry reminders (WhatsApp via the owner's webhook)
 // Off until Pengaturan → Pengingat has a webhook and is switched on. Each (license, kind) is sent once.
-const SITE = (process.env.SITE_URL || "https://43.156.15.173:8443").replace(/\/+$/, "");
+const SITE = (process.env.SITE_URL || "https://app.traktiva.site").replace(/\/+$/, "");
 const REMINDERS = [
   { kind: "7d", from: 1 * 86400, to: 7 * 86400, text: (d) => `habis ${d} hari lagi` },
   { kind: "1d", from: 0, to: 1 * 86400, text: () => "habis besok" },

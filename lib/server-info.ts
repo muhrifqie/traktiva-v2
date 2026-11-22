@@ -51,9 +51,9 @@ export function licenseView(info: ServerInfo | null, appVersion: string) {
   };
 }
 
-// ponytail: fixed until the domain exists; then point these at <domain>
-export const ADMIN_PANEL_URL = "https://43.156.15.173:8443/admin";
-export const BUYER_AREA_URL = "https://43.156.15.173:8443/akun";
+// Opened in the browser (normal CA certificates); the license API itself stays on the pinned :8443 address.
+export const ADMIN_PANEL_URL = "https://admin.traktiva.site/admin";
+export const BUYER_AREA_URL = "https://app.traktiva.site/akun";
 
 /** "1.10.0" > "1.9.3" */
 export function newerVersion(a: string, b: string) {

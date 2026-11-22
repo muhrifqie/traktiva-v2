@@ -1,4 +1,4 @@
-// Traktiva license admin CLI (run on the server, e.g. `ssh shopeeboosthelper "cd /srv/traktiva-license && node admin.mjs list"`).
+// Traktiva license admin CLI (run on the server, e.g. `ssh traktiva "cd /srv/traktiva-license && node admin.mjs list"`).
 //   node admin.mjs init                                   create signing key + pepper, print the public key for the app
 //   node admin.mjs create [--plan bulanan|tahunan|lifetime] [--days N] [--devices N] [--note "Budi"] [--count 1] [--role admin]
 //   node admin.mjs list                                   licenses with device counts
@@ -14,7 +14,7 @@ import { audit, createLicenses, db, getPlans, initSecrets, loadSecrets, setAdmin
 import { createPasswordToken } from "./members.mjs";
 
 // public origin for printed links (the domain once it exists)
-const SITE = (process.env.SITE_URL || "https://43.156.15.173:8443").replace(/\/+$/, "");
+const SITE = (process.env.SITE_URL || "https://app.traktiva.site").replace(/\/+$/, "");
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flag = (name, def) => {
