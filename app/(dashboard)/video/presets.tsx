@@ -6,7 +6,7 @@ import { ArrowRight, ImageIcon, Loader2, PenLine, Plus, Trash2, Volume2, VolumeX
 import { toast } from "sonner";
 import { confirmDialog } from "@/components/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { BACKDROPS, defaultOptions, PRESETS } from "@/lib/presets";
+import { BACKDROPS, CONCEPT_VOICES, defaultOptions, MOODS, PRESETS } from "@/lib/presets";
 import type { MyConcept } from "@/lib/settings";
 import { createMyConcept, createProjectFromConcept, deleteMyConcept } from "./concept-actions";
 import { createProject } from "./project-actions";
@@ -45,7 +45,7 @@ export function NewConceptButton() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
-  const blank = { name: "", idea: "", scenes: 3, background: "auto", audio: "on" as "on" | "off" };
+  const blank = { name: "", idea: "", scenes: 3, background: "", cast: "", mood: "natural", voice: "female", hook: "" };
   const [form, setForm] = useState(blank);
   const set = <K extends keyof typeof blank>(k: K, v: (typeof blank)[K]) => setForm((f) => ({ ...f, [k]: v }));
   const save = () =>
@@ -67,7 +67,7 @@ export function NewConceptButton() {
         <Plus className="size-4" /> Buat konsep sendiri
       </button>
       <Dialog open={open} onOpenChange={(o) => !pending && setOpen(o)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Buat konsep sendiri</DialogTitle>
             <DialogDescription>Ceritakan video yang kamu mau. Konsepnya tersimpan sebagai kartu dan bisa dipakai berkali-kali; AI menyusun adegannya mengikuti ceritamu.</DialogDescription>
@@ -98,26 +98,46 @@ export function NewConceptButton() {
               />
               <p className="mt-1 text-right text-[11px] text-muted-foreground">{form.idea.length}/1500</p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className={label} htmlFor="concept-cast">Siapa yang tampil? <span className="font-normal text-muted-foreground">· kosongkan = AI yang atur</span></label>
+                <textarea
+                  id="concept-cast"
+                  rows={3}
+                  maxLength={300}
+                  value={form.cast}
+                  onChange={(e) => set("cast", e.target.value)}
+                  placeholder={"Contoh: cewek setengah badan dari pinggang ke bawah pakai celana, wajah tidak kelihatan.\nAtau: cewek berhijab ngomong ke kamera sambil pegang produk."}
+                  className={`${field} resize-y`}
+                />
+              </div>
               <div>
-                <label className={label} htmlFor="concept-scenes">Jumlah adegan</label>
-                <select id="concept-scenes" value={form.scenes} onChange={(e) => set("scenes", Number(e.target.value))} className={field}>
-                  {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n} adegan</option>)}
+                <label className={label} htmlFor="concept-mood">Suasana</label>
+                <select id="concept-mood" value={form.mood} onChange={(e) => set("mood", e.target.value)} className={field}>
+                  {MOODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
               </div>
-              <div className="sm:col-span-2">
-                <label className={label} htmlFor="concept-audio">Suara video</label>
-                <select id="concept-audio" value={form.audio} onChange={(e) => set("audio", e.target.value as "on" | "off")} className={field}>
-                  <option value="on">Pakai suara dari AI</option>
-                  <option value="off">Tanpa suara (tambah musik sendiri)</option>
+              <div>
+                <label className={label} htmlFor="concept-voice">Suara video</label>
+                <select id="concept-voice" value={form.voice} onChange={(e) => set("voice", e.target.value)} className={field}>
+                  {CONCEPT_VOICES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={label} htmlFor="concept-scenes">Scene per video</label>
+                <select id="concept-scenes" value={form.scenes} onChange={(e) => set("scenes", Number(e.target.value))} className={field}>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n} scene (±{n * 10} dtk)</option>)}
                 </select>
               </div>
             </div>
+            <p className="-mt-1 text-[11px] text-muted-foreground">1 scene = 1 potongan video ±10 dtk dengan 1 gambar & 1 gerakan; semua scene digabung jadi satu video.</p>
             <div>
-              <label className={label} htmlFor="concept-bg">Latar produk</label>
-              <select id="concept-bg" value={form.background} onChange={(e) => set("background", e.target.value)} className={field}>
-                {BACKDROPS.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}
-              </select>
+              <label className={label} htmlFor="concept-bg">Background <span className="font-normal text-muted-foreground">· kosongkan = AI pilih sesuai produk</span></label>
+              <input id="concept-bg" maxLength={300} value={form.background === "auto" ? "" : form.background} onChange={(e) => set("background", e.target.value)} placeholder="Contoh: meja kayu dekat jendela, ada tanaman kecil, cahaya pagi" className={field} />
+            </div>
+            <div>
+              <label className={label} htmlFor="concept-hook">Kalimat pembuka (hook) <span className="font-normal text-muted-foreground">· opsional</span></label>
+              <input id="concept-hook" maxLength={150} value={form.hook} onChange={(e) => set("hook", e.target.value)} placeholder="Contoh: Jangan beli sebelum lihat ini!" className={field} />
             </div>
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" disabled={pending} onClick={() => setOpen(false)} className="h-9 rounded-lg border px-3.5 text-[13px] font-medium hover:bg-accent disabled:opacity-60">Batal</button>
@@ -143,7 +163,10 @@ function MyConceptCard({ c, busy, onUse }: { c: MyConcept; busy: boolean; onUse:
       router.refresh();
     });
   };
-  const backdrop = BACKDROPS.find((b) => b.value === c.background)?.label ?? "Otomatis";
+  const backdrop = !c.background || c.background === "auto" ? "Otomatis" : BACKDROPS.find((b) => b.value === c.background)?.label ?? c.background;
+  const OLD: Record<string, string> = { hands: "Tangan saja", woman: "Cewek", man: "Cowok", none: "Tanpa orang" };
+  const cast = c.cast ? OLD[c.cast] ?? c.cast : undefined;
+  const mood = MOODS.find((x) => x.value === c.mood)?.label;
   return (
     <article className="group flex flex-col overflow-hidden rounded-xl border bg-card transition-colors hover:border-ring/40">
       <div className="relative flex aspect-[16/7] flex-col justify-end gap-1 bg-gradient-to-br from-muted to-muted/30 p-4">
@@ -154,10 +177,11 @@ function MyConceptCard({ c, busy, onUse }: { c: MyConcept; busy: boolean; onUse:
       <div className="flex flex-1 flex-col gap-2 p-3.5">
         <p className="text-[13px] font-semibold leading-snug">{c.name}</p>
         <p className="line-clamp-3 text-xs text-muted-foreground">{c.idea}</p>
-        <p className="text-xs"><span className="text-muted-foreground">Latar: </span>{backdrop}</p>
+        {(cast || mood) && <p className="text-xs"><span className="text-muted-foreground">Gaya: </span>{[cast, mood].filter(Boolean).join(" · ")}</p>}
+        <p className="text-xs"><span className="text-muted-foreground">Background: </span>{backdrop}</p>
         <div className="mt-auto flex items-center gap-2 pt-2">
           <span className="flex flex-1 items-center gap-1 text-[11px] text-muted-foreground">
-            {c.scenes} adegan · {c.audio === "off" ? <><VolumeX className="size-3" /> tanpa suara</> : <><Volume2 className="size-3" /> pakai suara</>}
+            {c.scenes} scene · {c.audio === "off" ? <><VolumeX className="size-3" /> tanpa suara</> : <><Volume2 className="size-3" /> {c.voice === "male" ? "suara cowok" : c.voice === "female" ? "suara cewek" : "pakai suara"}</>}
           </span>
           <button type="button" title="Hapus konsep" aria-label="Hapus konsep" disabled={removing || busy} onClick={remove} className="grid size-8 place-items-center rounded-lg border text-muted-foreground hover:bg-accent hover:text-destructive disabled:opacity-60">
             {removing ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}

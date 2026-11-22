@@ -8,13 +8,14 @@ import { db } from "@/lib/db";
 import { videoProjects, type ProjectScene, type VideoProject } from "@/lib/db/schema";
 import { generateFlowImage, generateFlowVideo, syncAllFlowCredits, type Progress } from "@/lib/flow2api";
 import { synthesize } from "@/lib/cartesia";
-import { mediaDataUrl, mixVoiceOver, resolveMedia, saveResult, writeMedia } from "@/lib/media";
+import { mediaDataUrl, mixVoiceOver, removeMedia, resolveMedia, saveResult, writeMedia } from "@/lib/media";
 import { getSettings, writingRules } from "@/lib/settings";
 import { applyRules } from "@/lib/writing";
 import { projectVoice, spoken, voiceLine, withoutVoice } from "@/lib/voice";
-import { isSilent } from "@/lib/presets";
+import { castOf, characterLookOf, flowVideoModel, isSilent } from "@/lib/presets";
 import { checkSceneImages } from "@/lib/prompt-writer";
 import { withSlot } from "@/lib/video";
+import { beginJob, Cancelled, inJob, isCancelled, throwIfCancelled } from "@/lib/jobs";
 
 // Project pipeline: product photos → one image per scene (Nano Banana) → one clip per scene image
 // (Omni reference mode) → ffmpeg concat into final.mp4. Scenes run in parallel through the shared
@@ -43,10 +44,12 @@ const BACKOFF_S = [5, 10, 20, 30];
 export async function withRetry<T>(fn: () => Promise<T>, onStage: Progress, max = 5): Promise<T> {
   let last: unknown;
   for (let attempt = 1; attempt <= max; attempt++) {
+    throwIfCancelled();
     try {
       return await fn();
     } catch (e) {
       last = e;
+      throwIfCancelled();
       if (attempt === max || PERMANENT.test(errMsg(e))) break;
       const wait = BACKOFF_S[Math.min(attempt - 1, BACKOFF_S.length - 1)];
       onStage(`Gagal, coba lagi ${attempt + 1}/${max} dalam ${wait} dtk...`, 0);
@@ -61,7 +64,17 @@ export async function withRetry<T>(fn: () => Promise<T>, onStage: Progress, max 
 async function load(id: number) {
   return db.select().from(videoProjects).where(eq(videoProjects.id, id)).get();
 }
+// Autopilot ("Buat video sekarang") runs images → clips → edit as one job. Between those steps the project stays
+// "running": a short "draft"/"done" in between made the Studio stop polling (it never moved on to the clips) and
+// the status bar announce "Selesai" halfway.
+const chained = ((globalThis as unknown as { __chainedRuns?: Set<number> }).__chainedRuns ??= new Set<number>());
+
 async function save(id: number, set: Partial<VideoProject>) {
+  if (isCancelled(id)) return;
+  if (chained.has(id) && (set.status === "draft" || set.status === "done")) {
+    set = { ...set, status: "running" };
+    if (set.progress === null) delete set.progress;
+  }
   await db.update(videoProjects).set({ ...set, updatedAt: new Date() }).where(eq(videoProjects.id, id));
 }
 
@@ -86,6 +99,7 @@ function sceneStore(id: number, scenes: ProjectScene[], kind: "Gambar" | "Klip",
     return chain;
   };
   return {
+    id,
     scenes,
     patch(i: number, p: Partial<ProjectScene>, now = false) {
       scenes[i] = { ...scenes[i], ...p };
@@ -102,14 +116,45 @@ export function queueImages(id: number, only?: number) {
   return start(id, () => runImages(id, only));
 }
 
+/**
+ * Character concepts without an uploaded face: the AI first makes one front portrait of the character, saved as the
+ * project's face (options.face, faceAi=1), so every scene shows the same person. Returns the media path.
+ */
+export async function makeAiFace(id: number, onStage?: Progress) {
+  const p = await load(id);
+  if (!p) throw new Error("Proyek tidak ditemukan.");
+  const look = characterLookOf(p);
+  const prompt = `Head-and-shoulders portrait photo of ${look}, facing the camera straight on, neutral soft expression, face fully visible and sharp, plain light background, soft even daylight, realistic skin texture, real smartphone photo. One person only, no product, no text, no watermark. Vertical 9:16.`;
+  const url = await withRetry(() => generateFlowImage(prompt, [], onStage), onStage ?? (() => {}), 3);
+  const face = await saveResult(url, `${p.folder}/karakter/wajah-ai-${now().toString(36)}`, ".png");
+  const cur = await load(id);
+  if (cur?.options.face && cur.options.faceAi === "1" && cur.options.face.startsWith(`${p.folder}/`)) await removeMedia(cur.options.face).catch(() => {});
+  await save(id, { options: { ...(cur ?? p).options, face, faceAi: "1" } });
+  return face;
+}
+
+/** One autopilot step run to the end: the project stays "running" afterwards and render errors are thrown. */
+export async function runStep(id: number, kind: "images" | "render") {
+  chained.add(id);
+  try {
+    await save(id, { status: "running", error: null });
+    await (kind === "images" ? runImages(id) : runRender(id));
+  } finally {
+    chained.delete(id);
+  }
+}
+
 /** Generate missing clips, then join them into final.mp4. */
 export function queueRender(id: number) {
   return start(id, () => runRender(id));
 }
 
 async function start(id: number, task: () => Promise<void>) {
+  beginJob(id);
   await save(id, { status: "running", progress: "Menyiapkan...", error: null });
-  void task().catch((e) => save(id, { status: "failed", progress: null, error: errMsg(e) }));
+  void inJob(id, task).catch(async (e) => {
+    if (!(e instanceof Cancelled)) await save(id, { status: "failed", progress: null, error: errMsg(e) });
+  });
 }
 
 const now = () => Date.now();
@@ -126,6 +171,7 @@ async function eachScene(
   await Promise.all(
     targets.map((i) =>
       withSlot(async () => {
+        if (isCancelled(store.id)) return; // cancelled while waiting for a free slot: never send it to Flow
         await store.patch(i, { state: "working", stage: "Mengirim ke Flow...", pct: 2, startedAt: now() }, true);
         try {
           const result = await work(i, (line, pct) => void store.patch(i, pct == null ? { stage: line } : { stage: line, pct }));
@@ -143,6 +189,17 @@ async function runImages(id: number, only?: number) {
   const p = await load(id);
   if (!p) return;
   const refs = await Promise.all(p.product.photos.slice(0, 3).map(mediaDataUrl));
+  // character concepts: the face goes first (Flow takes 3 references), the product photos after it. No face uploaded:
+  // the AI makes one first, so all scenes show the same person instead of a different stranger each time.
+  const character = !!castOf(p);
+  let facePath = character ? p.options.face : undefined;
+  if (character && !facePath && only == null) {
+    await save(id, { progress: "AI membuat wajah karakter..." });
+    facePath = await makeAiFace(id).catch(() => undefined); // without it the scenes still render, just less consistent
+  }
+  const face = facePath ? await mediaDataUrl(facePath).catch(() => null) : null;
+  const FACE_NOTE = face ? ` The ${castOf(p)} is exactly the person in the first reference image (same face, facial features and skin tone); the other reference images show the product.` : "";
+  const withFace = (r: string[]) => (face ? [face, ...r] : r).slice(0, 3);
   // "generate all" leaves the user's own images alone; an explicit re-roll replaces one
   const targets = only != null ? [only].filter((i) => p.scenes[i]) : p.scenes.map((s, i) => (s.own && s.image ? -1 : i)).filter((i) => i >= 0);
   if (!targets.length) return save(id, { status: "draft", progress: null });
@@ -151,8 +208,9 @@ async function runImages(id: number, only?: number) {
   const failed = await eachScene(store, targets, async (i, onStage) => {
     // product photos keep the product exact; a style frame (from a reference video) guides the shot
     const style = store.scenes[i].styleRef ? [await mediaDataUrl(store.scenes[i].styleRef!).catch(() => null)].filter(Boolean) as string[] : [];
-    const sceneRefs = [...refs.slice(0, style.length ? 2 : 3), ...style];
-    const url = await withRetry(() => generateFlowImage(`${store.scenes[i].imagePrompt} ${IMAGE_GUARD}`, sceneRefs, onStage), onStage);
+    const room = (face ? 2 : 3) - style.length; // 3 references in total
+    const sceneRefs = withFace([...refs.slice(0, room), ...style]);
+    const url = await withRetry(() => generateFlowImage(`${store.scenes[i].imagePrompt} ${IMAGE_GUARD}${FACE_NOTE}`, sceneRefs, onStage), onStage);
     onStage("Menyimpan gambar...", 97);
     // new name each time so the browser never shows a cached older take
     const image = await saveResult(url, `${p.folder}/gambar/adegan-${i + 1}-${now().toString(36)}`, ".png");
@@ -177,7 +235,7 @@ async function runImages(id: number, only?: number) {
       await eachScene(fixStore, bad, async (i, onStage) => {
         const note = checks.get(i)?.note ?? "";
         const fix = `${fixStore.scenes[i].imagePrompt} ${IMAGE_GUARD} CORRECTION: the previous attempt got the product wrong (${note.slice(0, 200)}). Copy the product EXACTLY from the reference photos: same shape, parts, colour variant and logo; exactly one product.`;
-        const url = await withRetry(() => generateFlowImage(fix, refs.slice(0, 3), onStage), onStage);
+        const url = await withRetry(() => generateFlowImage(`${fix}${FACE_NOTE}`, withFace(refs), onStage), onStage);
         const image = await saveResult(url, `${p.folder}/gambar/adegan-${i + 1}-fix-${now().toString(36)}`, ".png");
         return { image, own: false, clip: null, check: null };
       });
@@ -204,7 +262,7 @@ async function runRender(id: number) {
   if (!p) return;
   if (p.scenes.some((s) => !s.image)) throw new Error("Semua adegan perlu gambar dulu.");
   const silent = isSilent(p.presetId, p.options);
-  const model = `omni-1.2-flash-${p.clipSec}s-portrait`;
+  const model = flowVideoModel(p.options, p.clipSec);
   // voice-over by Cartesia: Flow renders the clip without speech, the line is spoken by Cartesia and mixed in
   // the project's own voice choice (storyboard) wins over the app default (Pengaturan AI)
   const defaults = getSettings().voice ?? { provider: "flow" };
@@ -216,7 +274,8 @@ async function runRender(id: number) {
   const failed = await eachScene(store, targets, async (i, onStage) => {
     const s = store.scenes[i];
     const line = voiceLine(s.motionPrompt);
-    const motion = cartesia ? `${withoutVoice(s.motionPrompt)} No one speaks: no talking, no voice-over, no lip-sync; only soft natural ambient sound.` : s.motionPrompt;
+    // Flow reads the line itself: digits become unambiguous Indonesian words first ("Rp179.000" → "seratus tujuh puluh sembilan ribu rupiah")
+    const motion = cartesia ? `${withoutVoice(s.motionPrompt)} No one speaks: no talking, no voice-over, no lip-sync; only soft natural ambient sound.` : s.motionPrompt.replace(/(Voice says:\s*["“])([^"”]+)(["”])/, (_, a: string, t: string, b: string) => `${a}${spoken(t)}${b}`);
     const frame = await mediaDataUrl(s.image!);
     const url = await withRetry(() => generateFlowVideo(model, `${motion} ${CLIP_GUARD}`, onStage, [frame]), onStage);
     onStage("Mengunduh klip...", 95);

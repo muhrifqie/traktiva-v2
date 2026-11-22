@@ -18,7 +18,7 @@ const STAGES = ["Menyusun suara & caption", "Menggambar caption", "Membuat video
  * Result tab of a Video Pendek: no timeline editor. The ready-to-post version is prepared and exported on its own,
  * then shown with download / folder / schedule. "Edit di timeline" stays available for manual tweaks.
  */
-export function QuickResult({ p, onEdit }: { p: Project; onEdit: () => void }) {
+export function QuickResult({ p, onEdit, label, href }: { p: Project; onEdit?: () => void; label?: string; href?: string }) {
   const router = useRouter();
   const exported = !!(p.finalPath && p.edit?.exportedAt);
   const [stage, setStage] = useState(0);
@@ -57,6 +57,40 @@ export function QuickResult({ p, onEdit }: { p: Project; onEdit: () => void }) {
     })();
   }, [exported, attempt, p.id, router]);
 
+  // one of several versions on the Hasil tab: a small card (video, buttons, short caption)
+  if (label) {
+    const ready = exported ? `${mediaUrl(p.finalPath!)}?v=${p.edit!.exportedAt}` : null;
+    return (
+      <section className="flex h-full flex-col gap-2.5 rounded-xl border bg-card p-3">
+        <div className="flex items-center gap-1.5">
+          <p className="text-[13px] font-semibold">{label}</p>
+          {ready ? <Check className="size-3.5 text-status-ok" /> : error ? <CircleAlert className="size-3.5 text-destructive" /> : <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+          {href && <Link href={href} className="ml-auto text-[11px] text-brand-light hover:underline">Buka</Link>}
+        </div>
+        {ready ? (
+          <video src={ready} controls playsInline preload="metadata" className="aspect-[9/16] w-full rounded-lg bg-black object-contain" />
+        ) : (
+          <div className="grid aspect-[9/16] w-full place-items-center rounded-lg border bg-muted/40 px-3 text-center text-[11px] text-muted-foreground">
+            {error ? (
+              <span className="space-y-2">
+                <span className="block">{error}</span>
+                <button type="button" onClick={() => (setError(null), setStage(0), setAttempt((n) => n + 1))} className="mx-auto flex h-7 items-center gap-1 rounded-md bg-primary px-2.5 text-[11px] font-medium text-primary-foreground"><RotateCw className="size-3.5" /> Coba lagi</button>
+              </span>
+            ) : `${STAGES[stage]}...`}
+          </div>
+        )}
+        {ready && (
+          <div className="grid grid-cols-3 gap-1.5">
+            <a href={ready} download={`${(p.title || p.product.name || "video").slice(0, 50)} ${label}.mp4`} title="Unduh" className="flex h-8 items-center justify-center gap-1 rounded-lg bg-primary text-[11px] font-medium text-primary-foreground hover:bg-primary/90"><Download className="size-3.5" /> Unduh</a>
+            <Link href="/jadwal" title="Jadwalkan upload" className="flex h-8 items-center justify-center gap-1 rounded-lg border text-[11px] font-medium hover:bg-accent"><CalendarClock className="size-3.5" /> Jadwal</Link>
+            <button type="button" title="Buka folder" onClick={() => void openProjectFolder(p.id)} className="flex h-8 items-center justify-center gap-1 rounded-lg border text-[11px] font-medium hover:bg-accent"><FolderOpen className="size-3.5" /> Folder</button>
+          </div>
+        )}
+        {p.caption && <p title={p.caption} className="line-clamp-3 text-[11px] text-muted-foreground">{p.caption}</p>}
+      </section>
+    );
+  }
+
   if (!exported) {
     return (
       <section className="flex flex-col items-center gap-4 rounded-xl border bg-card px-6 py-12 text-center">
@@ -81,9 +115,11 @@ export function QuickResult({ p, onEdit }: { p: Project; onEdit: () => void }) {
               <RotateCw className="size-4" /> Coba lagi
             </button>
           )}
-          <button type="button" onClick={onEdit} className="flex h-9 items-center gap-1.5 rounded-lg border px-3.5 text-[13px] font-medium hover:bg-accent">
-            <PencilRuler className="size-4" /> Edit di timeline
-          </button>
+          {onEdit && (
+            <button type="button" onClick={onEdit} className="flex h-9 items-center gap-1.5 rounded-lg border px-3.5 text-[13px] font-medium hover:bg-accent">
+              <PencilRuler className="size-4" /> Edit di timeline
+            </button>
+          )}
         </div>
       </section>
     );
@@ -115,9 +151,11 @@ export function QuickResult({ p, onEdit }: { p: Project; onEdit: () => void }) {
             <p className="whitespace-pre-line rounded-lg border bg-background p-3 text-xs text-muted-foreground">{p.caption}</p>
           </div>
         )}
-        <button type="button" onClick={onEdit} className="mt-auto flex w-fit items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-          <PencilRuler className="size-3.5" /> Mau ubah caption atau suara? Edit di timeline
-        </button>
+        {onEdit && (
+          <button type="button" onClick={onEdit} className="mt-auto flex w-fit items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+            <PencilRuler className="size-3.5" /> Mau ubah caption atau suara? Edit di timeline
+          </button>
+        )}
       </div>
     </section>
   );

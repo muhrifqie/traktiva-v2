@@ -9,12 +9,12 @@ import { askWriter } from "@/lib/writer";
 import { writingRules } from "@/lib/settings";
 import { applyRules, rulesPrompt } from "@/lib/writing";
 import { provenHooksPrompt } from "@/lib/insights";
-import { BACKDROPS, EXPLAIN, isSilent, presetById } from "@/lib/presets";
+import { BACKDROPS, castOf, directionOf, EXPLAIN, isSilent, presetById } from "@/lib/presets";
 
 /** The SET line of the writer brief: the chosen backdrop, or a pick-one list when it is "auto". */
 const setLine = (bg?: string) =>
   bg && bg !== "auto"
-    ? `- Use exactly this set: ${bg}.`
+    ? `- Use exactly this set (may be written in Indonesian by the owner; describe it in English in the prompts): ${bg}.`
     : `- Pick ONE set that suits this product and its buyers, then keep it for all scenes:\n${BACKDROPS.slice(1, 10).map((b) => `  • ${b.value}`).join("\n")}`;
 import { CAPTION_ANIMS, CAPTION_FONTS, CAPTION_PRESETS, clamp, type CaptionStyle } from "@/lib/edit";
 
@@ -85,7 +85,7 @@ ${p.product.look ? `- LOOK (read from the product photos; follow it exactly, it 
 - The product photos are given to the image model as references, so always say the product must look exactly like the reference photos (shape, color, logo, packaging).
 
 VIDEO CONCEPT: ${preset?.title ?? p.presetId} — ${preset?.summary ?? ""}
-${p.options.concept ? `OWNER'S OWN CONCEPT "${p.options.conceptName ?? ""}" (written by the seller in Indonesian; it decides the story, shots and mood, follow it closely): ${p.options.concept}\n` : ""}Audience: Indonesian TikTok shoppers. Final video = all scenes joined in order.
+${directionOf(p) ? `CONCEPT DIRECTION (follow it; where it differs from the generic rules below, this wins): ${directionOf(p)}\n` : ""}${castOf(p) && p.options.face ? `CHARACTER FACE: a face photo of the character is given to the image model as the FIRST reference image. Every imagePrompt must say the ${castOf(p)} is exactly the person in the face reference (same face, facial features and skin tone) and keep the face clearly visible; the other reference images are the product.\n` : ""}${p.options.concept ? `OWNER'S OWN CONCEPT "${p.options.conceptName ?? ""}" (written by the seller in Indonesian; it decides the story, shots and mood, follow it closely): ${p.options.concept}\n` : ""}Audience: Indonesian TikTok shoppers. Final video = all scenes joined in order.
 ${longBrief(p)}${p.scenes.length === 1 ? `ONE-CLIP VIDEO (${p.clipSec} s, this single clip IS the whole final video): the product is visible from frame 0; in ${p.clipSec} seconds show the hook, one strong benefit in use, and end on the spoken CTA. Max ${Math.round(p.clipSec * 2.5)} spoken words.` : ""}
 ${p.options.angle ? `STORY ANGLE of this version (other versions of this product use other angles, so this one must feel clearly different): ${p.options.angle}` : ""}
 ${p.options.refCaption ? `Caption of the best-selling reference video (match its vibe, never copy it word for word): "${p.options.refCaption}"` : ""}
@@ -121,8 +121,8 @@ MOTION CONTINUITY (the #1 giveaway of AI video):
 - The product keeps the exact same shape, size, color, logo and number of parts for the whole clip: no morphing, melting, flickering, duplicating, or objects appearing/disappearing. Background, lighting and shadows stay consistent.
 - Hands: anatomically correct, five fingers, a natural grip with believable contact and weight; fingers never pass through the product.
 - Camera: handheld phone with very light natural sway only, or a slow push-in. No spinning, no fast pans, no sudden speed changes.
-- People: prefer hands-only or face partly out of frame; if a face is visible it stays the same person with natural, small expressions.
-- ${silent ? "End with: no speech, no music, soft natural ambient sound only." : `Voice line in casual everyday Indonesian (light Jakarta slang is fine, like talking to a friend), spoken from the very first second at a brisk natural pace of about 2.5 words per second (max ${Math.round(p.clipSec * 2.5)} words, must fit inside the clip), written as: Voice says: "..." — lip movement only if a mouth is visible.`}
+- People: ${castOf(p) ? `the same ${castOf(p)} in every scene with the face clearly visible; identity, hair, makeup and outfit stay consistent, expressions change naturally and smoothly.` : p.options.cast === "none" ? "no people at all, product-only shots." : p.options.cast ? "follow the CONCEPT DIRECTION above for who is on screen and how they are framed." : "prefer hands-only or face partly out of frame; if a face is visible it stays the same person with natural, small expressions."}
+- ${silent ? "End with: no speech, no music, soft natural ambient sound only." : `Voice line in casual everyday Indonesian (light Jakarta slang is fine, like talking to a friend), spoken from the very first second at a brisk natural pace of about 2.5 words per second (max ${Math.round(p.clipSec * 2.5)} words, must fit inside the clip), written as: Voice says: "..." — lip movement only if a mouth is visible. Numbers and prices in the voice line are written with DIGITS copied exactly from the product data (e.g. "Rp179.000", "4,8", "3.915 terjual"), never spelled out in words; the app turns them into correct spoken Indonesian.`}
 
 STORY
 - Keep the scene "label" short (1–3 words, Indonesian).

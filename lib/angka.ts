@@ -26,9 +26,19 @@ const isValueWord = (w: string) => w in UNIT || w in SE || w in SEBIG || DIGITS.
 function parseRun(words: string[]) {
   let total = 0, group = 0, pending = 0, dec = "", inDec = false, approx: string | null = null, top = 1;
   const frac = () => (dec ? Number(`0.${dec}`) : 0);
-  for (const w of words) {
+  let prevUnit = false;
+  for (let k = 0; k < words.length; k++) {
+    const w = words[k];
     if (inDec && w in UNIT) { dec += UNIT[w]; continue; }
     inDec = false;
+    // two digit words in a row are a spoken shorthand, never a sum: "dua lima puluh" = 250 (the first one is the
+    // hundreds), "tujuh sembilan ribu" = 79 ribu (the first one is the tens)
+    if (w in UNIT && prevUnit) {
+      group += pending * (words[k + 1] === "puluh" || words[k + 1] === "puluhan" ? 100 : 10);
+      pending = UNIT[w];
+      continue;
+    }
+    prevUnit = w in UNIT;
     if (w === "koma") { inDec = true; continue; }
     const short = w.match(/^(\d+)(rb|k|jt)$/);
     if (short) { total += Number(short[1]) * (short[2] === "jt" ? 1e6 : 1e3); top = Math.max(top, short[2] === "jt" ? 1e6 : 1e3); continue; }
