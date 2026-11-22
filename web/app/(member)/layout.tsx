@@ -7,7 +7,7 @@ import { AccountMenu, AccountSidebar } from "./_ui/nav";
 
 export const metadata: Metadata = { title: { template: "%s · Akun Traktiva", default: "Akun" }, robots: { index: false, follow: false } };
 
-/** Member area in the admin panel's style: sidebar on the chrome colour, content in an inset panel (full width). */
+/** Member area in the admin panel's style: sidebar on the chrome colour, content in an inset panel (max-w-6xl like the admin). */
 export default async function AccountLayout({ children }: { children: React.ReactNode }) {
   const [v, orders, jar] = await Promise.all([requireMember(), myOrders(), cookies()]);
   const u = v.user;
@@ -30,7 +30,7 @@ export default async function AccountLayout({ children }: { children: React.Reac
         }
       />
       <main className="overflow-auto rounded-none border-border bg-background md:m-2 md:ml-0 md:rounded-2xl md:border">
-        <div className="w-full px-5 py-6 md:px-7">{children}</div>
+        <div className="mx-auto max-w-6xl px-5 py-6 md:px-7">{children}</div>
       </main>
     </div>
   );
