@@ -51,7 +51,7 @@ export default async function Overview() {
           <Link key={k} href={href} className={`group rounded-xl border bg-card p-4 transition-colors hover:border-primary/50 ${warn ? "border-amber-300/30" : ""}`}>
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Icon className={`size-3.5 ${warn ? "text-amber-300" : ""}`} />{k}</p>
             <p className="mt-1.5 text-3xl font-semibold tabular-nums">{v}</p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">{sub}</p>
+            <p className="mt-0.5 text-[0.6875rem] text-muted-foreground">{sub}</p>
           </Link>
         ))}
       </div>
@@ -89,7 +89,7 @@ export default async function Overview() {
             <ul className="divide-y">
               {s.expiring.map((l) => (
                 <li key={l.id}>
-                  <Link href={`/admin/lisensi/${l.id}`} className="flex items-center gap-2 px-4 py-2.5 text-[13px] hover:bg-muted/40">
+                  <Link href={`/admin/lisensi/${l.id}`} className="flex items-center gap-2 px-4 py-2.5 text-[0.8125rem] hover:bg-muted/40">
                     <CalendarClock className="size-3.5 text-amber-300" />
                     <span className="font-mono">…{l.key_hint}</span>
                     <span className="truncate text-muted-foreground">{l.note ?? planName(l.plan)}</span>
@@ -108,7 +108,7 @@ export default async function Overview() {
           {s.liveAnnouncements.length ? (
             <ul className="divide-y">
               {s.liveAnnouncements.map((a) => (
-                <li key={a.id} className="flex items-center gap-2.5 px-4 py-2.5 text-[13px]">
+                <li key={a.id} className="flex items-center gap-2.5 px-4 py-2.5 text-[0.8125rem]">
                   <span className={`size-2 shrink-0 rounded-full ${LEVEL_DOT[a.level] ?? "bg-muted-foreground"}`} />
                   <span className="truncate">{a.title}</span>
                 </li>

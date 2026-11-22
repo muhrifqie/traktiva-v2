@@ -28,7 +28,7 @@ export default async function SettingsPage() {
             <p className="text-sm font-semibold">Admin lama (token)</p>
             <p className="text-xs text-muted-foreground">Admin baru cukup dibuat di menu Member (centang Admin). Akun token lama tetap bisa masuk.</p>
           </header>
-          <ul className="divide-y text-[13px]">
+          <ul className="divide-y text-[0.8125rem]">
             {admins.map((a) => (
               <li key={a.name} className="flex justify-between px-4 py-2.5">
                 <span className="font-semibold">{a.name}</span>

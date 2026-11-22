@@ -6,6 +6,8 @@
 
 @theme inline {
   --color-background: var(--background);
+  --color-leaf: var(--leaf); /* website (.creator) accent = logo green */
+  --color-leaf-ink: var(--leaf-ink);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
@@ -178,59 +180,60 @@ html.is-desktop .titlebar {
 }
 
 
-/* Public site (landing, /masuk, /akun). Dark green "ambition" direction: near-black green canvas, light large type,
-   white pill actions; --site-signal is ONLY for numbers, step markers, thin rules and tiny labels (never a button fill). */
-.site {
-  --site-canvas: #030a07;
-  --site-pine: #061a12;
-  --site-stage: #07150f;
-  --site-glow: #0f3d26;
-  --site-card: #111a16;
-  --site-edge: #16342a;
-  --site-signal: #4be08a;
-  --site-body: #9bb3a8;
-  --site-muted: #6f7f78;
-  background: var(--site-canvas);
-  color: #fff;
+/* ============================================================ "Kreator" theme (website + member area)
+   Deliberately NOT the desktop app's look: near-black canvas, the logo's green as the one accent, chunky display type, big rounded
+   bento cards, pill buttons, no gradients. It works by overriding the shadcn tokens inside .creator, so every
+   component there (Button, Input, components/kit) follows; the admin panel keeps the app style.
+   Dark is the default; light = no "dark" class on <html> (cookie trk_theme). */
+.creator {
+  --background: #0a0b0a;
+  --foreground: #f1f4ec;
+  --card: #131512;
+  --card-foreground: #f1f4ec;
+  --popover: #161915;
+  --popover-foreground: #f1f4ec;
+  --muted: #1c1f1b;
+  --muted-foreground: #9ca396;
+  --secondary: #1c1f1b;
+  --secondary-foreground: #f1f4ec;
+  --accent: #1c1f1b;
+  --accent-foreground: #f1f4ec;
+  --border: rgb(255 255 255 / 0.09);
+  --input: rgb(255 255 255 / 0.14);
+  /* the logo's green (#106e3a) is the one accent: fills with white text like the logo, a lighter tint of the
+     same hue for green text/icons on the dark canvas */
+  --primary: #106e3a;
+  --primary-foreground: #ffffff;
+  --ring: #2fbf71;
+  --brand-light: #3fce82;
+  --leaf: #106e3a;
+  --leaf-ink: #3fce82;
+  --status-ok: #3fce82;
+  background: var(--background);
+  color: var(--foreground);
   font-feature-settings: "ss01";
 }
-.site h1, .site h2, .site h3 { text-wrap: balance; }
-.site p { text-wrap: pretty; }
-.site-pill {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  height: 52px; padding: 0 24px; border-radius: 9999px; border: 2px solid transparent;
-  background: #fff; color: #000; font-size: 17px; font-weight: 550;
-  transition: background-color .15s cubic-bezier(.4,0,.2,1), border-color .15s cubic-bezier(.4,0,.2,1);
-}
-.site-pill:hover { background: #d4d4d8; }
-.site-pill:focus-visible, .site-pill-outline:focus-visible { outline: 2px solid var(--site-signal); outline-offset: 2px; }
-.site-pill-outline {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  height: 52px; padding: 0 24px; border-radius: 9999px; border: 2px solid #fff;
-  color: #fff; font-size: 17px; font-weight: 550; transition: border-color .15s cubic-bezier(.4,0,.2,1);
-}
-.site-pill-outline:hover { border-color: #a1a1aa; }
-.site-sm { height: 40px; padding: 0 18px; font-size: 15px; }
-.site-stage { background: linear-gradient(290deg, var(--site-stage) 55%, var(--site-glow) 100%); border-radius: 16px; overflow: hidden; }
-.site-chapter { border-radius: 48px 48px 0 0; }
-@keyframes site-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
-.site-float { animation: site-float 6s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) { .site-float { animation: none; } }
-
-/* Light theme of the public site (toggle in the navbar, cookie trk_theme). Tailwind's white/black and the light
-   status tints are swapped inside .site, so text-white = ink, bg-white/5 = a faint ink wash, bg-black/30 = paper. */
-.site[data-theme="light"] {
-  --site-canvas: #f6f8f6;
-  --site-pine: #e3ece6;
-  --site-stage: #eef3ef;
-  --site-glow: #cfe6d7;
-  --site-card: #ffffff;
-  --site-edge: #d3e0d8;
-  --site-signal: #13804a;
-  --site-body: #3f5249;
-  --site-muted: #6b7a73;
-  --color-white: #0b1511;
-  --color-black: #ffffff;
+html:not(.dark) .creator {
+  --background: #f5f5ef;
+  --foreground: #0b0d0a;
+  --card: #ffffff;
+  --card-foreground: #0b0d0a;
+  --popover: #ffffff;
+  --popover-foreground: #0b0d0a;
+  --muted: #ebece4;
+  --muted-foreground: #5c6357;
+  --secondary: #ebece4;
+  --secondary-foreground: #0b0d0a;
+  --accent: #ebece4;
+  --accent-foreground: #0b0d0a;
+  --border: rgb(11 13 10 / 0.1);
+  --input: rgb(11 13 10 / 0.16);
+  --brand-light: #106e3a;
+  --leaf-ink: #106e3a;
+  --status-ok: #138a4a;
+  /* Tailwind's white/black are swapped so text-white etc. read as ink on the light canvas */
+  --color-white: var(--foreground);
+  --color-black: var(--background);
   --color-amber-100: #7c3d06;
   --color-amber-200: #a14a06;
   --color-amber-300: #d97706;
@@ -238,11 +241,75 @@ html.is-desktop .titlebar {
   --color-red-300: #c0362c;
   --color-sky-200: #1d5fa8;
   --color-sky-400: #3b82c4;
-  color-scheme: light;
-  color: var(--color-white);
 }
-.site[data-theme="light"] .site-pill { background: #0b1511; color: #fff; }
-.site[data-theme="light"] .site-pill:hover { background: #24322c; }
-.site[data-theme="light"] .site-pill-outline { border-color: #0b1511; color: #0b1511; }
-.site[data-theme="light"] .site-pill-outline:hover { border-color: #6b7a73; }
-.site { transition: background-color .2s ease, color .2s ease; }
+.creator h1, .creator h2, .creator h3, .creator .font-display { font-family: var(--font-display), var(--font-sans); letter-spacing: -0.025em; }
+.creator h1, .creator h2, .creator h3 { text-wrap: balance; }
+.creator p { text-wrap: pretty; }
+.creator ::selection { background: var(--leaf); color: #fff; }
+/* a little heavier than the app: the site should not read thin */
+.creator { font-weight: 500; }
+.creator .text-muted-foreground { font-weight: 450; }
+
+/* aliases the marketing pages read */
+.creator {
+  --site-canvas: var(--background);
+  --site-pine: var(--muted);
+  --site-stage: var(--card);
+  --site-glow: var(--muted);
+  --site-card: var(--card);
+  --site-edge: var(--border);
+  --site-signal: var(--leaf-ink);
+  --site-body: var(--muted-foreground);
+  --site-muted: color-mix(in oklch, var(--muted-foreground) 80%, transparent);
+}
+
+/* pill buttons */
+.site-pill, .site-pill-outline {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  height: 2.75rem; padding: 0 1.25rem; border-radius: var(--radius); font-size: 0.9375rem; font-weight: 600;
+  transition: transform .35s cubic-bezier(0.22, 1, 0.36, 1), background-color .35s cubic-bezier(0.22, 1, 0.36, 1), border-color .35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow .35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.site-pill { background: var(--primary); color: var(--primary-foreground); border: 1px solid transparent; }
+.site-pill:hover { transform: translateY(-1px); background: color-mix(in oklch, var(--primary) 88%, white); }
+.site-pill-outline { background: transparent; color: var(--foreground); border: 1px solid var(--border); }
+.site-pill-outline:hover { border-color: var(--foreground); }
+.site-pill:focus-visible, .site-pill-outline:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.site-sm { height: 2.5rem; padding: 0 1.125rem; font-size: 0.875rem; }
+.site-stage { background: var(--card); border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.4); overflow: hidden; }
+.site-chapter { border-radius: 0; }
+/* motion (website + member area only). Soft on purpose: small distances, long ease-out curves, a light blur that
+   clears as things settle. rise = on load (stagger with style={{ "--i": n }}); reveal = on scroll where the browser
+   supports scroll-driven animations (elsewhere simply visible); lift = hover; grow-x = bars. */
+.creator {
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-float: cubic-bezier(0.45, 0, 0.55, 1);
+}
+@keyframes rise { from { opacity: 0; transform: translateY(0.6rem) scale(0.99); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes ping-soft { 0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--leaf-ink) 45%, transparent); } 100% { box-shadow: 0 0 0 0.5rem transparent; } }
+@keyframes site-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.creator .rise { animation: rise 0.9s var(--ease-soft) both; animation-delay: calc(var(--i, 0) * 60ms); }
+@supports (animation-timeline: view()) {
+  .creator .reveal { animation: rise linear both; animation-timeline: view(); animation-range: entry 5% cover 30%; }
+}
+/* hover = the border turns green and the card rises a hair; no shadow */
+.creator .lift { transition: transform 0.45s var(--ease-soft), border-color 0.45s var(--ease-soft); }
+.creator .lift:hover { transform: translateY(-0.15rem); border-color: color-mix(in oklch, var(--leaf-ink) 45%, transparent); }
+.creator .grow-x { transform-origin: left; animation: grow-x 1.4s var(--ease-soft) 0.2s both; }
+.creator .ping { animation: ping-soft 2.4s var(--ease-soft) infinite; }
+.site-float { animation: site-float 7s var(--ease-float, ease-in-out) infinite; }
+.marquee { animation: marquee 60s linear infinite; }
+/* everything interactive eases between states instead of snapping */
+.creator a, .creator button, .creator summary, .creator input { transition: color 0.25s var(--ease-soft), background-color 0.25s var(--ease-soft), border-color 0.25s var(--ease-soft), opacity 0.25s var(--ease-soft), box-shadow 0.25s var(--ease-soft); }
+.creator details[open] > *:not(summary) { animation: rise 0.5s var(--ease-soft) both; }
+@media (prefers-reduced-motion: reduce) {
+  .site-float, .marquee, .creator .rise, .creator .reveal, .creator .grow-x, .creator .ping, .creator details[open] > *:not(summary) { animation: none; }
+  .creator .lift:hover { transform: none; }
+}
+
+/* Wide monitors: everything here is rem-based, so the whole UI (member area, admin panel, site) grows a little past
+   1600px wide, up to 19px at ~2200px+, instead of staying laptop-sized on a 1440p/4K screen. */
+@media (min-width: 1600px) {
+  html { font-size: clamp(16px, calc(8px + 0.5vw), 19px); }
+}

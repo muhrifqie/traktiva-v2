@@ -46,7 +46,7 @@ export default async function Licenses({ searchParams }: { searchParams: Promise
         </nav>
       </div>
       <div className="overflow-x-auto rounded-xl border bg-card">
-        <table className="w-full text-[13px]">
+        <table className="w-full text-[0.8125rem]">
           <thead className="border-b text-left text-xs text-muted-foreground">
             <tr className="[&>th]:px-4 [&>th]:py-2.5 [&>th]:font-medium">
               <th>Key</th><th>Catatan</th><th>Paket</th><th>Status</th><th>Berlaku sampai</th><th>Perangkat</th><th>Terakhir aktif</th>
@@ -57,11 +57,11 @@ export default async function Licenses({ searchParams }: { searchParams: Promise
               <tr key={l.id} className="relative hover:bg-muted/40 [&>td]:px-4 [&>td]:py-2.5">
                 <td className="font-mono font-semibold whitespace-nowrap">
                   <Link href={`/admin/lisensi/${l.id}`} className="after:absolute after:inset-0">#{l.id} …{l.key_hint}</Link>
-                  {l.role === "admin" && <span className="ml-2 rounded-full bg-amber-300/12 px-1.5 py-px font-sans text-[10px] font-semibold text-amber-200">Admin</span>}
+                  {l.role === "admin" && <span className="ml-2 rounded-full bg-amber-300/12 px-1.5 py-px font-sans text-[0.625rem] font-semibold text-amber-200">Admin</span>}
                 </td>
                 <td className="max-w-56 truncate text-muted-foreground">
                   {l.note ?? "—"}
-                  {l.owner && <span className="block truncate text-[11px]">{l.owner}</span>}
+                  {l.owner && <span className="block truncate text-[0.6875rem]">{l.owner}</span>}
                 </td>
                 <td>{planName(l.plan)}</td>
                 <td><StateBadge state={licenseState(l, now)} /></td>

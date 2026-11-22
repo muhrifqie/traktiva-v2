@@ -86,7 +86,7 @@ export function RemoteForm({ remote }: { remote: Record<string, string | number 
               <Input value={r.value} onChange={(e) => set(i, { value: e.target.value })} inputMode={r.type === "number" ? "decimal" : undefined} aria-label="Nilai" />
             )}
             <Button size="icon-sm" variant="ghost" onClick={() => setRows((x) => x.filter((_, j) => j !== i))} aria-label="Hapus setelan"><Trash2 /></Button>
-            {KNOWN[r.key] && <p className="col-span-4 -mt-1 text-[11px] text-muted-foreground">{KNOWN[r.key]}</p>}
+            {KNOWN[r.key] && <p className="col-span-4 -mt-1 text-[0.6875rem] text-muted-foreground">{KNOWN[r.key]}</p>}
           </div>
         ))}
         <div className="flex flex-wrap gap-2">
@@ -203,7 +203,7 @@ export function PaymentsForm({ enabled, configured, testMode }: { enabled: boole
       <div className="flex-1">
         <p className="flex items-center gap-1.5 text-sm font-semibold">
           <Wallet className="size-4 text-brand-light" /> Bayar otomatis (WaroengPay QRIS)
-          {configured && testMode && <span className="rounded-md bg-amber-300/15 px-1.5 py-px text-[11px] text-amber-200">mode uji</span>}
+          {configured && testMode && <span className="rounded-md bg-amber-300/15 px-1.5 py-px text-[0.6875rem] text-amber-200">mode uji</span>}
         </p>
         <p className="text-xs text-muted-foreground">
           {configured

@@ -92,6 +92,8 @@ db.exec(`
 // member web sessions: when, from where, which browser (Pengaturan → Perangkat & sesi)
 for (const [col, type] of [["created_at", "INTEGER"], ["last_seen", "INTEGER"], ["ip", "TEXT"], ["ua", "TEXT"]])
   if (!db.prepare("SELECT 1 FROM pragma_table_info('user_sessions') WHERE name = ?").get(col)) db.exec(`ALTER TABLE user_sessions ADD COLUMN ${col} ${type}`);
+// the full key, encrypted, for keys a member owns (bought online or linked to the account): shown in their account
+if (!db.prepare("SELECT 1 FROM pragma_table_info('licenses') WHERE name = 'key_enc'").get()) db.exec("ALTER TABLE licenses ADD COLUMN key_enc TEXT");
 // who did it (admin name / "cli" / "app"); added after the first deploy
 if (!db.prepare("SELECT 1 FROM pragma_table_info('audit_events') WHERE name = 'actor'").get()) db.exec("ALTER TABLE audit_events ADD COLUMN actor TEXT");
 // panel login = name + password (scrypt); token_hash stays only as a random placeholder (old token login removed)
@@ -200,7 +202,8 @@ export const audit = (event, { license_id = null, device_id = null, ip = null, d
   db.prepare("INSERT INTO audit_events (event, license_id, device_id, ip, detail, actor) VALUES (?,?,?,?,?,?)").run(event, license_id, device_id, ip, detail, actor);
 
 /** Create `count` keys for a plan; returns [{ id, key }]. The plain key exists only in this return value. */
-export function createLicenses({ pepper, plan, days, devices, note = null, count = 1, actor = null, role = "member" }) {
+/** keep: also store the key encrypted (sealKey) so its owner can see it again in the member area. */
+export function createLicenses({ pepper, plan, days, devices, note = null, count = 1, actor = null, role = "member", keep = false }) {
   const out = [];
   for (let i = 0; i < count; i++) {
     const key = newLicenseKey();
@@ -209,6 +212,7 @@ export function createLicenses({ pepper, plan, days, devices, note = null, count
       .prepare("INSERT INTO licenses (key_hash, key_hint, plan, max_devices, expires_at, note, role) VALUES (?,?,?,?,?,?,?)")
       .run(hashKey(pepper, key), key.slice(-4), plan, devices, exp, note, role === "admin" ? "admin" : "member");
     const id = Number(r.lastInsertRowid);
+    if (keep) db.prepare("UPDATE licenses SET key_enc = ? WHERE id = ?").run(sealKey(pepper, key), id);
     audit("license_created", { license_id: id, detail: note, actor });
     out.push({ id, key });
   }
@@ -223,6 +227,26 @@ export function newLicenseKey() {
   const bytes = crypto.randomBytes(16);
   const chars = [...bytes].map((b) => abc[b % abc.length]).join("");
   return `TRK-${chars.slice(0, 4)}-${chars.slice(4, 8)}-${chars.slice(8, 12)}-${chars.slice(12, 16)}`;
+}
+// AES-256-GCM with a key derived from the pepper (secrets.json): a stolen database alone does not reveal keys.
+const encKey = (pepper) => crypto.createHmac("sha256", Buffer.from(pepper, "base64")).update("traktiva-key-enc-v1").digest();
+export function sealKey(pepper, key) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv("aes-256-gcm", encKey(pepper), iv);
+  const data = Buffer.concat([c.update(String(key), "utf8"), c.final()]);
+  return `v1.${iv.toString("base64url")}.${c.getAuthTag().toString("base64url")}.${data.toString("base64url")}`;
+}
+/** The key from sealKey, or null when missing / tampered. */
+export function openKey(pepper, sealed) {
+  try {
+    const [v, iv, tag, data] = String(sealed ?? "").split(".");
+    if (v !== "v1") return null;
+    const d = crypto.createDecipheriv("aes-256-gcm", encKey(pepper), Buffer.from(iv, "base64url"));
+    d.setAuthTag(Buffer.from(tag, "base64url"));
+    return Buffer.concat([d.update(Buffer.from(data, "base64url")), d.final()]).toString("utf8");
+  } catch {
+    return null;
+  }
 }
 export const normalizeKey = (k) => String(k ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 export const hashKey = (pepper, key) => crypto.createHmac("sha256", Buffer.from(pepper, "base64")).update(normalizeKey(key)).digest("hex");

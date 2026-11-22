@@ -30,7 +30,7 @@ export function PlansForm({ plans }: { plans: Plan[] }) {
         <Button className="ml-auto" onClick={save} disabled={pending}>{pending ? <Loader2 className="animate-spin" /> : <Save />} Simpan</Button>
       </header>
       <div className="overflow-x-auto">
-        <table className="w-full text-[13px]">
+        <table className="w-full text-[0.8125rem]">
           <thead className="text-left text-xs text-muted-foreground">
             <tr className="[&>th]:px-4 [&>th]:py-2.5 [&>th]:font-medium"><th>Nama</th><th>Masa aktif (hari)</th><th>Perangkat</th><th>Harga (Rp)</th></tr>
           </thead>

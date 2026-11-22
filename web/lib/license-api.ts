@@ -70,7 +70,7 @@ export async function requireAdmin(): Promise<AdminIdentity> {
       const me = await licenseApi<{ name: string; kind: "admin" | "member" }>("/internal/admin/me", { headers });
       return { name: me.name, kind: me.kind, headers };
     } catch (e) {
-      if (e instanceof ApiError && e.code === "need_2fa") redirect("/akun/pengaturan?perlu2fa=1#keamanan");
+      if (e instanceof ApiError && e.code === "need_2fa") redirect("/pengaturan?perlu2fa=1#keamanan");
       if (!(e instanceof ApiError && e.status === 401)) throw e;
     }
   }
@@ -93,6 +93,7 @@ export type MemberLicense = {
   id: number; key_hint: string; plan: string; planLabel: string; role: "admin" | "member"; status: License["status"];
   expires_at: number | null; max_devices: number; used: number; created_at: number;
   canResetAt: number | null; // null = this license may free a PC now (self-service, once per 7 days)
+  key: string | null; // full key for its owner (bought online or linked); null = only key_hint is known
   devices: MemberDevice[];
 };
 export type MemberView = {
@@ -102,6 +103,7 @@ export type MemberView = {
   site: Site;
   announcements: BuyerAnnouncement[];
   latest: { version: string; url: string; notes: string; mandatory: number; created_at: number } | null;
+  releases: { version: string; url: string; notes: string; mandatory: number; created_at: number }[];
   buyOnline: boolean;
 };
 export type MemberSession = { id: number; created_at: number | null; last_seen: number | null; ip: string | null; ua: string | null; current: boolean };
@@ -140,6 +142,10 @@ export const requireMember = cache(async (): Promise<MemberView> => {
   if (!view) redirect("/masuk");
   return view;
 });
+
+export type MemberEvent = { id: number; at: number; event: string; license_id: number | null; device_id: string | null; detail: string | null; key_hint: string | null; device_name: string | null; ip: string | null };
+/** This member's account + license activity (newest first, max 200); empty when it cannot be loaded. */
+export const myActivity = cache(() => asMember<{ events: MemberEvent[] }>("/internal/member/activity").then((r) => r.events, () => [] as MemberEvent[]));
 
 /** This member's online orders (newest first); empty when the list cannot be loaded. */
 export const myOrders = cache(() => asMember<{ orders: MemberOrder[] }>("/internal/member/orders").then((r) => r.orders, () => [] as MemberOrder[]));

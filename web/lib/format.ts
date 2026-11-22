@@ -19,8 +19,8 @@ export function licenseState(l: Pick<License, "status" | "expires_at">, now: num
 export const STATE_LABEL: Record<LicenseState | "reset", string> = { active: "Aktif", expired: "Kedaluwarsa", suspended: "Ditangguhkan", revoked: "Dicabut", reset: "Direset" };
 export const STATE_CLASS: Record<LicenseState | "reset", string> = {
   active: "bg-status-ok/12 text-status-ok",
-  expired: "bg-amber-400/10 text-amber-300",
-  suspended: "bg-orange-400/12 text-orange-300",
+  expired: "bg-amber-500/12 text-amber-600 dark:text-amber-300",
+  suspended: "bg-orange-500/12 text-orange-600 dark:text-orange-300",
   revoked: "bg-destructive/12 text-destructive",
   reset: "bg-destructive/12 text-destructive",
 };

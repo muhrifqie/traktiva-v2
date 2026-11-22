@@ -47,7 +47,7 @@ export function ForgotForm() {
   return (
     <form action={action} className="grid gap-4">
       <input type="hidden" name="email" value={email} />
-      <p className="flex gap-2.5 rounded-2xl border border-[var(--site-signal)]/25 bg-[var(--site-signal)]/[0.07] px-4 py-3 text-[14px] text-[var(--site-body)]">
+      <p className="flex gap-2.5 rounded-xl border border-[var(--site-signal)]/25 bg-[var(--site-signal)]/[0.07] px-4 py-3 text-[14px] text-[var(--site-body)]">
         <MailCheck className="mt-0.5 size-4 shrink-0 text-[var(--site-signal)]" />
         <span>{state?.ok ? state.message : "Masukkan kode dari email."} <b className="font-medium text-white">{email}</b></span>
       </p>

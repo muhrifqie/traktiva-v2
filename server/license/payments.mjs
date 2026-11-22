@@ -114,7 +114,7 @@ function fulfil(order, eventId, data) {
     } else {
       const [made] = createLicenses({
         pepper: loadSecrets().pepper, plan: fresh.plan, days: plan?.days ?? null, devices: plan?.devices ?? 1,
-        note: `Beli online ${fresh.id} · ${user?.email ?? ""}`.slice(0, 200), count: 1, actor: "waroengpay",
+        note: `Beli online ${fresh.id} · ${user?.email ?? ""}`.slice(0, 200), count: 1, actor: "waroengpay", keep: true,
       });
       licenseId = made.id;
       db.prepare("UPDATE licenses SET user_id = ? WHERE id = ?").run(fresh.user_id, licenseId); // straight into the buyer's account
