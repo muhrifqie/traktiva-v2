@@ -11,6 +11,16 @@ if (-not (Test-Path $python)) { throw "flow2api venv tidak ditemukan: $python" }
 $out = Join-Path $root "dist-sidecar"
 $work = Join-Path $root "build\flow2api"
 
+# Traktiva's patches on top of upstream flow2api (Omni 360p aliases, ...): applied to the source once, skipped when
+# already there. A patch that no longer applies (upstream changed) stops the build.
+foreach ($patch in Get-ChildItem "$PSScriptRoot\patches" -Filter *.patch -ErrorAction SilentlyContinue) {
+  git -C $Src apply --check --reverse $patch.FullName 2>$null
+  if ($LASTEXITCODE -eq 0) { Write-Host "patch sudah terpasang: $($patch.Name)"; continue }
+  git -C $Src apply --whitespace=nowarn $patch.FullName
+  if ($LASTEXITCODE -ne 0) { throw "Patch $($patch.Name) gagal dipasang ke $Src (flow2api upstream berubah?)" }
+  Write-Host "patch dipasang: $($patch.Name)"
+}
+
 # mypyc-compiled packages (tomli, ...) load a hash-named top-level module PyInstaller cannot see
 $mypyc = Get-ChildItem (Join-Path $Src ".venv\Lib\site-packages") -Filter "*__mypyc*.pyd" | ForEach-Object { "--hidden-import", ($_.Name -split "\.")[0] }
 

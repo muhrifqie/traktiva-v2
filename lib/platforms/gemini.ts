@@ -17,7 +17,19 @@ export type GeminiImage = { name: string; mime: string; base64: string };
  * ~10–25 s incl. browser start. Images go through Gemini's own upload service (content-push) like the web app.
  */
 export async function askGemini(sessionKey: string, prompt: string, images: GeminiImage[] = []): Promise<string> {
+  const t0 = Date.now();
+  let tLock = 0;
+  try {
+    return await askGeminiTimed(sessionKey, prompt, images, () => (tLock = Date.now() - t0));
+  } finally {
+    // timing per question: waiting for the browser profile (other jobs) vs. Gemini answering
+    console.log(`[gemini] ${prompt.length} chars${images.length ? ` + ${images.length} img` : ""}: antre ${(tLock / 1000).toFixed(1)} s, total ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+  }
+}
+
+async function askGeminiTimed(sessionKey: string, prompt: string, images: GeminiImage[], locked: () => void): Promise<string> {
   return withProfile(sessionKey, { headless: true }, async (ctx) => {
+    locked();
     const page = ctx.pages()[0] ?? (await ctx.newPage());
     // A standby browser is already on Gemini with fresh session tokens: ask right away, no page load.
     const cached = tokens.get(sessionKey);

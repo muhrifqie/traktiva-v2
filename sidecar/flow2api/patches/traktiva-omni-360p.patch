@@ -1,0 +1,127 @@
+diff --git a/src/services/flow_current.py b/src/services/flow_current.py
+index 140be32..b742949 100644
+--- a/src/services/flow_current.py
++++ b/src/services/flow_current.py
+@@ -6,6 +6,7 @@ the retired Labs tRPC and AI Sandbox REST endpoints.
+ """
+ 
+ import base64
++import contextvars
+ import re
+ import time
+ import uuid
+@@ -13,6 +14,10 @@ from datetime import datetime, timedelta, timezone
+ from typing import Any, Awaitable, Callable, Dict, List, Optional
+ 
+ from ..core.logger import debug_logger
++
++# Traktiva patch: resolution asked for by the model alias ("<model>-360p"), set per request by the generation
++# handler; without it Flow renders its default 720p.
++VIDEO_RESOLUTION: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("traktiva_video_resolution", default=None)
+ from .browser_cookie_utils import validate_flow_cookie_storage
+ 
+ # 视频提交被 PUBLIC_ERROR_UNUSUAL_ACTIVITY 拒绝时，同账号最多再重试的次数；
+@@ -542,6 +547,8 @@ class CurrentFlowClientMixin:
+         video_media_id: Optional[str] = None,
+         resolution: Optional[str] = None,
+     ) -> dict:
++        if resolution is None and mode in ("text", "references", "start"):
++            resolution = VIDEO_RESOLUTION.get()  # Traktiva patch
+         await self._frontend_cookie(google_cookies, token_id)
+         max_retries = max(1, int(self._get_runtime_config().flow_max_retries or 1))
+         model_keys = [str(model_key or "").strip()]
+diff --git a/src/services/flow_frontend.py b/src/services/flow_frontend.py
+index 78560d5..053c809 100644
+--- a/src/services/flow_frontend.py
++++ b/src/services/flow_frontend.py
+@@ -279,6 +279,19 @@ class FlowFrontendMixin:
+             return 1
+         return None
+ 
++    @staticmethod
++    def _frontend_video_output_resolution(resolution: Optional[str]) -> Optional[List[int]]:
++        # Traktiva patch: Flow web app sends `resolution && resolution !== 1 ? [resolution] : undefined`,
++        # with its enum 1 = 720p, 2 = 1080p, 3 = 4K, 4 = 360p (Omni 360p, half the credits of 720p).
++        normalized = str(resolution or "").strip().upper()
++        if "360" in normalized:
++            return [4]
++        if "1080" in normalized:
++            return [2]
++        if "4K" in normalized:
++            return [3]
++        return None
++
+     @classmethod
+     def _find_flow_content_url(cls, value: Any, media_kind: str) -> str:
+         if isinstance(value, str):
+@@ -355,6 +368,7 @@ class FlowFrontendMixin:
+         aspect_value = self._map_frontend_video_aspect_ratio(aspect_ratio)
+         metadata = self._frontend_generation_metadata(session_id)
+         resolution_value = self._frontend_video_resolution(resolution)
++        output_resolution = self._frontend_video_output_resolution(resolution)  # Traktiva patch
+         normalized_mode = str(mode or "text").strip().lower()
+ 
+         if normalized_mode == "references":
+@@ -376,7 +390,7 @@ class FlowFrontendMixin:
+                 output_spec,
+                 None,
+                 None,
+-                resolution_value,
++                output_resolution,
+             ]
+         elif normalized_mode == "start_end":
+             rpc_id = "nprQif"
+@@ -403,7 +417,7 @@ class FlowFrontendMixin:
+                 None,
+                 None,
+                 output_spec,
+-                resolution_value,
++                output_resolution,
+             ]
+         elif normalized_mode == "extend":
+             rpc_id = "fZytfe"
+@@ -442,7 +456,7 @@ class FlowFrontendMixin:
+                 metadata,
+                 None,
+                 output_spec,
+-                resolution_value,
++                output_resolution,
+             ]
+         return rpc_id, [
+             [request],
+diff --git a/src/services/generation_handler.py b/src/services/generation_handler.py
+index 7dce191..fcc7dea 100644
+--- a/src/services/generation_handler.py
++++ b/src/services/generation_handler.py
+@@ -1410,6 +1410,22 @@ def _apply_current_flow_model_catalog():
+ _apply_current_flow_model_catalog()
+ 
+ 
++# Traktiva patch: "<model>-360p" aliases of the Omni models ask Flow for a 360p clip (half the credits of 720p).
++def _add_resolution_aliases():
++    for name, cfg in list(MODEL_CONFIG.items()):
++        if cfg.get("type") == "video" and cfg.get("video_type") == "omni" and not name.endswith("-360p"):
++            # the Flow web app asks for the 360p variant of the model key (e.g. macaron_cookie_t2v_8s_360p) plus
++            # the output resolution [4] (captured from its request, 2026-11-22)
++            alias = {**cfg, "resolution_override": "VIDEO_RESOLUTION_360P"}
++            for key in ("model_key", "reference_model_key"):
++                if alias.get(key) and not str(alias[key]).endswith("_360p"):
++                    alias[key] = f"{alias[key]}_360p"
++            MODEL_CONFIG[f"{name}-360p"] = alias
++
++
++_add_resolution_aliases()
++
++
+ def _known_video_model_keys() -> set[str]:
+     return {
+         cfg["model_key"]
+@@ -1659,6 +1675,8 @@ class GenerationHandler:
+             return
+ 
+         model_config = MODEL_CONFIG[model]
++        from .flow_current import VIDEO_RESOLUTION  # Traktiva patch: "-360p" aliases
++        VIDEO_RESOLUTION.set(model_config.get("resolution_override"))
+         generation_type = model_config["type"]
+         video_type_for_op = model_config.get("video_type", "")
+         request_operation = (

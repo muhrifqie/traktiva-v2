@@ -15,7 +15,7 @@ import {
   CAPTION_ANIMS, CAPTION_FONTS, CAPTION_PRESETS, clamp, DEFAULT_FX, DEFAULT_SAFE, round2, SFX_DIR, toTemplate,
   type CaptionAnim, type CaptionFont, type CaptionPreset, type EditTemplate, type ProjectEdit,
 } from "@/lib/edit";
-import { backdropOf, castOf, defaultOptions, draftCaption, fitScenes, isLocked, presetById, projectName, VERSIONS } from "@/lib/presets";
+import { backdropOf, castOf, defaultOptions, draftCaption, fitScenes, isLocked, isSilent, presetById, projectName, VERSIONS } from "@/lib/presets";
 import { addToLibrary, copyIntoProject, listGenerated, listUploads } from "@/lib/library";
 import { queueImages, queueRender } from "@/lib/projects";
 import { Cancelled, cancelJob, isCancelled } from "@/lib/jobs";
@@ -24,7 +24,8 @@ import { describeProduct, matchCaptionStyle, writeOutline, writeScenes } from "@
 import { synthesize } from "@/lib/cartesia";
 import { getSettings, updateSettings, writingRules } from "@/lib/settings";
 import { applyRules } from "@/lib/writing";
-import { spoken } from "@/lib/voice";
+import { splitScript, spoken, withVoiceLine } from "@/lib/voice";
+import { versionScript } from "@/lib/vo-templates";
 
 const Id = z.number().int().positive();
 const MAX_SCENES = 12;
@@ -106,6 +107,11 @@ export async function buildStoryboard(id: number, opts: { versions?: boolean } =
     label: outline[i] ? outline[i].split(":")[0].trim().slice(0, 60) : s.label,
     image: null, clip: null, error: null,
   }));
+  // the owner's own voice-over script replaces the template's sample lines, split over the scenes
+  if (p.options.vo?.trim() && !isSilent(p.presetId, p.options)) {
+    const parts = splitScript(applyRules(p.options.vo, writingRules()), scenes.length);
+    scenes.forEach((s, i) => parts[i] && (s.motionPrompt = withVoiceLine(s.motionPrompt, parts[i])));
+  }
   await db
     .update(videoProjects)
     .set({ scenes, options: { ...p.options, written: "" }, caption: p.caption || draftCaption(p.product), step: 4, updatedAt: new Date() })
@@ -140,7 +146,9 @@ async function spawnVersions(id: number, write: boolean) {
 async function spawnVersion(p: Awaited<ReturnType<typeof get>>, v: (typeof VERSIONS)[number]) {
   const base = projectName(p);
   const title = `${base.length > 100 ? `${base.slice(0, 97)}...` : base} · Versi ${v.key}`; // the suffix must survive the 120-char limit
-  const options = { ...p.options, finals: "1", versions: "", versionOf: String(p.id), angle: v.angle, background: !p.options.background || p.options.background === "auto" ? v.set : p.options.background };
+  const options: Record<string, string> = { ...p.options, finals: "1", versions: "", versionOf: String(p.id), versionKey: v.key, angle: v.angle, background: !p.options.background || p.options.background === "auto" ? v.set : p.options.background };
+  // the owner's voice-over stays the same in every version, only its hook (first sentence) changes
+  if (p.options.vo?.trim()) options.vo = versionScript(p.options.vo, v.key, p.product.name);
   const [{ id }] = await db
     .insert(videoProjects)
     .values({ presetId: p.presetId, title, step: 3, product: p.product, options, scenes: [], clipSec: p.clipSec, caption: p.caption, folder: "", status: "draft" })
@@ -371,6 +379,31 @@ export async function removePhoto(id: number, rel: string) {
   if (!p.product.photos.includes(rel)) return;
   await removeMedia(rel);
   await db.update(videoProjects).set({ product: { ...p.product, photos: p.product.photos.filter((x) => x !== rel), look: null }, updatedAt: new Date() }).where(eq(videoProjects.id, p.id));
+}
+
+/** Any concept: the owner's own background photo (options.bgImage), used as an image reference; empty = the AI picks a set. */
+export async function uploadBackground(id: number, form: FormData) {
+  const p = await get(id);
+  notLocked(p);
+  notRunning(p);
+  const f = form.get("background");
+  if (!(f instanceof File) || !f.size) throw new Error("Pilih gambar background dulu.");
+  const ext = PHOTO_TYPES[f.type];
+  if (!ext) throw new Error("Format gambar harus PNG, JPG, atau WEBP.");
+  if (f.size > 8 * 1024 * 1024) throw new Error("Ukuran gambar maksimal 8 MB.");
+  const rel = await writeMedia(`${p.folder}/background/latar-${Date.now().toString(36)}${ext}`, Buffer.from(await f.arrayBuffer()));
+  if (p.options.bgImage?.startsWith(`${p.folder}/`)) await removeMedia(p.options.bgImage).catch(() => {});
+  await db.update(videoProjects).set({ options: { ...p.options, bgImage: rel }, updatedAt: new Date() }).where(eq(videoProjects.id, p.id));
+}
+export async function removeBackground(id: number) {
+  const p = await get(id);
+  notLocked(p);
+  notRunning(p);
+  if (!p.options.bgImage) return;
+  if (p.options.bgImage.startsWith(`${p.folder}/`)) await removeMedia(p.options.bgImage).catch(() => {});
+  const options = { ...p.options };
+  delete options.bgImage;
+  await db.update(videoProjects).set({ options, updatedAt: new Date() }).where(eq(videoProjects.id, p.id));
 }
 
 /** Character concepts (Sensasi, Daster): the owner's own face photo, used as the first image reference (options.face). */

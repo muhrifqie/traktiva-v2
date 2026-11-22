@@ -10,11 +10,12 @@ import { toast } from "sonner";
 import { confirmDialog } from "@/components/confirm-dialog";
 import type { VideoProject } from "@/lib/db/schema";
 import { mediaUrl } from "@/lib/media-url";
+import { splitHook, versionHook, VO_MIN_CHARS, VO_STYLES, voTemplate } from "@/lib/vo-templates";
 import { castOf, CLIP_SECS, EXPLAIN, type ExplainKey, isLocked, isSilent, isVeo, PRO_CLIP_SEC, presetById, projectName, suggestFromRef, VEO_CLIP_SEC, VERSIONS, VIDEO_MODELS } from "@/lib/presets";
 import {
   addScene, aiOutline, aiWriteScenes, applyShowcaseProduct, etalasePhotos, listEtalase, buildStoryboard, makeVersions, previewScript, quickMake, setSceneLine, deleteProject, generateImages, moveScene, openProjectFolder, pickFromLibrary, removePhoto, removeScene,
   renameProject, renderProject, saveProject, uploadPhotos, uploadSceneImage,
-  applyProductPhoto, cancelProject, duplicateProject, removeFace, uploadFace,
+  applyProductPhoto, cancelProject, duplicateProject, removeBackground, removeFace, uploadBackground, uploadFace,
 } from "../project-actions";
 import { LibraryPicker } from "@/components/library-picker";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -37,8 +38,10 @@ const STEPS: { label: string; icon: Icon }[] = [
 const viewOf = (dbStep: number) => (dbStep <= 3 ? 1 : dbStep <= 5 ? 2 : 3);
 const DB_STEP = [0, 1, 4, 6];
 // Flow (Omni 1.2 Flash) video resolutions; 720p is the default (exported at 1080p either way)
+// 360p works through the "-360p" model alias of our flow2api patch (sidecar/flow2api/patches)
+const SHOW_RESOLUTION = true;
 const RESOLUTIONS = [
-  { id: "360p", label: "360p", hint: "Lebih ringan, hasil di TikTok kurang tajam" },
+  { id: "360p", label: "360p", hint: "½ kredit Flow, hasil di TikTok kurang tajam" },
   { id: "720p", label: "720p", hint: "Disarankan · di-export 1080p, tajam di TikTok" },
 ] as const;
 // Gaya → "Video Pendek" / "Video Panjang": each tab has its own quick picks, scene range and clip lengths
@@ -363,68 +366,114 @@ function Card({ title, desc, icon: Icon, children, footer, compact }: { title: s
   );
 }
 
-/** Character concepts: the model's face. Uploaded by the owner, or made by AI (automatically when left empty). */
-function FaceSlot({ p, busy, act }: { p: Project; busy: boolean; act: Act }) {
+/**
+ * One reference image the owner can give (upload or paste): the character's face or the background. Empty = the AI
+ * makes/picks it. Shown next to "Foto produk" in the "1. Produk" card.
+ */
+function ImageSlot({ icon: I, title, path, note, texts, uploadLabel, busy, onSend, onRemove }: {
+  icon: Icon; title: string; path?: string; note: string; texts: { empty: string; filled: string }; uploadLabel: string;
+  busy: boolean; onSend: (f: File, ok: string) => void; onRemove: () => void;
+}) {
   const ref = useRef<HTMLInputElement>(null);
-  const face = p.options.face;
-  const ai = p.options.faceAi === "1";
-  const send = (f: File, ok = "Wajah karakter dipakai di semua adegan") => {
-    const form = new FormData();
-    form.append("face", f);
-    act(() => uploadFace(p.id, form), ok);
-  };
   const pick = (files: FileList | null) => {
     const f = files?.[0];
     if (ref.current) ref.current.value = "";
-    if (f) send(f);
+    if (f) onSend(f, `${title} dipakai di semua scene`);
   };
-  /** "Tempel gambar": a face image copied from a browser, chat or screenshot. */
+  /** "Tempel foto": an image copied from a browser, chat or screenshot. */
   const paste = async () => {
     try {
       for (const it of await navigator.clipboard.read()) {
         const type = it.types.find((t) => /^image\/(png|jpeg|webp)$/.test(t)) ?? it.types.find((t) => t.startsWith("image/"));
         if (!type) continue;
         const ok = type === "image/png" || type === "image/jpeg" || type === "image/webp";
-        return send(new File([await it.getType(type)], `wajah-${Date.now()}.${ok ? type.split("/")[1] : "png"}`, { type: ok ? type : "image/png" }), "Wajah ditempel");
+        return onSend(new File([await it.getType(type)], `tempel-${Date.now()}.${ok ? type.split("/")[1] : "png"}`, { type: ok ? type : "image/png" }), `${title} ditempel`);
       }
       toast.error("Clipboard tidak berisi gambar. Salin gambarnya dulu (klik kanan → Salin gambar).");
     } catch {
-      toast.error("Clipboard tidak bisa dibaca. Coba upload fotonya saja.");
+      toast.error("Clipboard tidak bisa dibaca. Coba upload gambarnya saja.");
     }
   };
   return (
     <section className="space-y-2.5 rounded-lg border bg-background/40 p-3">
-      <FieldLabel icon={UserRound} note={face ? (ai ? "dibuat AI" : "fotomu") : "otomatis AI"}>Wajah karakter</FieldLabel>
+      <FieldLabel icon={I} note={note}>{title}</FieldLabel>
       <div className="flex gap-3">
-        {face ? (
+        {path ? (
           <div className="group relative size-20 shrink-0 overflow-hidden rounded-lg border bg-muted">
-            <img src={mediaUrl(face)} alt="Wajah karakter" onClick={() => openLightbox([{ src: face, kind: "image", label: "Wajah karakter" }])} className="size-full cursor-zoom-in object-cover" />
-            <button type="button" aria-label="Hapus wajah" disabled={busy} onClick={() => act(() => removeFace(p.id), "Wajah karakter dihapus")} className="absolute top-1 right-1 grid size-6 place-items-center rounded-md bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100">
+            <img src={mediaUrl(path)} alt={title} onClick={() => openLightbox([{ src: path, kind: "image", label: title }])} className="size-full cursor-zoom-in object-cover" />
+            <button type="button" aria-label={`Hapus ${title.toLowerCase()}`} disabled={busy} onClick={onRemove} className="absolute top-1 right-1 grid size-6 place-items-center rounded-md bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100">
               <X className="size-3.5" />
             </button>
           </div>
         ) : (
           <button type="button" disabled={busy} onClick={() => ref.current?.click()} className="flex size-20 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-[11px] text-muted-foreground hover:bg-accent">
-            {busy ? <Loader2 className="size-5 animate-spin" /> : <UserRound className="size-5" />}
+            {busy ? <Loader2 className="size-5 animate-spin" /> : <I className="size-5" />}
             Upload
           </button>
         )}
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
-          {face
-            ? ai ? "Wajah buatan AI, dipakai di semua adegan. Ganti dengan fotomu kalau mau." : "Model di semua adegan memakai wajah dari fotomu."
-            : "Upload foto wajah (depan, jelas, sendirian). Kalau dikosongkan, AI otomatis membuat wajah karakter saat video dibuat."}
-        </p>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">{path ? texts.filled : texts.empty}</p>
       </div>
       <div className="flex flex-wrap gap-1.5">
         <button type="button" disabled={busy} onClick={() => ref.current?.click()} className="flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium hover:bg-accent disabled:opacity-60">
-          <Upload className="size-3.5" /> {face && !ai ? "Ganti foto" : "Upload wajah"}
+          <Upload className="size-3.5" /> {uploadLabel}
         </button>
-        <button type="button" disabled={busy} onClick={() => void paste()} className="flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium hover:bg-accent disabled:opacity-60" title="Tempel gambar wajah dari clipboard">
+        <button type="button" disabled={busy} onClick={() => void paste()} className="flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium hover:bg-accent disabled:opacity-60" title="Tempel gambar dari clipboard">
           <ClipboardPaste className="size-3.5" /> Tempel foto
         </button>
       </div>
       <input ref={ref} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => pick(e.target.files)} />
     </section>
+  );
+}
+
+/** Character concepts: the model's face. Uploaded by the owner, or made by AI (automatically when left empty). */
+function FaceSlot({ p, busy, act }: { p: Project; busy: boolean; act: Act }) {
+  const face = p.options.face;
+  const ai = p.options.faceAi === "1";
+  return (
+    <ImageSlot
+      icon={UserRound}
+      title="Wajah karakter"
+      path={face}
+      note={face ? (ai ? "dibuat AI" : "fotomu") : "otomatis AI"}
+      texts={{
+        empty: "Upload foto wajah (depan, jelas, sendirian). Kalau dikosongkan, AI otomatis membuat wajah karakter saat video dibuat.",
+        filled: ai ? "Wajah buatan AI, dipakai di semua scene. Ganti dengan fotomu kalau mau." : "Model di semua scene memakai wajah dari fotomu.",
+      }}
+      uploadLabel={face && !ai ? "Ganti foto" : "Upload wajah"}
+      busy={busy}
+      onSend={(f, ok) => {
+        const form = new FormData();
+        form.append("face", f);
+        act(() => uploadFace(p.id, form), ok);
+      }}
+      onRemove={() => act(() => removeFace(p.id), "Wajah karakter dihapus")}
+    />
+  );
+}
+
+/** Any concept: the owner's own background photo (options.bgImage). Empty = the AI picks a set that suits the product. */
+function BackgroundSlot({ p, busy, act }: { p: Project; busy: boolean; act: Act }) {
+  const bg = p.options.bgImage;
+  return (
+    <ImageSlot
+      icon={ImageIcon}
+      title="Background"
+      path={bg}
+      note={bg ? "fotomu" : "otomatis AI"}
+      texts={{
+        empty: "Upload foto tempat/latar (kamar, meja, toko). Kalau dikosongkan, AI memilih background yang cocok dengan produk.",
+        filled: "Semua scene dibuat di tempat ini; produk (dan model) ditaruh ke dalamnya.",
+      }}
+      uploadLabel={bg ? "Ganti gambar" : "Upload background"}
+      busy={busy}
+      onSend={(f, ok) => {
+        const form = new FormData();
+        form.append("background", f);
+        act(() => uploadBackground(p.id, form), ok);
+      }}
+      onRemove={() => act(() => removeBackground(p.id), "Background dihapus, AI yang memilih")}
+    />
   );
 }
 
@@ -519,7 +568,7 @@ function StepProduct({ p, busy, act }: { p: Project; busy: boolean; act: Act }) 
         </section>
 
         {/* media: product photos, plus the character's face on concepts with a person */}
-        <div className={`grid gap-3 ${character ? "md:grid-cols-2" : ""}`}>
+        <div className={`grid gap-3 md:grid-cols-2 ${character ? "xl:grid-cols-3" : ""}`}>
           <section className="space-y-2.5 rounded-lg border bg-background/40 p-3">
             <FieldLabel icon={ImagePlus} note={`${p.product.photos.length}/3`}>Foto produk</FieldLabel>
             <div className="flex flex-wrap gap-2">
@@ -562,6 +611,7 @@ function StepProduct({ p, busy, act }: { p: Project; busy: boolean; act: Act }) 
             <EtalasePicker open={etalase} onClose={() => setEtalase(false)} onPick={(sid, photos) => act(async () => { const r = await applyShowcaseProduct(p.id, sid, photos); toast.success(`Produk terisi dari Etalase · ${r.photos} foto`); })} />
           </section>
           {character && <FaceSlot p={p} busy={busy} act={act} />}
+          <BackgroundSlot p={p} busy={busy} act={act} />
         </div>
       </div>
       {busy && <span className="sr-only">Menyimpan</span>}
@@ -737,6 +787,11 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
   const outlineLines = (options.outline ?? "").split("\n").filter((l) => l.trim());
   const [outlining, setOutlining] = useState(false);
   const total = clips * sec;
+  const vo = (options.vo ?? "").trim();
+  const voWords = vo.split(/\s+/).filter(Boolean).length;
+  const voMax = Math.round(total * 2.8); // brisk natural TikTok pace
+  // an own script must be at least VO_MIN_CHARS long (empty = the AI writes it)
+  const voShort = !isSilent(p.presetId, options) && vo.length > 0 && vo.length < VO_MIN_CHARS;
   const isVersion = !!p.options.versionOf;
   const madeVersions = (p.options.versions ?? "").split(",").filter(Boolean);
   const finals = isVersion || madeVersions.length ? 1 : Math.min(VERSIONS.length, Number(options.finals) || 1);
@@ -804,8 +859,8 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
       footer={
         <>
           <p className="mr-auto flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-            {needProduct ? (
-              <span className="flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400"><CircleAlert className="size-3.5" /> {needProduct}</span>
+            {needProduct || voShort ? (
+              <span className="flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400"><CircleAlert className="size-3.5" /> {needProduct ?? `Naskah voice-over minimal ${VO_MIN_CHARS} karakter`}</span>
             ) : (
               <>
                 <span className="font-semibold">{finals} video</span>
@@ -814,10 +869,10 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
               </>
             )}
           </p>
-          <button type="button" className={secondary} disabled={busy || !!needProduct} onClick={preview} title="AI menulis naskahnya dulu, kamu cek sebelum gambar & klip dibuat">
+          <button type="button" className={secondary} disabled={busy || !!needProduct || voShort} onClick={preview} title="AI menulis naskahnya dulu, kamu cek sebelum gambar & klip dibuat">
             {busy ? <Loader2 className="size-4 animate-spin" /> : <FileText className="size-4" />} {scriptReady ? "Tulis ulang naskah" : "Cek naskah dulu"}
           </button>
-          <button type="button" className={primary} disabled={busy || !!needProduct || (format === "long" && !outlineLines.length && !scriptReady)} onClick={makeNow} title={format === "long" && !outlineLines.length ? "Susun kerangka bab dulu" : undefined}>
+          <button type="button" className={primary} disabled={busy || !!needProduct || voShort || (format === "long" && !outlineLines.length && !scriptReady)} onClick={makeNow} title={format === "long" && !outlineLines.length ? "Susun kerangka bab dulu" : undefined}>
             <Rocket className="size-4" /> Buat video sekarang
           </button>
         </>
@@ -866,10 +921,10 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
         <span className="text-[11px] text-muted-foreground">{VIDEO_MODELS.find((m) => m.id === (options.videoModel ?? "omni"))?.hint}</span>
       </div>
 
-      {/* Flow video resolution (Omni 1.2 Flash offers 360p / 720p), saved as options.resolution.
-          ponytail: UI only for now — flow2api doesn't forward a resolution to Omni yet, so clips still come back
-          720p; wiring it (flow2api + lib/projects.ts render) is Rifq's backend task. */}
-      {!veo && <div className="flex flex-wrap items-center gap-2">
+      {/* Flow video resolution (Omni 1.2 Flash: 360p at half the credits, or 720p), saved as options.resolution and sent
+          as the "-360p" model alias (flowVideoModel). Captured from the Flow web app on 2026-11-22: model key
+          "<key>_360p" plus the output resolution [4]. */}
+      {SHOW_RESOLUTION && !veo && <div className="flex flex-wrap items-center gap-2">
         <span className={`${label} w-20`}>Resolusi</span>
         <div className="inline-flex rounded-lg bg-muted p-0.5" role="radiogroup" aria-label="Resolusi video Flow">
           {RESOLUTIONS.map((r) => {
@@ -1012,6 +1067,63 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
         </div>
       )}
 
+      {/* the owner's own voice-over script (options.vo); empty = the AI writes it */}
+      {!isSilent(p.presetId, options) && (
+        <div className="space-y-1.5 rounded-lg border p-3">
+          <div className="flex items-center gap-2">
+            <FieldLabel icon={Mic} note="opsional">Naskah voice-over</FieldLabel>
+            <span className={`ml-auto text-[11px] tabular-nums ${voShort ? "text-destructive" : voWords > voMax ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>
+              {vo.length} karakter (min {VO_MIN_CHARS}) · {voWords}/{voMax} kata
+            </span>
+          </div>
+          {/* pick a selling style: fills a ready script with the product's name & price, still editable */}
+          <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Gaya naskah">
+            {VO_STYLES.map((st) => {
+              const on = options.voStyle === st.id;
+              return (
+                <button
+                  key={st.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  title={st.hint}
+                  onClick={() => setOptions({ ...options, voStyle: st.id, vo: voTemplate(st.id, p.product) })}
+                  className={`h-7 rounded-full border px-2.5 text-[11px] font-medium ${on ? "border-primary bg-primary/10 text-brand-light" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                >
+                  {st.label}
+                </button>
+              );
+            })}
+          </div>
+          <textarea
+            className={`${input} resize-y`}
+            rows={3}
+            maxLength={1000}
+            value={options.vo ?? ""}
+            onChange={(e) => setOptions({ ...options, vo: e.target.value })}
+            placeholder={"Kosongkan = AI yang menulis naskahnya.\nContoh: Lagi rame banget nih, madu herbal buat lambung, cuma Rp42.000! Cek keranjang di bawah ya."}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            {voShort
+              ? `Naskah minimal ${VO_MIN_CHARS} karakter (kurang ${VO_MIN_CHARS - vo.length}). Pilih gaya di atas atau tambah kalimatnya; kosongkan kalau mau AI yang menulis.`
+              : voWords > voMax
+                ? `Terlalu panjang untuk ±${total} dtk (maks ±${voMax} kata), suaranya bisa terpotong.`
+                : "Pilih gaya di atas atau tulis sendiri. Kalimat ini yang diucapkan, persis. Tulis harga pakai angka (Rp42.000)."}
+            {clips > 1 ? " Dibagi ke tiap scene sesuai urutan." : ""}
+          </p>
+          {finals > 1 && vo && !voShort && (
+            <div className="space-y-1 rounded-md bg-muted/40 p-2 text-[11px]">
+              <p className="font-medium">Hook tiap video (isi naskah sama, kalimat pertama beda):</p>
+              {VERSIONS.slice(0, finals).map((v, i) => (
+                <p key={v.key} className="truncate text-muted-foreground">
+                  <b className="text-foreground">Video {v.key}:</b> {i === 0 ? splitHook(vo).hook : versionHook(vo, v.key, p.product.name)}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* everything else */}
       <div className="rounded-lg border">
         <p className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-muted-foreground">
@@ -1057,7 +1169,8 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
           </div>
           </>)}
           <div className="flex flex-wrap gap-x-4 gap-y-1 border-t pt-3 text-xs">
-            <button type="button" disabled={busy || !!needProduct} onClick={build} className="flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50"><LayoutGrid className="size-3.5" /> Atur storyboard manual</button>
+            <button type="button" disabled={busy || !!needProduct} onClick={build} title={needProduct ?? "Susun scene sendiri: atur gambar & prompt tiap scene sebelum dibuat"} className="flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50"><LayoutGrid className="size-3.5" /> Atur storyboard manual</button>
+            {needProduct && <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400"><CircleAlert className="size-3.5" /> {needProduct} untuk mengatur storyboard</span>}
             {p.scenes.length > 0 && (
               <button type="button" disabled={busy} onClick={() => act(async () => { await saveProject(p.id, { options, clipSec: sec, step: 4 }); toastVersions(await makeVersions(p.id)); onDone(); })} className="flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50">
                 <Save className="size-3.5" /> Simpan, pakai storyboard lama

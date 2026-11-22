@@ -109,7 +109,7 @@ export const PRO_CLIP_SEC = 11;
 
 /** Flow video models, saved as options.videoModel. Veo 3.1 Lite (image-to-video) is fixed at 8 s / 720p. */
 export const VIDEO_MODELS = [
-  { id: "omni", label: "Omni 1.2 Flash", hint: "Durasi 3–15 dtk, bisa pilih resolusi" },
+  { id: "omni", label: "Omni 1.2 Flash", hint: "Durasi 3–15 dtk, 360p/720p" },
   { id: "veo", label: "Veo 3.1 - Lite", hint: "Klip 8 dtk, 720p" },
 ] as const;
 export const VEO_CLIP_SEC = 8;
@@ -119,7 +119,10 @@ export const isLocked = (p: { status: string; finalPath: string | null; edit?: {
   p.status === "done" && !!p.finalPath && !!p.edit?.exportedAt;
 /** flow2api model id for one clip of the project. */
 export const flowVideoModel = (options: Record<string, string>, clipSec: number) =>
-  isVeo(options) ? "veo_3_1_i2v_lite_portrait" : `omni-1.2-flash-${clipSec}s-portrait`;
+  isVeo(options)
+    ? "veo_3_1_i2v_lite_portrait"
+    // "-360p": alias from our flow2api patch (sidecar/flow2api/patches): Flow's 360p Omni, half the credits of 720p
+    : `omni-1.2-flash-${clipSec}s-portrait${options.resolution === "360p" ? "-360p" : ""}`;
 
 /**
  * Resize a template storyboard to `n` clips: fewer = keep the opening ones and the closing (CTA) scene; more = add
