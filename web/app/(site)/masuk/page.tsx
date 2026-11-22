@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { googleEnabled, safeNext } from "@/lib/google";
 import { memberSignedIn } from "@/lib/license-api";
+import { turnstileSiteKey } from "@/lib/turnstile";
 import { AuthForm } from "./form";
 import { AuthShell } from "./shell";
 
@@ -17,7 +18,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
   return (
     <AuthShell eyebrow="Area member" title="Masuk ke akun Traktiva kamu." points={["Semua lisensi kamu di satu tempat", "Pindah PC sendiri tanpa chat admin", "Download installer versi terbaru"]}>
       {message && <p className="mb-5 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-[14px] text-red-200" role="alert">{message}</p>}
-      <AuthForm mode="login" next={next} google={googleEnabled()} />
+      <AuthForm mode="login" next={next} google={googleEnabled()} turnstile={turnstileSiteKey()} />
     </AuthShell>
   );
 }

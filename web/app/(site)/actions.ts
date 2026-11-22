@@ -7,6 +7,7 @@ import { z } from "zod";
 import { asMember, licenseApi, MEMBER_COOKIE } from "@/lib/license-api";
 import { safeNext } from "@/lib/google";
 import { clearMemberCookie, finishSignIn } from "@/lib/member-session";
+import { requireHuman } from "@/lib/turnstile";
 
 export type FormResult = { ok: false; message: string } | { ok: true; message?: string } | null;
 const fail = (e: unknown): FormResult => {
@@ -22,6 +23,7 @@ type SignIn = { session?: string; maxAge?: number };
 export async function register(_prev: FormResult, form: FormData): Promise<FormResult> {
   let to: string;
   try {
+    await requireHuman(form, await ip());
     const r = await licenseApi<SignIn>("/internal/member/register", {
       method: "POST",
       body: { name: str(form, "name", 80), email: str(form, "email", 254), password: str(form, "password"), ip: await ip(), ua: await ua() },
@@ -36,6 +38,7 @@ export async function register(_prev: FormResult, form: FormData): Promise<FormR
 export async function login(_prev: FormResult, form: FormData): Promise<FormResult> {
   let to: string;
   try {
+    await requireHuman(form, await ip());
     const r = await licenseApi<SignIn>("/internal/member/login", {
       method: "POST",
       body: { email: str(form, "email", 254), password: str(form, "password"), ip: await ip(), ua: await ua() },
@@ -141,6 +144,7 @@ export async function forgotPassword(prev: ForgotResult, form: FormData): Promis
   const otp = form.get("resend") ? "" : str(form, "otp", 10).replace(/\D/g, "");
   if (!otp) {
     try {
+      await requireHuman(form, await ip()); // sending an email is the abusable step; the code step is protected by the code
       const r = await licenseApi<{ message: string; retry_after?: number }>("/internal/member/forgot", { method: "POST", body: { email, ip: await ip() } });
       return { ok: true, step: "code", email, message: r.message, retryAfter: r.retry_after ?? 60 };
     } catch (e) {

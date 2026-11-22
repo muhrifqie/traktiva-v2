@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
+import { Turnstile } from "@/components/turnstile";
 import { login, register, setPasswordFromLink } from "../actions";
 
 const field = "h-12 rounded-2xl border border-white/15 bg-black/30 px-4 text-[16px] outline-none placeholder:text-white/25 focus:border-[var(--site-signal)]";
@@ -28,7 +29,7 @@ export function GoogleButton({ next, label }: { next: string; label: string }) {
   );
 }
 
-export function AuthForm({ mode, next, google }: { mode: "login" | "register"; next: string; google: boolean }) {
+export function AuthForm({ mode, next, google, turnstile }: { mode: "login" | "register"; next: string; google: boolean; turnstile: string }) {
   const [state, action, pending] = useActionState(mode === "login" ? login : register, null);
   const [email, setEmail] = useState(""); // controlled: kept after a failed attempt
   const [name, setName] = useState("");
@@ -59,6 +60,7 @@ export function AuthForm({ mode, next, google }: { mode: "login" | "register"; n
           <input name="password" type="password" required minLength={mode === "register" ? 8 : 1} maxLength={200} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder={mode === "register" ? "Minimal 8 karakter" : ""} className={field} />
         </label>
         {mode === "login" && <Link href="/lupa-password" className="-mt-2 justify-self-end text-[14px] text-[var(--site-body)] underline hover:text-white">Lupa password?</Link>}
+        <Turnstile siteKey={turnstile} resetKey={state} />
         {state && !state.ok && <p className="text-[14px] text-red-300" role="alert">{state.message}</p>}
         <button type="submit" disabled={pending} className="site-pill w-full disabled:opacity-60">
           {pending && <Loader2 className="size-4 animate-spin" />} {mode === "login" ? "Masuk" : "Buat akun"}

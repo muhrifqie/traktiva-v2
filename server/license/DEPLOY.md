@@ -66,6 +66,8 @@ cd /srv/traktiva-web && find . -mindepth 1 -maxdepth 1 ! -name ecosystem.config.
 pm2 restart traktiva-web --update-env
 ```
 
+Login Google + Cloudflare Turnstile (invisible, di masuk/daftar/lupa password): kuncinya di `/srv/traktiva-license/data/web-secrets.json` (600), dipasang dengan `powershell -ExecutionPolicy Bypass -File server\license\set-web-secrets.ps1` dari PC (membaca JSON OAuth Google di Downloads, meminta kunci Turnstile). File tidak ada = kedua fitur mati.
+
 `ecosystem.config.cjs` (600) berisi env web: `SITE_URL=https://app.traktiva.site`, `COOKIE_DOMAIN=.traktiva.site`, `ADMIN_COOKIE_SECURE=1`, token layanan dibaca dari `data/service-token`. **Jangan ditimpa.**
 
 ## 3. Cek

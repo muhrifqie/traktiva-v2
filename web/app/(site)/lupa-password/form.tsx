@@ -3,12 +3,13 @@
 import { useActionState, useEffect, useState } from "react";
 import Link from "next/link";
 import { Loader2, MailCheck } from "lucide-react";
+import { Turnstile } from "@/components/turnstile";
 import { forgotPassword } from "../actions";
 
 const field = "h-12 rounded-2xl border border-white/15 bg-black/30 px-4 text-[16px] outline-none placeholder:text-white/25 focus:border-[var(--site-signal)]";
 
 /** Email → 6-digit code by email → new password. The email is kept across both steps. */
-export function ForgotForm() {
+export function ForgotForm({ turnstile }: { turnstile: string }) {
   const [state, action, pending] = useActionState(forgotPassword, null);
   const [email, setEmail] = useState("");
   const [codeStep, setCodeStep] = useState(false); // stays on the code step after a wrong code
@@ -36,6 +37,7 @@ export function ForgotForm() {
           Email
           <input name="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" maxLength={254} placeholder="kamu@email.com" className={field} />
         </label>
+        <Turnstile siteKey={turnstile} resetKey={state} />
         {state && !state.ok && <p className="text-[14px] text-red-300" role="alert">{state.message}</p>}
         <button type="submit" disabled={pending} className="site-pill w-full disabled:opacity-60">
           {pending && <Loader2 className="size-4 animate-spin" />} Kirim kode
@@ -47,6 +49,7 @@ export function ForgotForm() {
   return (
     <form action={action} className="grid gap-4">
       <input type="hidden" name="email" value={email} />
+      <Turnstile siteKey={turnstile} resetKey={state} />
       <p className="flex gap-2.5 rounded-xl border border-[var(--site-signal)]/25 bg-[var(--site-signal)]/[0.07] px-4 py-3 text-[14px] text-[var(--site-body)]">
         <MailCheck className="mt-0.5 size-4 shrink-0 text-[var(--site-signal)]" />
         <span>{state?.ok ? state.message : "Masukkan kode dari email."} <b className="font-medium text-white">{email}</b></span>
