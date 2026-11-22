@@ -90,17 +90,17 @@ async function localGate(smtp, mailer, purpose, email, ip, otp) {
 }
 
 function resetMail(to, code) {
-  const text = `Kode untuk membuat password baru Traktiva: ${code}\n\nBerlaku 10 menit. Kalau kamu tidak meminta ini, abaikan email ini; password kamu tidak berubah.\n\nTraktiva · https://traktiva.site`;
+  const text = `Halo,\n\nKami menerima permintaan untuk membuat password baru akun Traktiva dengan email ${to}.\n\nKode kamu: ${code}\n\nMasukkan kode ini di halaman lupa password. Berlaku 10 menit.\nKalau kamu tidak meminta ini, abaikan saja; password kamu tidak berubah.\n\nSalam,\nTim Traktiva`;
   const html = `<!doctype html><html><body style="margin:0;background:#f5f5ef;font-family:Arial,Helvetica,sans-serif;color:#0b0d0a">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:440px;background:#ffffff;border:1px solid #e3e5dc;border-radius:12px">
 <tr><td style="padding:28px 28px 8px"><span style="display:inline-block;background:#106e3a;color:#fff;font-weight:bold;border-radius:8px;padding:6px 10px;font-size:14px">Traktiva</span></td></tr>
 <tr><td style="padding:12px 28px 0;font-size:18px;font-weight:bold">Kode lupa password</td></tr>
-<tr><td style="padding:8px 28px 0;font-size:14px;color:#5c6357">Masukkan kode ini di halaman lupa password untuk membuat password baru.</td></tr>
+<tr><td style="padding:8px 28px 0;font-size:14px;color:#5c6357">Kami menerima permintaan untuk membuat password baru akun Traktiva dengan email ${to}. Masukkan kode ini di halaman lupa password.</td></tr>
 <tr><td style="padding:20px 28px"><div style="font-size:32px;letter-spacing:8px;font-weight:bold;font-family:Consolas,monospace;background:#f5f5ef;border-radius:8px;padding:14px 0;text-align:center">${code}</div></td></tr>
 <tr><td style="padding:0 28px 28px;font-size:13px;color:#5c6357">Berlaku 10 menit. Kalau kamu tidak meminta ini, abaikan email ini; password kamu tidak berubah.</td></tr>
 </table>
-<p style="font-size:12px;color:#8a9084;margin:16px 0 0">Traktiva · <a href="https://traktiva.site" style="color:#106e3a">traktiva.site</a></p>
+<p style="font-size:12px;color:#8a9084;margin:16px 0 0">Salam, Tim Traktiva</p>
 </td></tr></table></body></html>`;
-  return { to, subject: `${code} adalah kode lupa password Traktiva`, text, html };
+  return { to, subject: "Kode lupa password akun Traktiva", text, html };
 }

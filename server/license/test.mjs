@@ -325,7 +325,7 @@ try {
     import { emailGate } from './verify.mjs';
     const sent = []; const mailer = async (cfg, m) => sent.push(m);
     const r1 = await emailGate("reset", "a@tes.id", "1.1.1.1", "", mailer);
-    const code = sent[0].subject.slice(0, 6);
+    const code = sent[0].text.match(/Kode kamu: ([0-9]{6})/)[1];
     const again = await emailGate("reset", "a@tes.id", "1.1.1.1", "", mailer); // within 60 s
     const wrong = await emailGate("reset", "a@tes.id", "1.1.1.1", code === "000000" ? "111111" : "000000", mailer);
     const right = await emailGate("reset", "a@tes.id", "1.1.1.1", code, mailer);
