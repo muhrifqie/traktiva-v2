@@ -92,7 +92,7 @@ export function EmptyState({ icon: I, title, text, children }: { icon: Icon; tit
 /** Table shell: header labels + body rows (cells styled by the caller). */
 export function DataTable({ head, children, empty }: { head: React.ReactNode[]; children: React.ReactNode; empty?: React.ReactNode }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <table className="w-full text-[0.8125rem]">
         <thead className="border-b text-left text-xs text-muted-foreground">
           <tr className="[&>th]:px-4 [&>th]:py-2.5 [&>th]:font-medium">{head.map((h, i) => <th key={i}>{h}</th>)}</tr>
@@ -123,7 +123,7 @@ export function Hint({ children, side = "top" }: { children: React.ReactNode; si
       </button>
       <span
         role="tooltip"
-        className={`pointer-events-none absolute left-1/2 z-50 w-64 -translate-x-1/2 rounded-lg border bg-popover px-3 py-2 text-left text-xs leading-relaxed font-normal text-popover-foreground opacity-0 shadow-lg transition-opacity group-focus-within/hint:opacity-100 group-hover/hint:opacity-100 ${side === "top" ? "bottom-6" : "top-6"}`}
+        className={`pointer-events-none absolute left-1/2 z-50 hidden w-64 -translate-x-1/2 rounded-lg border bg-popover px-3 py-2 text-left text-xs leading-relaxed font-normal text-popover-foreground shadow-lg group-focus-within/hint:block group-hover/hint:block ${side === "top" ? "bottom-6" : "top-6"}`}
       >
         {children}
       </span>

@@ -134,7 +134,7 @@ export const ORDER_LABEL: Record<MemberOrder["status"], [string, string]> = {
 
 export function OrderTable({ orders, plans }: { orders: MemberOrder[]; plans: MemberView["plans"] }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <table className="w-full text-[0.8125rem]">
         <thead className="border-b text-left text-xs text-muted-foreground">
           <tr className="[&>th]:px-4 [&>th]:py-2.5 [&>th]:font-medium">

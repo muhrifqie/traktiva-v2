@@ -29,7 +29,7 @@ export default async function AccountLayout({ children }: { children: React.Reac
           </div>
         }
       />
-      <main className="overflow-auto rounded-none border-border bg-background md:m-2 md:ml-0 md:rounded-2xl md:border">
+      <main className="overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden rounded-none border-border bg-background md:m-2 md:ml-0 md:rounded-2xl md:border">
         <div className="mx-auto max-w-6xl px-5 py-6 md:px-7">{children}</div>
       </main>
     </div>

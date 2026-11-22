@@ -10,7 +10,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   return (
     <div className="grid h-screen grid-cols-1 grid-rows-[auto_1fr] bg-sidebar md:grid-cols-[224px_1fr] md:grid-rows-1">
       <Sidebar name={name} />
-      <main className="overflow-auto rounded-none border-border bg-background md:m-2 md:ml-0 md:rounded-2xl md:border">
+      <main className="overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden rounded-none border-border bg-background md:m-2 md:ml-0 md:rounded-2xl md:border">
         <div className="mx-auto max-w-6xl px-5 py-6 md:px-7">{children}</div>
       </main>
     </div>

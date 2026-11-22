@@ -313,3 +313,7 @@ html:not(.dark) .creator {
 @media (min-width: 1600px) {
   html { font-size: clamp(16px, calc(8px + 0.5vw), 19px); }
 }
+
+/* native controls (and any scrollbar left visible) follow the theme instead of Windows' white */
+:root { color-scheme: light; }
+.dark { color-scheme: dark; }
