@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, ChevronDown, LayoutDashboard, LayoutGrid, LogOut, Monitor, Receipt, Settings } from "lucide-react";
+import { BookOpen, ChevronDown, KeyRound, LayoutDashboard, LayoutGrid, LogOut, Receipt, Settings } from "lucide-react";
 import { logout } from "@/app/(site)/actions";
 
 export const NAV = [
   { href: "/akun", label: "Ringkasan", icon: LayoutGrid },
-  { href: "/lisensi", label: "PC & lisensi", icon: Monitor },
+  { href: "/lisensi", label: "Lisensi", icon: KeyRound },
   { href: "/pesanan", label: "Pesanan", icon: Receipt },
   { href: "/bantuan", label: "Panduan", icon: BookOpen },
   { href: "/pengaturan", label: "Pengaturan", icon: Settings },

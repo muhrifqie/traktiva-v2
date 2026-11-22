@@ -16,13 +16,13 @@ const NEEDS = ["Windows 10/11 64-bit", "Google Chrome terpasang", "Internet stab
 
 /** Short how-tos for the questions buyers ask most (kept in sync with the desktop app's menus). */
 const GUIDES = [
-  { icon: Cpu, q: "Ganti PC atau upgrade RAM/disk/motherboard", a: ["Buka PC & lisensi → tekan Pindah PC pada lisensinya (atau Lepas PC pada kartu PC lama). Bisa 1× per hari per lisensi.", "Buka app di PC baru dan tempel key yang sama.", "Muncul “hardware berubah” setelah upgrade? Lepas PC itu, lalu tempel key lagi. Butuh lebih sering? Hubungi kami."] },
+  { icon: Cpu, q: "Ganti PC atau upgrade RAM/disk/motherboard", a: ["Di Ringkasan: tekan Lepas PC pada kartu PC lama (atau Pindah PC pada key-nya untuk melepas semua PC). Bisa 1× per hari per lisensi.", "Buka app di PC baru dan tempel key yang sama.", "Muncul “hardware berubah” setelah upgrade? Lepas PC itu, lalu tempel key lagi. Butuh lebih sering? Hubungi kami."] },
   { icon: UserRoundPlus, q: "Hubungkan akun TikTok", a: ["Di app: Akun Sosial → Tambah akun, lalu login di jendela Chrome yang terbuka.", "Satu akun cukup login di satu PC saja. Login di dua PC sekaligus bisa memicu limit dari TikTok."] },
   { icon: Rocket, q: "Hubungkan akun Google (untuk membuat video)", a: ["Di app: Pengaturan → Akun Google → Tambah akun Google, lalu login.", "Kredit Flow akun itu dipakai untuk gambar & klip. Sisa kredit terlihat di Beranda app."] },
   { icon: CalendarClock, q: "Jadwalkan upload", a: ["Di app: Jadwal Upload → pilih video, akun, dan jam tayang.", "Traktiva memakai fitur Jadwalkan milik TikTok, jadi video tetap tayang walau PC sudah dimatikan.", "TikTok hanya menerima jadwal sampai ±10 hari ke depan; yang lebih jauh menunggu di antrean."] },
   { icon: ShieldAlert, q: "Muncul verifikasi / captcha", a: ["App berhenti dan memberi tahu: selesaikan verifikasinya sendiri di jendela Chrome.", "Kalau sering muncul, kurangi jumlah upload per hari dan beri jarak antar posting."] },
-  { icon: Timer, q: "Lisensi habis atau app terkunci", a: ["Perpanjang di PC & lisensi → klik lisensinya → Perpanjang (QRIS), atau lewat WhatsApp.", "Setelah lunas, app terbuka lagi dalam ±5 menit tanpa memasukkan key ulang."] },
-  { icon: BookOpen, q: "Key dari penjual (beli lewat WhatsApp)", a: ["Buka PC & lisensi → Punya key dari penjual?, tempel key TRK-… sekali.", "Setelah itu masa aktif, PC, dan key-nya selalu terlihat di akun ini."] },
+  { icon: Timer, q: "Lisensi habis atau app terkunci", a: ["Buka Lisensi → klik lisensinya → Perpanjang (QRIS), atau lewat WhatsApp.", "Setelah lunas, app terbuka lagi dalam ±5 menit tanpa memasukkan key ulang."] },
+  { icon: BookOpen, q: "Key dari penjual (beli lewat WhatsApp)", a: ["Buka Lisensi → Punya key dari penjual?, tempel key TRK-… sekali.", "Setelah itu masa aktif, PC, dan key-nya selalu terlihat di akun ini."] },
 ];
 
 /** Panduan: the three setup steps (with live progress), the installer + update history, tips, FAQ, contact. */
@@ -45,7 +45,7 @@ export default async function Guide() {
     },
     {
       icon: KeyRound, title: "Tempel key & mulai", done: hasPc,
-      text: "Saat app pertama dibuka, tempel key. PC langsung aktif dan muncul di PC & lisensi.",
+      text: "Saat app pertama dibuka, tempel key. PC langsung aktif dan muncul di Ringkasan.",
       action: null,
     },
   ];

@@ -17,7 +17,7 @@ export default async function Orders() {
         ) : (
           <p className="p-4 text-[0.8125rem] text-muted-foreground">
             Belum ada pesanan online. Pembelian lewat WhatsApp tidak tercatat di sini; key-nya cukup ditautkan di{" "}
-            <Link href="/lisensi#tautkan" className="underline hover:text-foreground">PC & lisensi</Link>.
+            <Link href="/lisensi#tautkan" className="underline hover:text-foreground">Lisensi</Link>.
           </p>
         )}
       </Panel>

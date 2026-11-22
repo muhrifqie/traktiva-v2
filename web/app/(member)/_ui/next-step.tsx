@@ -77,7 +77,7 @@ function nextStep(v: MemberView, now: number): Step {
   return {
     icon: PartyPopper, eyebrow: "Semua beres", title: "Traktiva siap dipakai",
     text: free ? `Masih ada ${free} slot PC kosong. Mau pakai di PC lain? Pasang app di sana lalu tempel key yang sama.` : "Lisensi aktif dan app sudah terpasang. Cek panduan untuk tips video yang laris.",
-    actions: [{ href: "/bantuan#tips", label: "Tips & panduan", primary: true }, { href: "/lisensi", label: "PC & lisensi" }],
+    actions: [{ href: "/bantuan#tips", label: "Tips & panduan", primary: true }, { href: "/lisensi", label: "Lisensi" }],
   };
 }
 

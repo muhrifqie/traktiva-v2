@@ -17,7 +17,7 @@ export default async function LicensePage({ params }: { params: Promise<{ id: st
   return (
     <div className="grid gap-5">
       <Link href="/lisensi" className="rise -mb-2 inline-flex w-fit items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-4" /> PC & lisensi
+        <ArrowLeft className="size-4" /> Semua lisensi
       </Link>
       <PageTitle title={`Lisensi ${l.planLabel}`} sub={`Key …${l.key_hint} · #${l.id}${l.role === "admin" ? " · Admin" : ""}`}>
         <StateBadge state={licenseState(l, now)} />

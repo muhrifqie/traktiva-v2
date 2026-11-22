@@ -66,7 +66,7 @@ const FAQ = [
   ["Satu key bisa dipakai di berapa PC?", "Sesuai paket. Satu akun website bisa menyimpan banyak key, misalnya untuk beberapa PC atau tim."],
   ["Aman untuk akun TikTok saya?", "Traktiva memakai Chrome dan akun kamu sendiri dengan jeda wajar, tanpa trik melewati verifikasi. Tetap ada risiko limit dari platform kalau mengunggah terlalu banyak; mulai pelan dan naikkan bertahap."],
   ["Apa yang dibutuhkan selain key?", "Akun TikTok Shop affiliate dan akun Google untuk pembuatan video. Semua dipasang dari dalam app."],
-  ["Ganti PC atau upgrade hardware?", "Tekan Pindah PC di halaman PC & lisensi (1× per hari), lalu tempel key di PC baru."],
+  ["Ganti PC atau upgrade hardware?", "Tekan Pindah PC atau Lepas PC di akun member (1× per hari), lalu tempel key di PC baru."],
 ];
 
 export default async function Landing() {

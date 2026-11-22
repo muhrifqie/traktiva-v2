@@ -6,6 +6,7 @@ import { myOrders, requireMember } from "@/lib/license-api";
 import { Hint } from "@/components/kit";
 import { KeyBox, ResetHwidButton } from "@/app/(member)/_ui/forms";
 import { NextStepCard } from "@/app/(member)/_ui/next-step";
+import { PcSection } from "@/app/(member)/_ui/pc-cards";
 import { daysLeftOf, EndingNotice, Notice, ORDER_LABEL, PageTitle, Panel, resetWaitText, StateBadge, TONE } from "@/app/(member)/_ui/ui";
 
 export const metadata: Metadata = { title: "Ringkasan" };
@@ -28,8 +29,8 @@ function StatusRow({ icon: I, label, hint, value, warn }: { icon: React.Componen
 }
 
 /**
- * Ringkasan, short on purpose: what to do next + status → the keys (copy, move to another PC) → news.
- * Orders, activity and the app on each PC live on their own pages.
+ * Ringkasan: what to do next + status → my PCs → the keys (copy, move to another PC) → news.
+ * Orders and activity live on their own pages.
  */
 export default async function Overview({ searchParams }: { searchParams: Promise<{ order?: string }> }) {
   const [v, orders, q] = await Promise.all([requireMember(), myOrders(), searchParams]);
@@ -81,13 +82,16 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </section>
       </div>
 
-      {/* 2 · keys: copy straight from here, move to another PC */}
+      {/* 2 · my PCs */}
+      <PcSection v={v} now={now} />
+
+      {/* 3 · keys: copy straight from here, move to another PC */}
       {v.licenses.length > 0 && (
         <Panel
           title="Key lisensi"
           icon={KeyRound}
           desc="Tempel key ini di app Traktiva saat diminta."
-          action={<Link href="/lisensi" className="text-xs font-semibold text-muted-foreground hover:text-foreground">PC & lisensi →</Link>}
+          action={<Link href="/lisensi" className="text-xs font-semibold text-muted-foreground hover:text-foreground">Lisensi →</Link>}
           bodyClass=""
         >
           <ul className="divide-y">
@@ -117,7 +121,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </Panel>
       )}
 
-      {/* 3 · news, only when there is any */}
+      {/* 4 · news, only when there is any */}
       {(news.length > 0 || v.latest) && (
         <Panel title="Kabar terbaru" icon={Megaphone} bodyClass="divide-y">
           {news.map((a) => {
