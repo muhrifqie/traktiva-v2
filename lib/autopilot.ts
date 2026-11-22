@@ -5,7 +5,8 @@ import { googleAccounts, videoProjects, type VideoProject } from "@/lib/db/schem
 import { applyTemplate, RESEARCH_TEMPLATES } from "@/lib/edit";
 import { fitClipsToVoice, fullVoiceOver, prepareEdit, withChapters, writeFullScript } from "@/lib/editor";
 import { getKv, setKv } from "@/lib/kalo";
-import { queueImages, queueRender } from "@/lib/projects";
+import { runStep } from "@/lib/projects";
+import { beginJob, inJob, throwIfCancelled } from "@/lib/jobs";
 import { describeProduct, writeScenes } from "@/lib/prompt-writer";
 import { getSettings } from "@/lib/settings";
 
@@ -26,7 +27,6 @@ export type AutoState = { running: boolean; startedAt: number | null; items: Aut
 
 const KEY = "autopilot:state";
 const g = globalThis as unknown as { __autopilot?: boolean };
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function autopilotState(): Promise<AutoState> {
   const s = (await getKv<AutoState>(KEY))?.data ?? { running: false, startedAt: null, items: [] };
@@ -42,18 +42,6 @@ async function patchItem(s: AutoState, i: number, patch: Partial<AutoItem>) {
 }
 
 const load = async (id: number) => (await db.select().from(videoProjects).where(eq(videoProjects.id, id)).get()) as VideoProject;
-
-/** Wait for a queued image/render job of the project to finish; returns the project afterwards. */
-async function waitIdle(id: number, maxMin = 90) {
-  const deadline = Date.now() + maxMin * 60_000;
-  await sleep(3000);
-  while (Date.now() < deadline) {
-    const p = await load(id);
-    if (p.status !== "running") return p;
-    await sleep(5000);
-  }
-  throw new Error("Terlalu lama menunggu Flow.");
-}
 
 async function makeOne(s: AutoState, i: number) {
   const it = s.items[i];
@@ -73,6 +61,11 @@ async function makeOne(s: AutoState, i: number) {
  * videos). `step` reports each stage. Used by Autopilot and by "Buat video sekarang" in the Studio.
  */
 export async function autoFinish(id: number, step: (stage: string) => Promise<unknown>, opts: { written?: boolean } = {}) {
+  beginJob(id);
+  return inJob(id, () => autoFinishJob(id, step, opts));
+}
+
+async function autoFinishJob(id: number, step: (stage: string) => Promise<unknown>, opts: { written?: boolean }) {
   let p = await load(id);
   if (!opts.written) {
     await step("AI menulis naskah & prompt...");
@@ -80,22 +73,27 @@ export async function autoFinish(id: number, step: (stage: string) => Promise<un
     if (look) p = { ...p, product: { ...p.product, look } };
     const written = await writeScenes(p).catch(() => []); // the template prompts still work if the writer fails
     const scenes = p.scenes.map((sc, k) => (written[k]?.imagePrompt ? { ...sc, label: written[k].label, imagePrompt: written[k].imagePrompt, motionPrompt: written[k].motionPrompt } : sc));
+    throwIfCancelled(id);
     await db.update(videoProjects).set({ product: p.product, scenes, step: 4 }).where(eq(videoProjects.id, id));
   }
 
+  throwIfCancelled(id);
   await step("Flow membuat gambar adegan (+ cek QC)...");
-  await queueImages(id);
-  p = await waitIdle(id);
+  await runStep(id, "images");
+  p = await load(id);
   if (p.scenes.some((sc) => !sc.image)) throw new Error("Sebagian gambar gagal dibuat. Buka storyboard untuk mengulang.");
 
+  throwIfCancelled(id);
   await step("Flow membuat klip video...");
   await db.update(videoProjects).set({ step: 5 }).where(eq(videoProjects.id, id));
-  await queueRender(id);
-  p = await waitIdle(id);
-  if (p.status !== "done") throw new Error(p.error ?? "Render klip gagal.");
+  await runStep(id, "render"); // throws when clips fail
+  p = await load(id);
+  if (!p.finalPath) throw new Error(p.error ?? "Render klip gagal.");
 
+  throwIfCancelled(id);
   await step("Menyusun timeline, suara & caption...");
   const edit = await autoEdit(p);
+  throwIfCancelled(id);
   await db.update(videoProjects).set({ edit, step: 6, status: "done", progress: null, error: null, updatedAt: new Date() }).where(eq(videoProjects.id, id));
 }
 
@@ -103,6 +101,10 @@ export async function autoFinish(id: number, step: (stage: string) => Promise<un
  * Ready-to-post edit of a rendered project: one-take Cartesia voice-over (if a key is set) fitted to the clips,
  * then the format most best sellers use: small 1–2 word subtitles, karaoke, spoken CTA, no stickers.
  */
+/** "Tanpa subtitle" on the project: the final video has no burned-in captions. */
+export const withSubtitleChoice = <E extends { captions: unknown[] }>(p: { options: Record<string, string> }, e: E): E =>
+  p.options.subtitle === "off" && e.captions.length ? { ...e, captions: [] } : e;
+
 export async function autoEdit(p: VideoProject) {
   let edit = await prepareEdit(p);
   if (getSettings().voice?.cartesiaKey) {
@@ -112,7 +114,7 @@ export async function autoEdit(p: VideoProject) {
       edit = await fitClipsToVoice(p, edit).catch(() => edit);
     }
   }
-  return withChapters(p, applyTemplate(edit, RESEARCH_TEMPLATES[0]));
+  return withSubtitleChoice(p, withChapters(p, applyTemplate(edit, RESEARCH_TEMPLATES[0])));
 }
 
 /** Start a run for these products (no-op while one runs). Returns at once; progress is read with autopilotState(). */

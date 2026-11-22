@@ -1,4 +1,5 @@
 import "server-only";
+import { jobSignal, throwIfCancelled } from "@/lib/jobs";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -262,8 +263,32 @@ export async function upsertFlowSession(input: { tokenId?: number | null; st: st
   return { id: Number(j.token.id), email: (j.token.email as string) ?? null, credits: j.token.credits != null ? Number(j.token.credits) : null };
 }
 
+/**
+ * Remove flow2api sessions that no Google account in this app owns (e.g. deleted in Pengaturan while flow2api was
+ * off). flow2api picks any session it has for each generation, so a leftover one (another laptop's account) would
+ * be used silently: its credits drop unseen and the same account runs on two laptops at once.
+ * Sessions younger than 5 minutes are kept: a login that is still being saved has no account row yet.
+ */
+export async function pruneOrphanFlowSessions() {
+  const cfg = await requireFlow2Api();
+  const owned = new Set((await db.select({ t: googleAccounts.flowTokenId }).from(googleAccounts)).map((a) => a.t).filter((t): t is number => t != null));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- flow2api JSON
+  const tokens: any[] = await admin(cfg, "/api/tokens");
+  const removed: string[] = [];
+  for (const t of Array.isArray(tokens) ? tokens : []) {
+    const id = Number(t.id);
+    const age = t.created_at ? Date.now() - Date.parse(t.created_at) : Infinity;
+    if (!id || owned.has(id) || age < 5 * 60_000) continue;
+    await admin(cfg, `/api/tokens/${id}`, { method: "DELETE" });
+    removed.push(String(t.email ?? id));
+  }
+  if (removed.length) console.log(`[flow2api] sesi tanpa akun di app dihapus: ${removed.join(", ")}`);
+  return removed;
+}
+
 /** Re-read the Flow credits of every active Google account (after a render used some). */
 export async function syncAllFlowCredits() {
+  await pruneOrphanFlowSessions().catch((e) => console.error("[flow2api] gagal membersihkan sesi:", e));
   const list = await db.select().from(googleAccounts).where(eq(googleAccounts.status, "active"));
   for (const a of list) {
     if (!a.flowTokenId) continue;
@@ -301,13 +326,19 @@ function humanize(line: string) {
 export type ChatContent = string | ({ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } })[];
 
 /** Streamed chat completion against flow2api (generation takes minutes). Returns the full assistant text. */
+/** The request's own timeout, plus the project's "Batalkan" when it runs inside a job. */
+function cancelOr(timeout: AbortSignal) {
+  const job = jobSignal();
+  return job ? AbortSignal.any([timeout, job]) : timeout;
+}
+
 async function flowChat(model: string, content: ChatContent, onProgress?: Progress) {
   const cfg = await requireFlow2Api();
   const res = await fetch(`${cfg.baseUrl}/v1/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${cfg.apiKey}` },
     body: JSON.stringify({ model, messages: [{ role: "user", content }], stream: true }),
-    signal: AbortSignal.timeout(30 * 60_000),
+    signal: cancelOr(AbortSignal.timeout(30 * 60_000)),
   });
   if (!res.ok || !res.body) throw new Error(`flow2api ${res.status}: ${(await res.text()).slice(0, 300)}`);
 
@@ -423,6 +454,7 @@ async function captchaRetry<T>(fn: () => Promise<T>, onProgress?: Progress) {
   try {
     return await fn();
   } catch (e) {
+    throwIfCancelled(); // "Batalkan": no captcha fallback or retry
     if (process.platform !== "win32" || !(e instanceof Error)) throw e;
     const raw = `${e.message} ${String(e.cause ?? "")}`;
     if (state.gen !== gen || state.running) {

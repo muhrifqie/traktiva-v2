@@ -138,7 +138,8 @@ export async function kaloToShowcase(productId: string) {
   const acc = await db.select().from(accounts).where(and(eq(accounts.platform, "tiktok"), eq(accounts.status, "active"))).get();
   if (!acc?.sessionKey) throw new Error("Belum ada akun TikTok yang login. Tambahkan di Akun Sosial.");
   const { results, showcase } = await addToShowcase(acc.sessionKey, [productId]);
-  await mirrorShowcase(acc.id, showcase.products);
+  // answer as soon as TikTok accepted it; copying the showcase (and downloading every cover, ~15 s) runs in the background
+  void mirrorShowcase(acc.id, showcase.products).catch((e) => console.error("[etalase] sinkron gagal:", e));
   revalidatePath("/showcase");
   return { ...results[0], account: acc.username };
 }

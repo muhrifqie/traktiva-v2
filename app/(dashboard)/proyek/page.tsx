@@ -22,12 +22,24 @@ const FILTERS = [
 export default async function ProyekPage({ searchParams }: PageProps<"/proyek">) {
   const sp = await searchParams;
   const filter = FILTERS.find((f) => f.id === sp.status)?.id ?? "semua";
-  const every = await db.select().from(videoProjects).orderBy(desc(videoProjects.updatedAt));
+  const rows = await db.select().from(videoProjects).orderBy(desc(videoProjects.updatedAt));
+  type Row = (typeof rows)[number];
+  // "Jumlah video" > 1: versions B–E fold into their main project's card (Galeri Video still lists every video)
+  const byId = new Map(rows.map((p) => [p.id, p]));
+  const isVersion = (p: Row) => !!p.options.versionOf && byId.has(Number(p.options.versionOf));
+  const versionsOf = (id: number) =>
+    (byId.get(id)?.options.versions ?? "").split(",").map(Number).map((v) => byId.get(v)).filter((v): v is Row => !!v && Number(v.options.versionOf) === id);
+  // a group is "running" while any of its videos runs, "done" only when all are
+  const groupStatus = (p: Row) => {
+    const g = [p, ...versionsOf(p.id)];
+    return g.some((x) => x.status === "running") ? "running" : g.some((x) => x.status === "failed") ? "failed" : g.every((x) => x.status === "done") ? "done" : "draft";
+  };
+  const every = rows.filter((p) => !isVersion(p));
   // archived projects only show in their own tab
   const all = every.filter((p) => !p.archived);
   const archived = every.filter((p) => p.archived);
-  const count = (id: string) => (id === "arsip" ? archived.length : id === "semua" ? all.length : all.filter((p) => p.status === id).length);
-  const shown = filter === "arsip" ? archived : filter === "semua" ? all : all.filter((p) => p.status === filter);
+  const count = (id: string) => (id === "arsip" ? archived.length : id === "semua" ? all.length : all.filter((p) => groupStatus(p) === id).length);
+  const shown = filter === "arsip" ? archived : filter === "semua" ? all : all.filter((p) => groupStatus(p) === filter);
 
   return (
     <>
@@ -68,12 +80,18 @@ export default async function ProyekPage({ searchParams }: PageProps<"/proyek">)
                 product: p.product.name,
                 scenes: p.scenes.length,
                 preset: presetById(p.presetId)?.title ?? p.title,
-                status: p.status,
+                status: groupStatus(p),
                 step: p.step,
                 cover: p.scenes.find((x) => x.image)?.image ?? p.product.photos[0] ?? null,
                 final: p.status === "done" ? p.finalPath : null,
                 updated: fmt.format(p.updatedAt),
-                progress: p.status === "running" ? p.progress : null,
+                progress: groupStatus(p) === "running" ? [p, ...versionsOf(p.id)].find((x) => x.status === "running")?.progress ?? null : null,
+                versions: versionsOf(p.id).map((v) => ({
+                  id: v.id,
+                  status: v.status,
+                  cover: v.scenes.find((x) => x.image)?.image ?? v.product.photos[0] ?? null,
+                  final: v.status === "done" ? v.finalPath : null,
+                })),
               }))}
             />
           ) : (

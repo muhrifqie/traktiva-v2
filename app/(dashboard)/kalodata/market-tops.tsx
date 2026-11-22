@@ -9,6 +9,7 @@ import type { KaloTopProduct, KaloTopVideo } from "@/lib/kalodata";
 import { kaloTopProducts, kaloTopVideos, kaloVideoUrl, type KaloHit } from "./actions";
 import { intentProps } from "./detail-cache";
 import { EmptyBox, ListBox, LoadMore, pillBtn, ProductRow, RefreshButton } from "./riset-ui";
+import { ShowcaseButton } from "./showcase-button";
 
 export type TopsMode = "produk" | "video";
 type Rows = { mode: "produk"; rows: KaloTopProduct[] } | { mode: "video"; rows: KaloTopVideo[] };
@@ -89,6 +90,7 @@ export function MarketTops({ mode, country, savedKeys, onDetail }: { mode: TopsM
                     saved={savedKeys.includes(`${r.id}:${country}`)}
                     product={{ productId: r.id, country, source: "kalodata", title: r.product_title, image: kaloProductImg(r.id), price: r.unit_price, metrics: { revenue: r.revenue, sale: String(r.sale) } }}
                   />
+                  <ShowcaseButton productId={r.id} />
                 </>
               }
             >

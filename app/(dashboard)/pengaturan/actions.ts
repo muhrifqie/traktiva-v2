@@ -95,7 +95,10 @@ export async function syncGoogleAccount(id: number) {
 export async function deleteGoogleAccount(id: number) {
   const a = await db.select().from(googleAccounts).where(eq(googleAccounts.id, Id.parse(id))).get();
   if (!a) return;
-  if (a.flowTokenId) await deleteFlowSession(a.flowTokenId).catch(() => {});
+  // must not be skipped silently: a session left in flow2api keeps being used for generations
+  if (a.flowTokenId) await deleteFlowSession(a.flowTokenId).catch((e) => {
+    if (!/flow2api 404/.test(String(e))) throw new Error(`Gagal melepas akun dari mesin video: ${errMsg(e)}`);
+  });
   await db.delete(googleAccounts).where(eq(googleAccounts.id, a.id));
   void refreshFlowLimit().catch(() => {});
   if (isProfileKey(a.sessionKey)) await deleteProfile(a.sessionKey).catch(() => {});
