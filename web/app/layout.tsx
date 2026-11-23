@@ -10,7 +10,7 @@ const display = Bricolage_Grotesque({ variable: "--font-display", subsets: ["lat
 
 export const metadata: Metadata = {
   title: { default: "Traktiva", template: "%s · Traktiva" },
-  description: "Studio video affiliate TikTok Shop otomatis.",
+  description: "Bikin video pakai AI, dari ide sampai jadwal upload.",
 };
 
 /** Same theme switch as the desktop app: the "dark" class on <html>; the choice lives in the trk_theme cookie (default dark). */

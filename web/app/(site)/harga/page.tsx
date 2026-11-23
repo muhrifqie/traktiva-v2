@@ -13,11 +13,11 @@ export const metadata: Metadata = {
 
 /** Every plan has every feature; the rows below are the same for all of them (only time, PCs and price differ). */
 const FEATURES = [
-  "Riset produk laris (KaloData)",
-  "Sampai 5 versi video per produk",
+  "Riset ide & produk yang lagi ramai",
+  "Sampai 5 versi video sekaligus",
   "Naskah, voice-over & subtitle otomatis",
   "Editor timeline + musik bebas royalti",
-  "Jadwal upload ke TikTok (multi akun)",
+  "Jadwal upload otomatis (multi akun)",
   "Analisis akun & jam terbaik posting",
   "Semua update selama masa aktif",
 ];

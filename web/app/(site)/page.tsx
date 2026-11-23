@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, Check, Store } from "lucide-react";
+import { ArrowRight, Check, Sparkles } from "lucide-react";
 import { publicInfo } from "@/lib/license-api";
 import { FAQ_TOP, FEATURES, STEPS } from "./content";
 import { buyHref, featuredId, PlanCard } from "./plans";
@@ -8,8 +8,8 @@ import { PlatformGrid, PlatformOrbit } from "./platforms-ui";
 import { CtaBand, FaqList, Section, WRAP } from "./_ui";
 
 export const metadata: Metadata = {
-  title: { absolute: "Traktiva · Video affiliate TikTok Shop otomatis" },
-  description: "App Windows untuk bikin dan menjadwalkan video affiliate TikTok Shop dengan AI: riset produk, sampai 5 versi video per produk, suara & subtitle otomatis, upload terjadwal.",
+  title: { absolute: "Traktiva · Bikin video pakai AI, otomatis" },
+  description: "App Windows untuk bikin video dengan AI: naskah, gambar, klip, suara, dan subtitle otomatis, sampai 5 versi sekaligus, lalu jadwalkan upload ke media sosial.",
   alternates: { canonical: "https://traktiva.site/" },
 };
 
@@ -24,20 +24,20 @@ export default async function Landing() {
       <section className={`${WRAP} grid items-center gap-12 pt-14 pb-16 lg:grid-cols-[1.1fr_1fr] lg:pt-20`}>
         <div>
           <p className="rise inline-flex items-center gap-2 rounded-lg border px-2.5 py-1 text-xs font-semibold text-muted-foreground">
-            <Store className="size-3.5 text-leaf-ink" /> Untuk affiliate TikTok Shop · App Windows
+            <Sparkles className="size-3.5 text-leaf-ink" /> Studio video AI · App Windows
           </p>
           <h1 style={{ "--i": 1 } as React.CSSProperties} className="rise mt-5 max-w-xl text-4xl leading-[1.1] font-semibold md:text-5xl">
-            Video affiliate TikTok Shop, <span className="text-leaf-ink">dibuat otomatis.</span>
+            Bikin video pakai AI, <span className="text-leaf-ink">tanpa ribet edit.</span>
           </h1>
           <p style={{ "--i": 2 } as React.CSSProperties} className="rise mt-5 max-w-lg text-base leading-relaxed text-muted-foreground md:text-lg">
-            Pilih produk dari etalase. Traktiva membuat sampai 5 video lengkap dengan suara dan subtitle, lalu menjadwalkannya ke TikTok. Platform lain menyusul.
+            Tulis ide atau pilih produk. Traktiva membuat sampai 5 video lengkap dengan naskah, suara, dan subtitle, lalu menjadwalkannya ke media sosialmu.
           </p>
           <div style={{ "--i": 3 } as React.CSSProperties} className="rise mt-8 flex flex-wrap items-center gap-3">
             <Link href="/harga" className="site-pill">Lihat paket <ArrowRight className="size-4" /></Link>
             <Link href="/cara-kerja" className="site-pill-outline">Cara kerjanya</Link>
           </div>
           <ul style={{ "--i": 4 } as React.CSSProperties} className="rise mt-9 grid gap-2 text-sm text-muted-foreground sm:grid-cols-3">
-            {["Sampai 5 versi per produk", "Suara & subtitle otomatis", "Jadwal tayang TikTok"].map((t) => (
+            {["Sampai 5 versi sekaligus", "Suara & subtitle otomatis", "Jadwal upload otomatis"].map((t) => (
               <li key={t} className="flex items-center gap-2"><Check className="size-4 shrink-0 text-leaf-ink" /> {t}</li>
             ))}
           </ul>
@@ -48,7 +48,7 @@ export default async function Landing() {
       </section>
 
       {/* 2 · features */}
-      <Section id="fitur" title="Semua kerjaan konten affiliate, satu app." sub="Dari cari produk sampai video tayang, tanpa pindah-pindah aplikasi." action={{ href: "/fitur", label: "Semua fitur" }} tint>
+      <Section id="fitur" title="Semua kerjaan bikin video, satu app." sub="Dari ide sampai video tayang, tanpa pindah-pindah aplikasi." action={{ href: "/fitur", label: "Semua fitur" }} tint>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map(({ id, icon: I, title, short }) => (
             <Link key={id} href={`/fitur#${id}`} className="reveal lift flex flex-col rounded-xl border bg-background p-6">
@@ -61,12 +61,12 @@ export default async function Landing() {
       </Section>
 
       {/* 3 · platforms */}
-      <Section id="platform" title="Satu video, banyak platform." sub="Sekarang TikTok. Berikutnya Shopee Video, lalu platform lain dari video yang sama." action={{ href: "/platform", label: "Lihat roadmap" }}>
+      <Section id="platform" title="Satu video, banyak platform." sub="Sekarang TikTok. Berikutnya Shopee Video, Instagram, YouTube, dan lainnya dari video yang sama." action={{ href: "/platform", label: "Lihat roadmap" }}>
         <PlatformGrid />
       </Section>
 
       {/* 4 · how it works */}
-      <Section id="cara-kerja" title="Dari etalase ke FYP dalam 4 langkah." action={{ href: "/cara-kerja", label: "Lihat detailnya" }} tint>
+      <Section id="cara-kerja" title="Dari ide ke video tayang dalam 4 langkah." action={{ href: "/cara-kerja", label: "Lihat detailnya" }} tint>
         <ol className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {STEPS.map((s, i) => (
             <li key={s.title} className="reveal rounded-xl border bg-card p-6">

@@ -24,7 +24,7 @@ export default function Privacy() {
         </ul>
 
         <h2>2. Yang tidak kami simpan</h2>
-        <p>Login akun TikTok dan Google di app Traktiva terjadi di Chrome di PC kamu sendiri. Sesi login, video, dan file proyek tersimpan di PC itu, bukan di server kami.</p>
+        <p>Login akun media sosial dan Google di app Traktiva terjadi di Chrome di PC kamu sendiri. Sesi login, video, dan file proyek tersimpan di PC itu, bukan di server kami.</p>
 
         <h2>3. Untuk apa data dipakai</h2>
         <ul>

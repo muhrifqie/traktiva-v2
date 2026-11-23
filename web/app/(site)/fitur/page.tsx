@@ -6,14 +6,14 @@ import { CtaBand, PageHero, WRAP } from "../_ui";
 
 export const metadata: Metadata = {
   title: "Fitur",
-  description: "Riset produk laris, sampai 5 video per produk, voice-over & subtitle otomatis, editor timeline, upload terjadwal ke TikTok, dan analisis akun.",
+  description: "Riset ide yang lagi ramai, sampai 5 video sekaligus, voice-over & subtitle otomatis, editor timeline, upload terjadwal, dan analisis akun.",
   alternates: { canonical: "https://traktiva.site/fitur" },
 };
 
 export default function Features() {
   return (
     <main>
-      <PageHero eyebrow="Fitur" title="Semua yang dibutuhkan affiliate video, dalam satu app." sub="Setiap paket mendapat semua fitur di bawah, termasuk update selama masa aktif.">
+      <PageHero eyebrow="Fitur" title="Semua yang dibutuhkan untuk bikin video, dalam satu app." sub="Setiap paket mendapat semua fitur di bawah, termasuk update selama masa aktif.">
         <Link href="/harga" className="site-pill">Lihat paket <ArrowRight className="size-4" /></Link>
       </PageHero>
 

@@ -28,7 +28,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
               <img src="/logo.svg" alt="" className="size-10" />
               <span className="text-2xl font-semibold">Traktiva</span>
             </p>
-            <p className="max-w-sm text-muted-foreground">Studio video affiliate TikTok Shop di PC kamu. Dari etalase sampai jadwal upload.</p>
+            <p className="max-w-sm text-muted-foreground">Studio video AI di PC kamu. Dari ide sampai jadwal upload.</p>
           </div>
           {[
             ["Produk", [[HOSTS.main + "/fitur", "Fitur"], [HOSTS.main + "/platform", "Platform"], [HOSTS.main + "/cara-kerja", "Cara kerja"], [HOSTS.main + "/harga", "Harga"], [HOSTS.main + "/faq", "FAQ"]]],
@@ -44,7 +44,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
           ))}
         </div>
         <div className="mx-auto max-w-6xl border-t px-5 py-6 text-sm text-muted-foreground md:px-8">
-          © 2026 Traktiva. Bukan produk resmi TikTok atau Google.
+          © 2026 Traktiva. Bukan produk resmi TikTok, Google, atau platform lain yang disebutkan.
         </div>
       </footer>
     </div>

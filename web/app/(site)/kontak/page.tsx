@@ -16,7 +16,7 @@ export default async function Contact() {
   const wa = waLink(info?.site, "Halo, saya mau tanya soal Traktiva.");
   const cards = [
     { icon: MessageCircle, title: "WhatsApp", text: "Pembelian, bantuan aktivasi, dan pertanyaan lisensi. Sebutkan email akun dan 4 karakter terakhir key supaya cepat dibantu.", href: wa, label: "Chat WhatsApp", external: true },
-    { icon: BookOpen, title: "Panduan", text: "Cara pasang app, tempel key, ganti PC, hubungkan akun TikTok & Google, dan jadwal upload.", href: appUrl("/bantuan"), label: "Buka panduan" },
+    { icon: BookOpen, title: "Panduan", text: "Cara pasang app, tempel key, ganti PC, hubungkan akun media sosial & Google, dan jadwal upload.", href: appUrl("/bantuan"), label: "Buka panduan" },
     { icon: KeyRound, title: "Akun & lisensi", text: "Lihat key, masa aktif, PC yang terpakai, dan perpanjang sendiri dari akun member.", href: appUrl("/akun"), label: "Masuk ke akun" },
   ];
   return (

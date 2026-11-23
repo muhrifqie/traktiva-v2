@@ -6,7 +6,7 @@ import { CtaBand, FaqList, PageHero, WRAP } from "../_ui";
 
 export const metadata: Metadata = {
   title: "FAQ",
-  description: "Jawaban soal Traktiva: kebutuhan PC, pembayaran QRIS, lisensi & jumlah PC, ganti PC, dan keamanan akun TikTok.",
+  description: "Jawaban soal Traktiva: kebutuhan PC, pembayaran QRIS, lisensi & jumlah PC, ganti PC, dan keamanan akun media sosial.",
   alternates: { canonical: "https://traktiva.site/faq" },
 };
 

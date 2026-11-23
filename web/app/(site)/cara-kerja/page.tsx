@@ -7,7 +7,7 @@ import { CtaBand, PageHero, Section, WRAP } from "../_ui";
 
 export const metadata: Metadata = {
   title: "Cara kerja",
-  description: "Dari etalase TikTok Shop ke video terjadwal dalam 4 langkah, plus cara mulai: daftar, beli lisensi, pasang app, tempel key.",
+  description: "Dari ide ke video terjadwal dalam 4 langkah, plus cara mulai: daftar, beli lisensi, pasang app, tempel key.",
   alternates: { canonical: "https://traktiva.site/cara-kerja" },
 };
 
@@ -21,7 +21,7 @@ const START = [
 export default function HowItWorks() {
   return (
     <main>
-      <PageHero eyebrow="Cara kerja" title="Dari etalase ke FYP dalam 4 langkah." sub="Traktiva mengerjakan bagian yang makan waktu: riset, naskah, video, suara, dan jadwal. Kamu tinggal memilih dan merapikan." />
+      <PageHero eyebrow="Cara kerja" title="Dari ide ke video tayang dalam 4 langkah." sub="Traktiva mengerjakan bagian yang makan waktu: riset, naskah, video, suara, dan jadwal. Kamu tinggal memilih dan merapikan." />
 
       {/* the daily flow */}
       <div className={`${WRAP} pb-4`}>

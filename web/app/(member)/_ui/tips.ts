@@ -6,5 +6,5 @@ export const TIPS = [
   "Jangan upload terlalu banyak sekaligus dari akun baru. Naikkan jumlah posting per hari bertahap.",
   "Subtitle 1–2 kata yang mengikuti suara membuat penonton bertahan lebih lama.",
   "Akun dengan rata-rata penonton di bawah 60 selama seminggu? Ganti sudut konten atau istirahatkan akunnya sebentar.",
-  "Ucapkan ajakan \"cek keranjang di bawah\" di akhir video, jangan cuma ditulis.",
+  "Tutup video dengan ajakan yang jelas (follow, cek link, atau beli) dan ucapkan, jangan cuma ditulis.",
 ];
