@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  Blend, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Columns2, Crop, Eye, FlipHorizontal2, FolderOpen, Gamepad2, Loader2, Music, Palette, PictureInPicture2,
-  Plus, Ratio, RefreshCw, Rows2, Save, Search, Shuffle, Square, Upload, Video, Volume2, VolumeX, X, type LucideIcon,
+  ArrowLeft, Blend, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Columns2, Crop, FlipHorizontal2, FolderOpen, Gamepad2, Loader2, Palette, PictureInPicture2,
+  Plus, Ratio, RefreshCw, Rows2, Search, Shuffle, Square, Timer, Upload, Video, Volume2, VolumeX, X, type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { mediaUrl } from "@/lib/media-url";
@@ -12,24 +12,23 @@ import type { EditorJob, SourceFile } from "@/lib/youtube-editor";
 import { PIP_RANGE, RATIO_RANGE, SIZES, type Corner, type EditorSettings, type Fill, type Fit, type Flip, type Seam, type Size } from "@/lib/youtube-editor-config";
 import { clipLengths, openMediaFolder, previewFrame, refreshLists, renderStatus, renderVideos, saveEditorSettings, stopRender } from "./actions";
 
-// YouTube → Editor laid out like a video editor (CapCut / Premiere): media bin on the left, the monitor in the middle,
-// the inspector on the right and a timeline underneath. Click a Short to put it on the timeline, click a clip to see
-// it on the monitor, drag the divider (or click a corner) right on the monitor, press Render.
+// YouTube → Editor, full screen over the app (sidebar hidden): media on the left, the live monitor in the middle,
+// settings on the right. Click Shorts to pick them, drag the divider (or click a corner) on the monitor, press Render.
 
-const KEY = "trk-yt-editor"; // timeline, picks and bin filters survive a refresh (the configuration lives in settings.json)
+const KEY = "trk-yt-editor"; // picks and media filters survive a refresh (the configuration lives in settings.json)
 type Tab = "asli" | "game" | "hasil";
 type Sort = "new" | "old" | "az";
 type Show = "all" | "todo" | "done";
 type Saved = { channel: string; queue: string[]; games: string[]; random: boolean; q: string; sort: Sort; show: Show; tab: Tab };
-const PAGE = 18;
-const RED = "#ff3333";
+const PAGE = 24;
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const ON = "border-primary bg-primary/10 font-semibold text-primary";
 
 function Segmented<T extends string>({ value, onChange, items, disabled }: { value: T; onChange: (v: T) => void; items: { v: T; label: React.ReactNode; title?: string }[]; disabled?: boolean }) {
   return (
     <div className="grid auto-cols-fr grid-flow-col gap-0.5 rounded-lg bg-muted p-0.5">
       {items.map((it) => (
-        <button key={it.v} type="button" title={it.title} disabled={disabled} onClick={() => onChange(it.v)} aria-pressed={value === it.v} className={`flex h-7 items-center justify-center gap-1 rounded-md px-1.5 text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-50 ${value === it.v ? "bg-[#ff3333] text-white shadow-xs" : "text-muted-foreground hover:text-foreground"}`}>
+        <button key={it.v} type="button" title={it.title} disabled={disabled} onClick={() => onChange(it.v)} aria-pressed={value === it.v} className={`flex h-8 items-center justify-center gap-1 rounded-md px-1.5 text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-50 ${value === it.v ? "bg-background text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:text-foreground"}`}>
           {it.label}
         </button>
       ))}
@@ -38,20 +37,20 @@ function Segmented<T extends string>({ value, onChange, items, disabled }: { val
 }
 
 function Slider({ value, min, max, step = 5, onChange, disabled, label }: { value: number; min: number; max: number; step?: number; onChange: (v: number) => void; disabled?: boolean; label: string }) {
-  return <input type="range" aria-label={label} min={min} max={max} step={step} value={value} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))} className="h-1.5 w-full cursor-pointer accent-[#ff3333] disabled:opacity-50" />;
+  return <input type="range" aria-label={label} min={min} max={max} step={step} value={value} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))} className="h-1.5 w-full cursor-pointer accent-primary disabled:opacity-50" />;
 }
 
-/** Inspector section: colored icon + title, folds open/closed like a properties panel. */
-function Section({ icon: Icon, color, title, value, open = true, children }: { icon: LucideIcon; color: string; title: string; value?: string; open?: boolean; children: React.ReactNode }) {
+/** Settings section: icon + title (+ current value), folds open/closed. */
+function Section({ icon: Icon, tone, title, value, children }: { icon: LucideIcon; tone: string; title: string; value?: string; children: React.ReactNode }) {
   return (
-    <details open={open} className="group border-b last:border-0">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-xs font-semibold select-none hover:bg-accent/40">
-        <span className="grid size-5 place-items-center rounded-md" style={{ background: `${color}22`, color }}><Icon className="size-3" /></span>
+    <details open className="group border-b last:border-0">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-[13px] font-semibold select-none hover:bg-accent/40">
+        <span className={`grid size-6 place-items-center rounded-md ${tone}`}><Icon className="size-3.5" /></span>
         {title}
-        {value && <span className="ml-auto font-normal tabular-nums text-muted-foreground">{value}</span>}
-        <ChevronDown className={`size-3.5 text-muted-foreground transition-transform group-open:rotate-180 ${value ? "" : "ml-auto"}`} />
+        {value && <span className="ml-auto text-xs font-normal tabular-nums text-muted-foreground">{value}</span>}
+        <ChevronDown className={`size-4 text-muted-foreground transition-transform group-open:rotate-180 ${value ? "" : "ml-auto"}`} />
       </summary>
-      <div className="space-y-2 px-3 pb-3">{children}</div>
+      <div className="space-y-2.5 px-4 pb-4">{children}</div>
     </details>
   );
 }
@@ -59,7 +58,7 @@ function Section({ icon: Icon, color, title, value, open = true, children }: { i
 function Row({ icon: Icon, label, children }: { icon: LucideIcon; label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="flex w-[74px] shrink-0 items-center gap-1 text-[11px] text-muted-foreground"><Icon className="size-3" /> {label}</span>
+      <span className="flex w-[78px] shrink-0 items-center gap-1 text-[11px] text-muted-foreground"><Icon className="size-3.5" /> {label}</span>
       <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
@@ -67,9 +66,9 @@ function Row({ icon: Icon, label, children }: { icon: LucideIcon; label: string;
 
 /** Sketch of the frame (before a real preview frame exists): where each video goes. */
 function LayoutSketch({ cfg }: { cfg: EditorSettings }) {
-  const part = "grid h-full w-full place-items-center text-[10px] font-medium";
-  const asli = <span className={`${part} bg-sky-500/20 text-sky-700 dark:text-sky-300`}><Video className="mb-0.5 size-4" />Asli</span>;
-  const game = <span className={`${part} bg-[#ff3333]/15 text-[#ff3333]`}><Gamepad2 className="mb-0.5 size-4" />Gameplay</span>;
+  const part = "grid h-full w-full place-items-center text-[11px] font-medium";
+  const asli = <span className={`${part} bg-sky-500/20 text-sky-300`}><Video className="mb-0.5 size-5" />Asli</span>;
+  const game = <span className={`${part} bg-violet-500/20 text-violet-300`}><Gamepad2 className="mb-0.5 size-5" />Gameplay</span>;
   if (cfg.layout === "pip") {
     const [big, small] = cfg.pipMain === "original" ? [asli, game] : [game, asli];
     const pos = { tl: "top-2 left-2", tr: "top-2 right-2", bl: "bottom-2 left-2", br: "bottom-2 right-2" }[cfg.pipCorner];
@@ -99,7 +98,7 @@ export function VideoEditor({
 }) {
   const [tab, setTab] = useState<Tab>("asli");
   const [channel, setChannel] = useState(originals[0]?.channel ?? "");
-  const [queue, setQueue] = useState<string[]>([]); // the timeline: originals in render order
+  const [queue, setQueue] = useState<string[]>([]); // picked originals, in render order
   const [active, setActive] = useState<string | null>(null); // clip shown on the monitor
   const [lengths, setLengths] = useState<Record<string, number>>({});
   const [games, setGames] = useState<Set<string>>(new Set());
@@ -112,7 +111,7 @@ export function VideoEditor({
   const [job, setJob] = useState(initialJob);
   const [preview, setPreview] = useState<{ url: string | null; busy: boolean; error: string | null }>({ url: null, busy: false, error: null });
   const [drag, setDrag] = useState<number | null>(null);
-  const [at, setAt] = useState(2); // monitor time (s) inside the active clip
+  const [at, setAt] = useState(2); // monitor time (s) inside the clip
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<Sort>("new");
   const [show, setShow] = useState<Show>("all");
@@ -124,7 +123,7 @@ export function VideoEditor({
     setCfg((c) => ({ ...c, [k]: v }));
   };
 
-  // restore the timeline and bin filters after mount (no localStorage during the server render)
+  // restore picks and media filters after mount (no localStorage during the server render)
   useEffect(() => {
     const t = setTimeout(() => {
       try {
@@ -170,17 +169,6 @@ export function VideoEditor({
     return () => clearTimeout(t);
   }, [cfg]);
 
-  // lengths of the clips on the timeline (block widths, monitor scrub range)
-  const missing = queue.filter((r) => !(r in lengths)).join("|");
-  useEffect(() => {
-    if (!missing) return;
-    let live = true;
-    void clipLengths(missing.split("|")).then((r) => live && setLengths((l) => ({ ...l, ...r })));
-    return () => {
-      live = false;
-    };
-  }, [missing]);
-
   useEffect(() => {
     if (!running) return;
     const t = setInterval(async () => {
@@ -190,12 +178,13 @@ export function VideoEditor({
         const r = await refreshLists();
         setResults(r.results);
         setRendered(r.rendered);
+        toast.success(`${j?.done.length ?? 0} video selesai dirender`);
       }
     }, 1500);
     return () => clearInterval(t);
   }, [running]);
 
-  // ---- media bin ------------------------------------------------------------------------------------------------
+  // ---- media ------------------------------------------------------------------------------------------------------
   const byRel = useMemo(() => new Map(originals.flatMap((c) => c.files.map((f) => [f.rel, f] as const))), [originals]);
   const files = useMemo(() => originals.find((c) => c.channel === channel)?.files ?? [], [originals, channel]);
   const filtered = useMemo(() => {
@@ -209,12 +198,11 @@ export function VideoEditor({
   const current = Math.min(page, pages - 1);
   const shown = filtered.slice(current * PAGE, current * PAGE + PAGE);
   const inQueue = useMemo(() => new Set(queue), [queue]);
-  const addOrRemove = (rel: string) => {
+  const pick = (rel: string) => {
     if (inQueue.has(rel)) setQueue((qq) => qq.filter((x) => x !== rel));
     else {
       setQueue((qq) => [...qq, rel]);
       setActive(rel);
-      setAt(2);
     }
   };
   const toggleGame = (rel: string) =>
@@ -225,12 +213,21 @@ export function VideoEditor({
       return n;
     });
 
-  // ---- monitor ---------------------------------------------------------------------------------------------------
-  const clip = active && inQueue.has(active) ? active : (queue[0] ?? files[0]?.rel ?? null);
+  // ---- monitor ----------------------------------------------------------------------------------------------------
+  const clip = active && (inQueue.has(active) || byRel.has(active)) ? active : (queue[0] ?? files[0]?.rel ?? null);
+  const idx = queue.indexOf(clip ?? "");
+  const step = (d: number) => queue.length && setActive(queue[(Math.max(idx, 0) + d + queue.length) % queue.length]);
   const pool = gameplay.filter((g) => games.has(g.rel)).length ? gameplay.filter((g) => games.has(g.rel)) : gameplay;
-  const gameFor = (i: number) => (random ? null : pool[i % Math.max(pool.length, 1)]);
-  const sampleGame = (gameFor(Math.max(0, queue.indexOf(clip ?? ""))) ?? pool[0])?.rel;
-  const clipLen = clip ? lengths[clip] ?? 0 : 0;
+  const sampleGame = (random ? pool[0] : pool[Math.max(idx, 0) % Math.max(pool.length, 1)])?.rel;
+  const clipLen = clip ? (lengths[clip] ?? 0) : 0;
+  useEffect(() => {
+    if (!clip || clip in lengths) return;
+    let live = true;
+    void clipLengths([clip]).then((r) => live && setLengths((l) => ({ ...l, ...r })));
+    return () => {
+      live = false;
+    };
+  }, [clip, lengths]);
   useEffect(() => {
     if (!clip || !sampleGame) return;
     let live = true;
@@ -291,139 +288,154 @@ export function VideoEditor({
     toast.success(`Merender ${queue.length} video`);
   };
   const pct = job?.total ? ((job.done.length + job.failed.length) / job.total) * 100 : 0;
-  const total = queue.reduce((s, r) => s + (lengths[r] ?? 0), 0);
-  const maxLen = Math.max(1, ...queue.map((r) => lengths[r] ?? 0));
 
+  const shell = "fixed inset-x-0 top-[calc(var(--titlebar-height)+var(--header-height))] bottom-(--statusbar-height) z-40 flex flex-col bg-sidebar";
+  const back = (
+    <Link href="/youtube" className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
+      <ArrowLeft className="size-4" /> Kembali
+    </Link>
+  );
   if (!originals.length)
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-10 text-center">
-        <Clapperboard className="size-7 text-muted-foreground" />
-        <p className="text-sm font-medium">Belum ada video asli</p>
-        <p className="max-w-sm text-xs text-muted-foreground">Unduh Shorts dulu di menu Unduh Shorts. Hasilnya otomatis muncul di sini untuk digabung dengan gameplay.</p>
-        <Link href="/youtube-shorts" className="mt-2 flex h-9 items-center rounded-lg bg-primary px-3.5 text-[13px] font-medium text-primary-foreground hover:bg-primary/90">Buka Unduh Shorts</Link>
+      <div className={shell}>
+        <div className="p-3">{back}</div>
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
+          <Clapperboard className="size-8 text-muted-foreground" />
+          <p className="text-sm font-medium">Belum ada video asli</p>
+          <p className="max-w-sm text-xs text-muted-foreground">Unduh Shorts dulu di menu Unduh Shorts. Hasilnya otomatis muncul di sini untuk digabung dengan gameplay.</p>
+          <Link href="/youtube-shorts" className="mt-2 flex h-9 items-center rounded-lg bg-primary px-3.5 text-[13px] font-medium text-primary-foreground hover:bg-primary/90">Buka Unduh Shorts</Link>
+        </div>
       </div>
     );
 
   const card = "rounded-xl border bg-card";
   return (
-    <div className="flex flex-1 flex-col gap-3">
+    <div className={shell}>
       {/* ── toolbar ─────────────────────────────────────────────────────────────────────────────────────────────── */}
-      <div className={`${card} flex flex-wrap items-center gap-2 px-3 py-2`}>
-        <span className="flex items-center gap-1.5 text-[13px] font-semibold"><Clapperboard className="size-4 text-[#ff3333]" /> Proyek</span>
-        <span className="text-xs text-muted-foreground">{queue.length} klip · {fmt(total)}</span>
-        <div className="mx-2 h-5 w-px bg-border" />
+      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
+        {back}
+        <div className="h-5 w-px bg-border" />
+        <span className="flex items-center gap-1.5 px-1 text-[13px] font-semibold"><Clapperboard className="size-4 text-primary" /> Editor Video</span>
+        <div className="mx-1 h-5 w-px bg-border" />
         <div className="flex gap-1">
           {(Object.keys(SIZES) as Size[]).map((sz) => {
             const [w, h] = sz.split("x").map(Number);
             const on = cfg.size === sz;
             return (
-              <button key={sz} type="button" disabled={running} onClick={() => set("size", sz)} aria-pressed={on} title={`${SIZES[sz].label} ${SIZES[sz].note}`} className={`flex h-8 items-center gap-1.5 rounded-lg border px-2 text-xs disabled:opacity-50 ${on ? "border-[#ff3333] bg-[#ff3333]/10 font-semibold text-[#ff3333]" : "hover:bg-accent"}`}>
-                <span className={`block rounded-[2px] border-[1.5px] ${on ? "border-[#ff3333]" : "border-muted-foreground/60"}`} style={w >= h ? { width: 14, height: Math.round((14 * h) / w) } : { height: 14, width: Math.round((14 * w) / h) }} />
+              <button key={sz} type="button" disabled={running} onClick={() => set("size", sz)} aria-pressed={on} title={`${SIZES[sz].label} ${SIZES[sz].note}`} className={`flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs transition-colors disabled:opacity-50 ${on ? ON : "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground"}`}>
+                <span className={`block rounded-[2px] border-[1.5px] ${on ? "border-primary" : "border-current"}`} style={w >= h ? { width: 14, height: Math.round((14 * h) / w) } : { height: 14, width: Math.round((14 * w) / h) }} />
                 {SIZES[sz].label}
               </button>
             );
           })}
         </div>
-        <div className="mx-2 h-5 w-px bg-border" />
-        <div className="w-64">
+        <div className="mx-1 h-5 w-px bg-border" />
+        <div className="w-72">
           <Segmented value={cfg.layout} onChange={(v) => set("layout", v)} disabled={running} items={[{ v: "side", label: <><Columns2 className="size-3.5" /> Samping</> }, { v: "stack", label: <><Rows2 className="size-3.5" /> Tumpuk</> }, { v: "pip", label: <><PictureInPicture2 className="size-3.5" /> Reaction</> }]} />
         </div>
         <span className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          {saved ? <Save className="size-3.5 text-status-ok" /> : <Loader2 className="size-3.5 animate-spin" />} {saved ? "Tersimpan" : "Menyimpan…"}
+          {saved ? <Check className="size-3.5 text-primary" /> : <Loader2 className="size-3.5 animate-spin" />} {saved ? "Tersimpan" : "Menyimpan…"}
         </span>
-        {running ? (
+        {running && (
           <button type="button" onClick={() => void stopRender()} className="flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium hover:border-destructive/40 hover:text-destructive"><Square className="size-4" /> Batalkan</button>
-        ) : null}
-        <button type="button" onClick={render} disabled={running || !queue.length} className="flex h-9 items-center gap-1.5 rounded-lg bg-[#ff3333] px-4 text-[13px] font-semibold text-white hover:bg-[#ff3333]/90 disabled:opacity-50">
+        )}
+        <button type="button" onClick={render} disabled={running || !queue.length} title={queue.length ? undefined : "Pilih video asli dulu"} className="relative flex h-9 items-center gap-1.5 overflow-hidden rounded-lg bg-primary px-4 text-[13px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+          {running && <span className="absolute inset-y-0 left-0 bg-white/20 transition-[width]" style={{ width: `${pct}%` }} />}
           {running ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
-          {running ? `Merender ${job!.done.length}/${job!.total}` : queue.length ? `Render ${queue.length} video` : "Render"}
+          <span className="relative">{running ? `Merender ${job!.done.length}/${job!.total}` : queue.length ? `Render ${queue.length} video` : "Render"}</span>
         </button>
       </div>
-      {running && (
-        <div className="-mt-1 h-1 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-[#ff3333] transition-[width]" style={{ width: `${pct}%` }} /></div>
-      )}
 
-      {/* ── media bin | monitor | inspector ─────────────────────────────────────────────────────────────────────── */}
-      <div className="grid gap-3 lg:h-[640px] lg:grid-cols-[230px_minmax(0,1fr)_250px] xl:grid-cols-[280px_minmax(0,1fr)_300px]">
-        {/* media bin */}
+      {/* ── media | monitor | settings ──────────────────────────────────────────────────────────────────────────── */}
+      <div className="grid min-h-0 flex-1 grid-cols-[300px_minmax(0,1fr)_300px] gap-3 p-3 xl:grid-cols-[340px_minmax(0,1fr)_330px]">
+        {/* media */}
         <section className={`${card} flex min-h-0 flex-col overflow-hidden`}>
-          <div className="grid grid-cols-3 border-b text-xs font-medium">
-            {([["asli", "Video asli", Video], ["game", "Gameplay", Gamepad2], ["hasil", "Hasil", Check]] as const).map(([t, label, Icon]) => (
-              <button key={t} type="button" onClick={() => setTab(t)} className={`flex items-center justify-center gap-1 border-b-2 py-2.5 ${tab === t ? "border-[#ff3333] text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+          <div className="grid grid-cols-3 gap-1 border-b p-1.5 text-xs font-medium">
+            {([["asli", "Video asli", Video, queue.length], ["game", "Gameplay", Gamepad2, games.size], ["hasil", "Hasil", Check, results.length]] as const).map(([t, label, Icon, n]) => (
+              <button key={t} type="button" onClick={() => setTab(t)} className={`flex h-8 items-center justify-center gap-1 rounded-md transition-colors ${tab === t ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                 <Icon className="size-3.5" /> {label}
+                {n > 0 && <span className={`rounded-full px-1.5 text-[10px] tabular-nums ${tab === t ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{n}</span>}
               </button>
             ))}
           </div>
           {tab === "asli" && (
             <div className="flex min-h-0 flex-1 flex-col gap-2 p-2.5">
-              <select value={channel} onChange={(e) => (setChannel(e.target.value), setPage(0))} aria-label="Channel" className="h-8 rounded-lg border bg-background px-2 text-xs">
+              <select value={channel} onChange={(e) => (setChannel(e.target.value), setPage(0))} aria-label="Channel" className="h-9 rounded-lg border bg-background px-2 text-xs">
                 {originals.map((c) => <option key={c.channel} value={c.channel}>{c.channel} ({c.files.length})</option>)}
               </select>
-              <label className="flex h-8 items-center gap-1.5 rounded-lg border bg-background px-2.5 text-xs">
+              <label className="flex h-9 items-center gap-1.5 rounded-lg border bg-background px-2.5 text-xs focus-within:ring-2 focus-within:ring-primary/40">
                 <Search className="size-3.5 text-muted-foreground" />
                 <input value={q} onChange={(e) => (setQ(e.target.value), setPage(0))} placeholder="Cari judul…" aria-label="Cari judul" className="min-w-0 flex-1 bg-transparent outline-none" />
                 {q && <button type="button" onClick={() => setQ("")} aria-label="Hapus pencarian"><X className="size-3.5 text-muted-foreground" /></button>}
               </label>
               <div className="flex gap-1.5">
                 <div className="flex-1"><Segmented value={show} onChange={(v) => (setShow(v), setPage(0))} items={[{ v: "all", label: "Semua" }, { v: "todo", label: "Belum" }, { v: "done", label: "Sudah" }]} /></div>
-                <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Urutkan" className="h-8 rounded-lg border bg-background px-1.5 text-xs">
+                <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Urutkan" className="h-9 rounded-lg border bg-background px-1.5 text-xs">
                   <option value="new">Terbaru</option>
                   <option value="old">Terlama</option>
                   <option value="az">A–Z</option>
                 </select>
               </div>
+              <div className="flex items-center gap-1 text-[11px]">
+                <span className="flex-1 text-muted-foreground">{queue.length ? <><b className="text-foreground">{queue.length}</b> dipilih</> : "Klik video untuk memilih"}</span>
+                <button type="button" onClick={() => setQueue((qq) => [...qq, ...shown.map((f) => f.rel).filter((r) => !qq.includes(r))])} className="flex h-7 items-center gap-1 rounded-md px-2 hover:bg-accent"><Plus className="size-3" /> Pilih halaman</button>
+                {queue.length > 0 && <button type="button" onClick={() => setQueue([])} className="flex h-7 items-center gap-1 rounded-md px-2 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-3" /> Hapus</button>}
+              </div>
               <div className="no-scrollbar grid min-h-0 flex-1 auto-rows-min grid-cols-3 gap-1.5 overflow-y-auto">
                 {shown.map((f) => {
                   const on = inQueue.has(f.rel);
+                  const n = queue.indexOf(f.rel) + 1;
                   return (
-                    <button key={f.rel} type="button" onClick={() => addOrRemove(f.rel)} title={`${on ? "Keluarkan dari" : "Masukkan ke"} timeline: ${f.name}`} className={`group relative overflow-hidden rounded-md border bg-muted text-left ${on ? "ring-2 ring-sky-500" : ""}`}>
-                      <video src={`${mediaUrl(f.rel)}#t=1`} preload="metadata" muted className="aspect-[9/16] w-full object-cover" />
-                      <span className="absolute inset-x-0 bottom-0 line-clamp-2 bg-gradient-to-t from-black/85 to-transparent p-1 pt-4 text-[9px] leading-tight text-white">{f.name}</span>
-                      <span className={`absolute top-1 left-1 grid size-4 place-items-center rounded text-white ${on ? "bg-sky-500" : "bg-black/50 opacity-0 group-hover:opacity-100"}`}>{on ? <Check className="size-3" /> : <Plus className="size-3" />}</span>
-                      {rendered[f.rel] && <span className="absolute top-1 right-1 rounded bg-status-ok px-1 text-[8px] font-semibold text-white">Sudah</span>}
-                    </button>
+                    <div key={f.rel} className={`group relative overflow-hidden rounded-lg border bg-muted transition-shadow ${on ? "ring-2 ring-primary" : "hover:ring-2 hover:ring-border"} ${f.rel === clip ? "outline-2 outline-offset-2 outline-sky-400" : ""}`}>
+                      <button type="button" onClick={() => pick(f.rel)} title={`${on ? "Batal pilih" : "Pilih"}: ${f.name}`} className="block w-full text-left">
+                        <video src={`${mediaUrl(f.rel)}#t=1`} preload="metadata" muted className="aspect-[9/16] w-full object-cover" />
+                        <span className="absolute inset-x-0 bottom-0 line-clamp-2 bg-gradient-to-t from-black/85 to-transparent p-1.5 pt-5 text-[9px] leading-tight text-white">{f.name}</span>
+                      </button>
+                      <span className={`pointer-events-none absolute top-1 left-1 grid size-5 place-items-center rounded-full text-[10px] font-bold ${on ? "bg-primary text-primary-foreground" : "border border-white/70 bg-black/30 text-white opacity-0 group-hover:opacity-100"}`}>{on ? n : <Plus className="size-3" />}</span>
+                      {rendered[f.rel] && <span className="pointer-events-none absolute top-1 right-1 rounded bg-black/60 px-1 text-[8px] font-semibold text-emerald-300">✓ Sudah</span>}
+                      <button type="button" onClick={() => setActive(f.rel)} title="Lihat di layar" className="absolute right-1 bottom-8 rounded bg-black/60 px-1.5 py-0.5 text-[9px] text-white opacity-0 group-hover:opacity-100">Lihat</button>
+                    </div>
                   );
                 })}
                 {!shown.length && <p className="col-span-3 p-4 text-center text-xs text-muted-foreground">Tidak ada video yang cocok.</p>}
               </div>
               <div className="flex items-center gap-1 text-[11px]">
-                <button type="button" disabled={current === 0} onClick={() => setPage(current - 1)} aria-label="Sebelumnya" className="grid size-7 place-items-center rounded-md border hover:bg-accent disabled:opacity-40"><ChevronLeft className="size-3.5" /></button>
+                <button type="button" disabled={current === 0} onClick={() => setPage(current - 1)} aria-label="Sebelumnya" className="grid size-8 place-items-center rounded-md border hover:bg-accent disabled:opacity-40"><ChevronLeft className="size-4" /></button>
                 <span className="flex-1 text-center tabular-nums text-muted-foreground">Hal {current + 1}/{pages} · {filtered.length} video</span>
-                <button type="button" disabled={current >= pages - 1} onClick={() => setPage(current + 1)} aria-label="Berikutnya" className="grid size-7 place-items-center rounded-md border hover:bg-accent disabled:opacity-40"><ChevronRight className="size-3.5" /></button>
+                <button type="button" disabled={current >= pages - 1} onClick={() => setPage(current + 1)} aria-label="Berikutnya" className="grid size-8 place-items-center rounded-md border hover:bg-accent disabled:opacity-40"><ChevronRight className="size-4" /></button>
               </div>
-              <button type="button" onClick={() => setQueue((qq) => [...qq, ...shown.map((f) => f.rel).filter((r) => !qq.includes(r))])} className="flex h-8 items-center justify-center gap-1 rounded-lg border text-xs hover:bg-accent"><Plus className="size-3.5" /> Masukkan halaman ini ke timeline</button>
             </div>
           )}
           {tab === "game" && (
             <div className="flex min-h-0 flex-1 flex-col gap-2 p-2.5">
               <div className="flex gap-1.5">
-                <button type="button" onClick={() => void openMediaFolder("gameplay")} className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border text-xs hover:bg-accent"><FolderOpen className="size-3.5" /> Folder Gameplay</button>
-                <button type="button" onClick={reload} aria-label="Muat ulang" title="Muat ulang" className="grid size-8 place-items-center rounded-lg border hover:bg-accent"><RefreshCw className="size-3.5" /></button>
+                <button type="button" onClick={() => void openMediaFolder("gameplay")} className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border text-xs hover:bg-accent"><FolderOpen className="size-3.5" /> Folder Gameplay</button>
+                <button type="button" onClick={reload} aria-label="Muat ulang" title="Muat ulang" className="grid size-9 place-items-center rounded-lg border hover:bg-accent"><RefreshCw className="size-3.5" /></button>
               </div>
-              <p className="text-[11px] text-muted-foreground">{games.size ? `${games.size} dipilih` : "Tidak ada yang dipilih = semua dipakai"}</p>
+              <Segmented value={random ? "acak" : "urut"} onChange={(v) => setRandom(v === "acak")} disabled={running} items={[{ v: "acak", label: <><Shuffle className="size-3.5" /> Acak</>, title: "Tiap video dapat gameplay acak" }, { v: "urut", label: "Bergiliran", title: "Gameplay dipakai bergantian sesuai urutan" }]} />
+              <p className="text-[11px] text-muted-foreground">{games.size ? `${games.size} dipilih` : "Belum ada yang dipilih = semua dipakai"}</p>
               <div className="no-scrollbar grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-1.5 overflow-y-auto">
                 {gameplay.map((f) => {
                   const on = games.has(f.rel);
                   return (
-                    <button key={f.rel} type="button" onClick={() => toggleGame(f.rel)} title={f.name} className={`relative overflow-hidden rounded-md border bg-muted text-left ${on ? "ring-2 ring-[#ff3333]" : ""}`}>
+                    <button key={f.rel} type="button" onClick={() => toggleGame(f.rel)} title={f.name} className={`relative overflow-hidden rounded-lg border bg-muted text-left transition-shadow ${on ? "ring-2 ring-primary" : "hover:ring-2 hover:ring-border"}`}>
                       <video src={`${mediaUrl(f.rel)}#t=2`} preload="metadata" muted className="aspect-video w-full object-cover" />
                       <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/85 to-transparent p-1 pt-3 text-[10px] text-white">{f.name}</span>
-                      {on && <span className="absolute top-1 left-1 grid size-4 place-items-center rounded bg-[#ff3333] text-white"><Check className="size-3" /></span>}
+                      {on && <span className="absolute top-1 left-1 grid size-5 place-items-center rounded-full bg-primary text-primary-foreground"><Check className="size-3" /></span>}
                     </button>
                   );
                 })}
                 {!gameplay.length && <p className="col-span-2 p-3 text-center text-xs text-muted-foreground">Taruh video gameplay (mp4) di Folder Gameplay, lalu muat ulang.</p>}
               </div>
-              <Segmented value={random ? "acak" : "urut"} onChange={(v) => setRandom(v === "acak")} disabled={running} items={[{ v: "acak", label: <><Shuffle className="size-3.5" /> Acak</> }, { v: "urut", label: "Bergiliran" }]} />
             </div>
           )}
           {tab === "hasil" && (
             <div className="flex min-h-0 flex-1 flex-col gap-2 p-2.5">
-              <button type="button" onClick={() => void openMediaFolder("results")} className="flex h-8 items-center justify-center gap-1.5 rounded-lg border text-xs hover:bg-accent"><FolderOpen className="size-3.5" /> Buka folder hasil</button>
+              <button type="button" onClick={() => void openMediaFolder("results")} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border text-xs hover:bg-accent"><FolderOpen className="size-3.5" /> Buka folder hasil</button>
               {job?.failed.map((f) => <p key={f} className="text-[11px] text-destructive">{f}</p>)}
               <div className="no-scrollbar grid min-h-0 flex-1 auto-rows-min grid-cols-3 gap-1.5 overflow-y-auto">
                 {results.map((r) => (
-                  <a key={r.rel} href={mediaUrl(r.rel)} target="_blank" rel="noreferrer" title={r.name} className="overflow-hidden rounded-md border bg-muted">
+                  <a key={r.rel} href={mediaUrl(r.rel)} target="_blank" rel="noreferrer" title={r.name} className="overflow-hidden rounded-lg border bg-muted hover:ring-2 hover:ring-border">
                     <video src={`${mediaUrl(r.rel)}#t=1`} preload="metadata" muted className="aspect-[9/16] w-full object-cover" />
                   </a>
                 ))}
@@ -434,64 +446,73 @@ export function VideoEditor({
         </section>
 
         {/* monitor */}
-        <section className={`${card} flex min-h-0 flex-col items-center justify-center gap-2 bg-[#0b0b0b] p-3`}>
-          <div
-            ref={box}
-            onPointerDown={onDown}
-            onPointerMove={onMove}
-            onPointerUp={onUp}
-            className={`relative touch-none overflow-hidden rounded-md bg-black select-none ${cfg.layout === "pip" ? "cursor-pointer" : cfg.layout === "side" ? "cursor-ew-resize" : "cursor-ns-resize"}`}
-            style={{ aspectRatio: `${W} / ${H}`, width: `min(100%, calc(min(520px, 62vh) * ${(W / H).toFixed(4)}))` }}
-          >
-            {preview.url && sampleGame ? (
-              // eslint-disable-next-line @next/next/no-img-element -- generated local preview frame
-              <img src={preview.url} alt="Preview hasil" draggable={false} className="pointer-events-none h-full w-full object-contain" />
-            ) : (
-              <LayoutSketch cfg={cfg} />
-            )}
-            {cfg.layout !== "pip" && (
-              <span className="pointer-events-none absolute" style={cfg.layout === "side" ? { left: `${line}%`, top: 0, bottom: 0 } : { top: `${line}%`, left: 0, right: 0 }}>
-                <span className={`absolute bg-white/90 shadow-[0_0_0_1px_rgba(0,0,0,.35)] ${cfg.layout === "side" ? "inset-y-0 -left-px w-0.5" : "inset-x-0 -top-px h-0.5"}`} />
-                <span className={`absolute grid size-6 place-items-center rounded-full bg-[#ff3333] text-white shadow ${cfg.layout === "side" ? "top-1/2 -left-3 -translate-y-1/2" : "left-1/2 -top-3 -translate-x-1/2"}`}>
-                  {cfg.layout === "side" ? <Columns2 className="size-3.5" /> : <Rows2 className="size-3.5" />}
-                </span>
-              </span>
-            )}
-            {drag != null && <span className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded bg-black/70 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-white tabular-nums">Asli {drag}% · Gameplay {100 - drag}%</span>}
-            {preview.busy && drag == null && <span className="pointer-events-none absolute top-2 right-2"><Loader2 className="size-4 animate-spin text-white" /></span>}
+        <section className="flex min-h-0 flex-col items-center gap-2 rounded-xl border bg-[#0b0b0b] p-3">
+          <div className="flex w-full items-center gap-2 text-[11px] text-white/70">
+            <button type="button" onClick={() => step(-1)} disabled={queue.length < 2} aria-label="Video sebelumnya" className="grid size-7 place-items-center rounded-md hover:bg-white/10 disabled:opacity-30"><ChevronLeft className="size-4" /></button>
+            <span className="min-w-0 flex-1 truncate text-center">
+              {clip ? byRel.get(clip)?.name : "—"}
+              {idx >= 0 && <span className="ml-1.5 text-white/40">({idx + 1}/{queue.length})</span>}
+            </span>
+            <button type="button" onClick={() => step(1)} disabled={queue.length < 2} aria-label="Video berikutnya" className="grid size-7 place-items-center rounded-md hover:bg-white/10 disabled:opacity-30"><ChevronRight className="size-4" /></button>
           </div>
-          <div className="flex w-full max-w-md items-center gap-2 text-[11px] text-white/70">
-            <Eye className="size-3.5 shrink-0" />
+          <div className="flex min-h-0 w-full flex-1 items-center justify-center" style={{ containerType: "size" }}>
+            <div
+              ref={box}
+              onPointerDown={onDown}
+              onPointerMove={onMove}
+              onPointerUp={onUp}
+              className={`relative touch-none overflow-hidden rounded-md bg-black select-none ${cfg.layout === "pip" ? "cursor-pointer" : cfg.layout === "side" ? "cursor-ew-resize" : "cursor-ns-resize"}`}
+              style={{ aspectRatio: `${W} / ${H}`, width: `min(100cqw, calc(100cqh * ${(W / H).toFixed(4)}))` }}
+            >
+              {preview.url && sampleGame ? (
+                // eslint-disable-next-line @next/next/no-img-element -- generated local preview frame
+                <img src={preview.url} alt="Preview hasil" draggable={false} className="pointer-events-none h-full w-full object-contain" />
+              ) : (
+                <LayoutSketch cfg={cfg} />
+              )}
+              {cfg.layout !== "pip" && (
+                <span className="pointer-events-none absolute" style={cfg.layout === "side" ? { left: `${line}%`, top: 0, bottom: 0 } : { top: `${line}%`, left: 0, right: 0 }}>
+                  <span className={`absolute bg-white/90 shadow-[0_0_0_1px_rgba(0,0,0,.35)] ${cfg.layout === "side" ? "inset-y-0 -left-px w-0.5" : "inset-x-0 -top-px h-0.5"}`} />
+                  <span className={`absolute grid size-7 place-items-center rounded-full border-2 border-white bg-primary text-primary-foreground shadow-lg ${cfg.layout === "side" ? "top-1/2 -left-3.5 -translate-y-1/2" : "left-1/2 -top-3.5 -translate-x-1/2"}`}>
+                    {cfg.layout === "side" ? <Columns2 className="size-3.5" /> : <Rows2 className="size-3.5" />}
+                  </span>
+                </span>
+              )}
+              {drag != null && <span className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded bg-black/70 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-white tabular-nums">Asli {drag}% · Gameplay {100 - drag}%</span>}
+              {preview.busy && drag == null && <span className="pointer-events-none absolute top-2 right-2 grid size-7 place-items-center rounded-full bg-black/60"><Loader2 className="size-4 animate-spin text-white" /></span>}
+            </div>
+          </div>
+          <div className="flex w-full max-w-lg items-center gap-2 text-[11px] text-white/70">
+            <Timer className="size-3.5 shrink-0" />
             <span className="w-9 tabular-nums">{fmt(at)}</span>
-            <input type="range" aria-label="Waktu preview" min={0} max={Math.max(1, Math.floor(clipLen) - 1)} step={1} value={Math.min(at, Math.max(1, Math.floor(clipLen) - 1))} onChange={(e) => setAt(Number(e.target.value))} className="h-1 flex-1 cursor-pointer accent-[#ff3333]" />
+            <input type="range" aria-label="Waktu preview" min={0} max={Math.max(1, Math.floor(clipLen) - 1)} step={1} value={Math.min(at, Math.max(1, Math.floor(clipLen) - 1))} onChange={(e) => setAt(Number(e.target.value))} className="h-1 flex-1 cursor-pointer accent-primary" />
             <span className="w-9 text-right tabular-nums">{fmt(clipLen)}</span>
           </div>
-          <p className="text-center text-[11px] text-white/60">
-            {preview.error ? <span className="text-red-400">{preview.error}</span> : cfg.layout === "pip" ? "Klik pojok di layar untuk memindah video kecil" : "Geser garis merah di layar untuk mengatur porsi"}
+          <p className="text-center text-[11px] text-white/50">
+            {preview.error ? <span className="text-red-400">{preview.error}</span> : cfg.layout === "pip" ? "Klik pojok di layar untuk memindah video kecil" : "Geser garis di layar untuk mengatur porsi"}
           </p>
         </section>
 
-        {/* inspector */}
+        {/* settings */}
         <section className={`${card} no-scrollbar min-h-0 overflow-y-auto`}>
-          <p className="border-b px-3 py-2.5 text-[13px] font-semibold">Inspektor</p>
           {cfg.layout === "pip" ? (
-            <Section icon={PictureInPicture2} color="#8b5cf6" title="Reaction" value={`kecil ${cfg.pipSize}%`}>
+            <Section icon={PictureInPicture2} tone="bg-violet-500/15 text-violet-500" title="Reaction" value={`kecil ${cfg.pipSize}%`}>
               <Segmented value={cfg.pipMain} onChange={(v) => set("pipMain", v)} disabled={running} items={[{ v: "original", label: "Asli penuh" }, { v: "game", label: "Gameplay penuh" }]} />
               <Slider label="Ukuran video kecil" value={cfg.pipSize} min={PIP_RANGE[0]} max={PIP_RANGE[1]} onChange={(v) => set("pipSize", v)} disabled={running} />
               <div className="grid grid-cols-4 gap-1">
                 {([["tl", "Kiri atas"], ["tr", "Kanan atas"], ["bl", "Kiri bawah"], ["br", "Kanan bawah"]] as [Corner, string][]).map(([c, label]) => (
-                  <button key={c} type="button" title={label} aria-label={label} aria-pressed={cfg.pipCorner === c} onClick={() => set("pipCorner", c)} disabled={running} className={`relative h-8 rounded-md border ${cfg.pipCorner === c ? "border-[#ff3333] bg-[#ff3333]/10" : "hover:bg-accent"}`}>
-                    <span className={`absolute size-2.5 rounded-sm ${cfg.pipCorner === c ? "bg-[#ff3333]" : "bg-muted-foreground/50"} ${c[0] === "t" ? "top-1" : "bottom-1"} ${c[1] === "l" ? "left-1.5" : "right-1.5"}`} />
+                  <button key={c} type="button" title={label} aria-label={label} aria-pressed={cfg.pipCorner === c} onClick={() => set("pipCorner", c)} disabled={running} className={`relative h-9 rounded-md border ${cfg.pipCorner === c ? ON : "hover:bg-accent"}`}>
+                    <span className={`absolute size-2.5 rounded-sm ${cfg.pipCorner === c ? "bg-primary" : "bg-muted-foreground/50"} ${c[0] === "t" ? "top-1" : "bottom-1"} ${c[1] === "l" ? "left-1.5" : "right-1.5"}`} />
                   </button>
                 ))}
               </div>
             </Section>
           ) : (
-            <Section icon={Ratio} color="#8b5cf6" title="Porsi asli : gameplay" value={`${cfg.ratio} : ${100 - cfg.ratio}`}>
+            <Section icon={Ratio} tone="bg-violet-500/15 text-violet-500" title="Porsi asli : gameplay" value={`${cfg.ratio} : ${100 - cfg.ratio}`}>
               <Slider label="Porsi video asli" value={cfg.ratio} min={RATIO_RANGE[0]} max={RATIO_RANGE[1]} onChange={(v) => set("ratio", v)} disabled={running} />
               <div className="flex gap-1">
                 {[50, 60, 70].map((r) => (
-                  <button key={r} type="button" onClick={() => set("ratio", r)} disabled={running} className={`h-6 flex-1 rounded-md text-[11px] tabular-nums ${cfg.ratio === r ? "bg-[#ff3333] font-semibold text-white" : "bg-muted text-muted-foreground hover:text-foreground"}`}>{r} : {100 - r}</button>
+                  <button key={r} type="button" onClick={() => set("ratio", r)} disabled={running} className={`h-7 flex-1 rounded-md border text-[11px] tabular-nums ${cfg.ratio === r ? ON : "border-transparent bg-muted text-muted-foreground hover:text-foreground"}`}>{r} : {100 - r}</button>
                 ))}
               </div>
               <Row icon={Blend} label="Garis tengah">
@@ -499,7 +520,7 @@ export function VideoEditor({
               </Row>
             </Section>
           )}
-          <Section icon={Crop} color="#f59e0b" title="Tampilan">
+          <Section icon={Crop} tone="bg-amber-500/15 text-amber-500" title="Tampilan">
             {([["fitOriginal", "Video asli", Video], ["fitGame", "Gameplay", Gamepad2]] as const).map(([k, label, Icon]) => (
               <Row key={k} icon={Icon} label={label}>
                 <Segmented value={cfg[k]} onChange={(v: Fit) => set(k, v)} disabled={running} items={[{ v: "cover", label: "Penuh", title: "Memenuhi bagiannya, tepi terpotong" }, { v: "contain", label: "Utuh", title: "Tidak terpotong, sisanya diisi warna latar" }]} />
@@ -508,114 +529,36 @@ export function VideoEditor({
             <Row icon={Palette} label="Latar">
               <div className="grid grid-cols-3 gap-1">
                 {([["blur", "Blur", "linear-gradient(135deg,#94a3b8,#475569)"], ["black", "Hitam", "#000"], ["white", "Putih", "#fff"]] as [Fill, string, string][]).map(([v, label, bg]) => (
-                  <button key={v} type="button" onClick={() => set("fill", v)} disabled={running} aria-pressed={cfg.fill === v} className={`flex h-7 items-center justify-center gap-1 rounded-md border text-[11px] font-medium disabled:opacity-50 ${cfg.fill === v ? "border-[#ff3333] bg-[#ff3333]/10 text-[#ff3333]" : "hover:bg-accent"}`}>
+                  <button key={v} type="button" onClick={() => set("fill", v)} disabled={running} aria-pressed={cfg.fill === v} className={`flex h-8 items-center justify-center gap-1 rounded-md border text-[11px] font-medium disabled:opacity-50 ${cfg.fill === v ? ON : "hover:bg-accent"}`}>
                     <span className="size-3 rounded-full border" style={{ background: bg }} /> {label}
                   </button>
                 ))}
               </div>
             </Row>
           </Section>
-          <Section icon={FlipHorizontal2} color="#f97316" title="Cermin / balik">
+          <Section icon={FlipHorizontal2} tone="bg-sky-500/15 text-sky-500" title="Cermin / balik">
             {([["flipOriginal", "Video asli", Video], ["flipGame", "Gameplay", Gamepad2]] as const).map(([k, label, Icon]) => (
               <Row key={k} icon={Icon} label={label}>
                 <Segmented value={cfg[k]} onChange={(v: Flip) => set(k, v)} disabled={running} items={FLIPS} />
               </Row>
             ))}
           </Section>
-          <Section icon={Volume2} color="#06b6d4" title="Suara">
-            {([["volOriginal", "Video asli", Video, 150], ["volGame", "Gameplay", Gamepad2, 100]] as const).map(([k, label, Icon, max]) => (
+          <Section icon={Volume2} tone="bg-emerald-500/15 text-emerald-500" title="Suara">
+            {([["volOriginal", "Video asli", Video, 150, 100], ["volGame", "Gameplay", Gamepad2, 100, 40]] as const).map(([k, label, Icon, max, unmute]) => (
               <Row key={k} icon={Icon} label={label}>
                 <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => set(k, cfg[k] ? 0 : unmute)} disabled={running} title={cfg[k] ? "Bisukan" : "Nyalakan"} className="grid size-7 shrink-0 place-items-center rounded-md hover:bg-accent">
+                    {cfg[k] ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5 text-muted-foreground" />}
+                  </button>
                   <Slider label={`Volume ${label}`} value={cfg[k]} min={0} max={max} onChange={(v) => set(k, v)} disabled={running} />
-                  <span className="flex w-9 shrink-0 justify-end text-[11px] tabular-nums">{cfg[k] ? `${cfg[k]}%` : <VolumeX className="size-3.5 text-muted-foreground" />}</span>
+                  <span className="w-9 shrink-0 text-right text-[11px] tabular-nums">{cfg[k]}%</span>
                 </div>
               </Row>
             ))}
           </Section>
-          <p className="px-3 py-2.5 text-[11px] text-muted-foreground">Metadata hasil dirapikan (judul & tanggal). Konfigurasi tersimpan otomatis.</p>
+          <p className="px-4 py-3 text-[11px] text-muted-foreground">Metadata hasil dirapikan (judul & tanggal). Semua setelan tersimpan otomatis.</p>
         </section>
       </div>
-
-      {/* ── timeline ────────────────────────────────────────────────────────────────────────────────────────────── */}
-      <section className={`${card} overflow-hidden`}>
-        <div className="flex items-center gap-2 border-b px-3 py-2 text-xs">
-          <span className="font-semibold">Timeline</span>
-          <span className="text-muted-foreground">tiap klip = 1 video hasil · klik klip untuk lihat di layar</span>
-          {queue.length > 0 && <button type="button" onClick={() => setQueue([])} className="ml-auto flex h-7 items-center gap-1 rounded-md px-2 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-3.5" /> Kosongkan</button>}
-        </div>
-        {queue.length ? (
-          <div className="no-scrollbar overflow-x-auto">
-            <div className="min-w-max">
-              {(
-                [
-                  { id: "v1", label: "Video asli", icon: Video, color: "#0ea5e9", vol: null },
-                  { id: "v2", label: "Gameplay", icon: Gamepad2, color: RED, vol: null },
-                  { id: "a1", label: "Suara asli", icon: Music, color: "#0ea5e9", vol: "volOriginal" as const },
-                  { id: "a2", label: "Suara game", icon: Music, color: RED, vol: "volGame" as const },
-                ] as const
-              ).map((tr) => (
-                <div key={tr.id} className="flex border-b last:border-0">
-                  {/* track header (sticky): name + mute */}
-                  <div className="sticky left-0 z-10 flex w-36 shrink-0 items-center gap-1.5 border-r bg-card px-2.5 text-[11px] font-medium">
-                    <tr.icon className="size-3.5" style={{ color: tr.color }} /> {tr.label}
-                    {tr.vol && (
-                      <button type="button" onClick={() => set(tr.vol!, cfg[tr.vol!] ? 0 : tr.vol === "volOriginal" ? 100 : 40)} disabled={running} title={cfg[tr.vol] ? "Bisukan" : "Nyalakan"} className="ml-auto grid size-6 place-items-center rounded hover:bg-accent">
-                        {cfg[tr.vol] ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5 text-destructive" />}
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex gap-1 p-1.5">
-                    {queue.map((rel, i) => {
-                      const f = byRel.get(rel);
-                      const len = lengths[rel] ?? 0;
-                      const w = 90 + Math.round((len / maxLen) * 150);
-                      const on = rel === clip;
-                      const g = gameFor(i);
-                      const muted = tr.vol ? !cfg[tr.vol] : false;
-                      return (
-                        <button
-                          key={rel}
-                          type="button"
-                          onClick={() => (setActive(rel), setAt(Math.min(at, Math.max(1, Math.floor(len) - 1))))}
-                          className={`group relative flex h-10 shrink-0 items-center gap-1.5 overflow-hidden rounded-md px-2 text-left text-[10px] text-white ${on ? "ring-2 ring-white" : ""} ${muted ? "opacity-35" : ""}`}
-                          style={{ width: w, background: tr.id === "v1" || tr.id === "a1" ? "#0369a1" : "#b91c1c" }}
-                          title={f?.name}
-                        >
-                          {tr.id === "v1" && <video src={`${mediaUrl(rel)}#t=1`} preload="metadata" muted className="h-8 w-[18px] shrink-0 rounded-sm object-cover" />}
-                          {tr.id.startsWith("a") && <span className="flex h-6 flex-1 items-center gap-px opacity-70">{Array.from({ length: 18 }, (_, k) => <span key={k} className="w-0.5 flex-1 rounded-full bg-white" style={{ height: `${25 + ((k * 37 + i * 11) % 70)}%` }} />)}</span>}
-                          {(tr.id === "v1" || tr.id === "v2") && (
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate font-medium">{tr.id === "v1" ? f?.name : g ? g.name : random ? "Acak" : "—"}</span>
-                              <span className="block tabular-nums opacity-80">{len ? fmt(len) : "…"}</span>
-                            </span>
-                          )}
-                          {tr.id === "v1" && (
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              aria-label="Keluarkan dari timeline"
-                              onClick={(e) => (e.stopPropagation(), setQueue((qq) => qq.filter((x) => x !== rel)))}
-                              onKeyDown={(e) => e.key === "Enter" && setQueue((qq) => qq.filter((x) => x !== rel))}
-                              className="absolute top-0.5 right-0.5 grid size-4 place-items-center rounded bg-black/50 opacity-0 group-hover:opacity-100"
-                            >
-                              <X className="size-3" />
-                            </span>
-                          )}
-                          {tr.id === "v1" && rendered[rel] && <span className="absolute bottom-0.5 right-1 text-[8px] font-semibold text-emerald-300">✓</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center gap-2 p-6 text-xs text-muted-foreground">
-            <Plus className="size-4" /> Klik video di panel <b className="text-foreground">Video asli</b> untuk memasukkannya ke timeline.
-          </div>
-        )}
-      </section>
     </div>
   );
 }
