@@ -3,7 +3,7 @@
 import { spawn } from "node:child_process";
 import { z } from "zod";
 import { resolveMedia } from "@/lib/media";
-import { downloadJob, listChannelShorts, startDownload, updateYtdlp } from "@/lib/youtube";
+import { cancelDownload, downloadJob, listChannelShorts, startDownload, updateYtdlp } from "@/lib/youtube";
 
 // Errors come back as { error } so the page can show the message (thrown server-action errors are hidden in production).
 const safe = async <T,>(f: () => Promise<T>) => {
@@ -16,8 +16,19 @@ const safe = async <T,>(f: () => Promise<T>) => {
 
 export const readChannel = async (input: string) => safe(() => listChannelShorts(z.string().max(300).parse(input)));
 
-export const downloadShorts = async (handle: string, ids: string[]) =>
-  safe(() => startDownload({ handle: z.string().max(120).parse(handle), ids: z.array(z.string().regex(/^[\w-]{6,20}$/)).max(5000).parse(ids) }));
+const Options = z.object({
+  quality: z.enum(["best", "1080", "720", "480"]),
+  format: z.enum(["video", "audio"]),
+  thumbnail: z.boolean(),
+  description: z.boolean(),
+});
+
+export const downloadShorts = async (handle: string, ids: string[], options: z.input<typeof Options>) =>
+  safe(() =>
+    startDownload({ handle: z.string().max(120).parse(handle), ids: z.array(z.string().regex(/^[\w-]{6,20}$/)).max(5000).parse(ids), options: Options.parse(options) }),
+  );
+
+export const stopDownload = async () => cancelDownload();
 
 export const downloadStatus = async () => downloadJob();
 

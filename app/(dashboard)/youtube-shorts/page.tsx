@@ -1,14 +1,14 @@
 import { PageHeader } from "@/components/page-header";
-import { downloadJob } from "@/lib/youtube";
+import { downloadHistory, downloadJob } from "@/lib/youtube";
 import { ShortsDownloader } from "./downloader";
 
 export const dynamic = "force-dynamic";
 
-export default function YouTubePage() {
+export default function YouTubeShortsPage() {
   return (
     <>
       <PageHeader slug="youtube-shorts" />
-      <ShortsDownloader initialJob={downloadJob()} />
+      <ShortsDownloader initialJob={downloadJob()} history={downloadHistory()} />
     </>
   );
 }
