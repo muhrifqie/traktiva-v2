@@ -354,16 +354,11 @@ export default async function YouTubePerformaPage({ searchParams }: PageProps<"/
   return (
     <>
       <PageHeader slug="youtube-performa">
+        {one?.cache && <YouTubeSyncButton accountId={one.a.id} name={one.a.displayName || one.a.username} />}
         <ChannelSelect
           current={one ? one.a.id : "all"}
           channels={channels.map((c) => ({ id: c.a.id, name: c.a.displayName || c.a.username, handle: c.a.username, avatarUrl: c.a.avatarUrl, status: c.a.status, synced: !!c.cache }))}
         />
-        {one?.cache && (
-          <>
-            <span className="text-xs text-muted-foreground">Data {timeFmt.format(one.cache.capturedAt)}</span>
-            <YouTubeSyncButton accountId={one.a.id} name={one.a.displayName || one.a.username} />
-          </>
-        )}
       </PageHeader>
       <AutoSync ids={missing} />
       {one ? <OneChannel c={one} /> : <AllChannels list={channels} />}
