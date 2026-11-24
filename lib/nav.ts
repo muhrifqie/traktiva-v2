@@ -21,9 +21,9 @@ export const NAV = [
   { slug: "tiktok-shop", title: "Akun TikTok", short: "TikTok", icon: LayoutDashboard, group: "Platform", platform: "tiktok", color: "#ff3b6b", desc: "Akun TikTok yang sudah login. Klik akun untuk melihat profil dan etalasenya." },
   { slug: "profil", title: "Profil TikTok", icon: UserCircle, group: "Platform", platform: "tiktok", color: "#ff3b6b", desc: "Profil, poin akun, dan performa postingan akun ini.", sidebar: false },
   { slug: "showcase", title: "Etalase TikTok", icon: Store, group: "Platform", platform: "tiktok", color: "#4cb782", desc: "Etalase produk affiliate akun ini, sinkron otomatis dari TikTok Shop.", sidebar: false },
-  // YouTube: 1 Performa, 2 Channel, 3 Unduh Shorts
-  { slug: "youtube-performa", title: "Performa YouTube", short: "YouTube", icon: ChartNoAxesColumn, group: "Platform", platform: "youtube", color: "#ff3333", desc: "Semua video & Shorts, Insight 28 hari, dan progres monetisasi dari YouTube Studio." },
-  { slug: "youtube", title: "Channel YouTube", icon: LayoutDashboard, group: "Platform", platform: "youtube", color: "#ff3333", desc: "Channel YouTube yang tersambung, sesi login, dan pengaturan upload.", sidebar: false },
+  // YouTube: 1 Channel, 2 Performa, 3 Unduh Shorts
+  { slug: "youtube", title: "Channel YouTube", short: "YouTube", icon: LayoutDashboard, group: "Platform", platform: "youtube", color: "#ff3333", desc: "Channel YouTube yang tersambung, sesi login, dan pengaturan upload." },
+  { slug: "youtube-performa", title: "Performa YouTube", icon: ChartNoAxesColumn, group: "Platform", platform: "youtube", color: "#ff3333", desc: "Semua video & Shorts, Insight 28 hari, dan progres monetisasi dari YouTube Studio.", sidebar: false },
   { slug: "youtube-shorts", title: "Unduh Shorts YouTube", icon: Download, group: "Platform", platform: "youtube", color: "#ff3333", desc: "Unduh semua Shorts dari satu channel YouTube ke folder video kamu.", sidebar: false },
   { slug: "akun", title: "Akun Sosial", icon: Users, group: "Platform", color: "#26b5ce", desc: "Sambungkan dan kelola akun TikTok, YouTube, Instagram, Facebook, dan Shopee.", sidebar: false }, // "Tambah akun" on the platform pages
   // platforms not live yet: placeholder pages until they are built (status follows the website roadmap)
@@ -46,5 +46,5 @@ export const navColor = (item: NavItem) => ("color" in item ? item.color : undef
 /** A live platform's home in the sidebar (its other pages are tabs of it). */
 export const PLATFORM_HOME: Record<string, { slug: string; label: string }> = {
   tiktok: { slug: "tiktok-shop", label: "TikTok" },
-  youtube: { slug: "youtube-performa", label: "YouTube" },
+  youtube: { slug: "youtube", label: "YouTube" },
 };
