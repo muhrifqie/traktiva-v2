@@ -3,20 +3,22 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
+import { PlatformIcon } from "@/components/platform-icon";
 import { UserCard, type UserInfo } from "@/components/user-card";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, useSidebar,
 } from "@/components/ui/sidebar";
-import { NAV, NAV_GROUPS, PERFORMA_PAGES, type NavCounts, type NavItem } from "@/lib/nav";
+import { NAV, NAV_GROUPS, PLATFORM_HOME, navBySlug, type NavCounts, type NavItem } from "@/lib/nav";
 
 type Group = (typeof NAV_GROUPS)[number];
 /**
- * One flat list, no sub-menus: what every seller does first (Beranda, Video Saya, Jadwal Posting), then "Lainnya";
- * Pengaturan sits at the bottom next to the user card. Accounts and platform pages are reached from Akun dan Performa.
+ * One flat list, no sub-menus: what every seller does first (Beranda, Video Saya, Jadwal Posting), one entry per live
+ * platform (its pages are numbered tabs inside it), then "Lainnya"; Pengaturan sits at the bottom next to the user card.
  */
 const SECTIONS: { label: string | null; groups: Group[] }[] = [
   { label: null, groups: ["Utama"] },
+  { label: "Platform", groups: ["Platform"] },
   { label: "Lainnya", groups: ["Lainnya"] },
   { label: null, groups: ["Pengaturan"] },
 ];
@@ -26,8 +28,9 @@ const owner = (pathname: string) => {
   const first = pathname.split("/")[1] ?? "";
   if (/^\/video\/\d+/.test(pathname)) return "proyek"; // the Studio belongs to Video Saya
   if (first === "galeri-video") return "galeri";
-  if (PERFORMA_PAGES.includes(first)) return "performa";
-  return first;
+  const item = navBySlug(first);
+  const platform = item && "platform" in item ? PLATFORM_HOME[item.platform] : undefined; // a platform's tab → its home
+  return platform?.slug ?? first;
 };
 
 const visible = (groups: readonly Group[]) => NAV.filter((n) => groups.includes(n.group) && !("sidebar" in n && n.sidebar === false));
@@ -42,13 +45,17 @@ function NavItems({ items, counts, rail }: { items: readonly NavItem[]; counts: 
           <SidebarMenuItem key={item.slug}>
             <SidebarMenuButton
               isActive={here === item.slug}
-              className={`h-9 gap-3 text-[13.5px] text-sidebar-foreground/80 data-active:font-medium data-active:text-sidebar-foreground ${rail ? "justify-center px-0" : "px-2.5"}`}
+              className={`h-9 gap-3 text-[13.5px] text-sidebar-foreground/80 data-active:font-medium data-active:text-sidebar-foreground ${rail ? "justify-center px-0" : "px-2.5"} ${"status" in item ? "text-sidebar-foreground/55" : ""}`}
               render={<Link href={`/${item.slug}`} title={rail ? item.title : undefined} aria-label={item.title} />}
             >
-              <item.icon className="size-[18px] shrink-0 text-black dark:text-white" />
+              {"platform" in item ? <PlatformIcon platform={item.platform} className={`size-[18px] shrink-0 ${"status" in item ? "opacity-60" : ""}`} /> : <item.icon className="size-[18px] shrink-0 text-black dark:text-white" />}
               {!rail && <span className="truncate">{label}</span>}
             </SidebarMenuButton>
-            {!rail && !!counts[item.slug] && (
+            {/* a platform still being built */}
+            {!rail && "status" in item && (
+              <SidebarMenuBadge className="top-2 rounded bg-amber-500/12 px-1.5 text-[10px] text-amber-600 dark:text-amber-300">{item.status}</SidebarMenuBadge>
+            )}
+            {!rail && !("status" in item) && !!counts[item.slug] && (
               <SidebarMenuBadge className="top-2 rounded-full bg-sidebar-accent px-1.5 text-[11px] tabular-nums text-muted-foreground">{counts[item.slug]}</SidebarMenuBadge>
             )}
           </SidebarMenuItem>

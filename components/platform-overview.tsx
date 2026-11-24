@@ -35,7 +35,7 @@ type CardAccount = { id: number; username: string; displayName: string | null; a
 
 /** One account/channel: who, login state, six numbers, an optional warning, and its actions. */
 export function AccountOverviewCard({
-  a, stats, warning, actions, loginHref, note,
+  a, stats, warning, actions, loginHref, note, href,
 }: {
   a: CardAccount;
   stats: { icon: LucideIcon; label: string; value: string | number }[];
@@ -43,16 +43,29 @@ export function AccountOverviewCard({
   actions: CardAction[];
   loginHref: string; // where "Perlu login" leads
   note?: string; // small line under the numbers (e.g. when the data was refreshed)
+  href?: string; // the account's own page: avatar and name open it
 }) {
   const handle = a.username.includes("@") ? a.username : `@${a.username}`;
   return (
     <section className="flex flex-col gap-3 rounded-xl border bg-card p-4 transition-colors hover:border-ring/30">
       <header className="flex items-center gap-3">
-        <AccountAvatar a={a} size="size-11" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{a.displayName || handle}</p>
-          <p className="truncate text-xs text-muted-foreground">{handle}</p>
-        </div>
+        {href ? (
+          <Link href={href} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg hover:opacity-80">
+            <AccountAvatar a={a} size="size-11" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold">{a.displayName || handle}</span>
+              <span className="block truncate text-xs text-muted-foreground">{handle}</span>
+            </span>
+          </Link>
+        ) : (
+          <>
+            <AccountAvatar a={a} size="size-11" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold">{a.displayName || handle}</p>
+              <p className="truncate text-xs text-muted-foreground">{handle}</p>
+            </div>
+          </>
+        )}
         {a.status === "active" ? (
           <span className="rounded-full bg-status-ok/10 px-2 py-0.5 text-[11px] font-medium text-status-ok">Login</span>
         ) : (

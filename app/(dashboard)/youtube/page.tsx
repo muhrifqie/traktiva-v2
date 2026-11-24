@@ -3,6 +3,7 @@ import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { CalendarClock, ChartNoAxesColumn, ChevronRight, Clock, Download, Eye, Film, Layers, MonitorPlay, Repeat, Users } from "lucide-react";
 import { AccountOverviewCard, OverviewEmpty, OverviewTiles } from "@/components/platform-overview";
 import { PageHeader } from "@/components/page-header";
+import { YouTubeTabs } from "@/components/platform-tabs";
 import { PlatformIcon } from "@/components/platform-icon";
 import { db } from "@/lib/db";
 import { accounts, uploadJobs } from "@/lib/db/schema";
@@ -40,6 +41,7 @@ export default async function YouTubePage() {
   return (
     <>
       <PageHeader slug="youtube">{list.length > 0 && <YouTubeConnectButton label="Tambah channel" />}</PageHeader>
+      <YouTubeTabs current="channel" />
 
       {list.length === 0 ? (
         <OverviewEmpty icon={<PlatformIcon platform="youtube" className="size-7" />} title="Belum ada channel YouTube" text="Login sekali di jendela Chrome yang terbuka; sesinya disimpan di profil browser khusus channel itu.">

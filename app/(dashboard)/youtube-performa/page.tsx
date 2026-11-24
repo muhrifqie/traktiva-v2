@@ -3,6 +3,7 @@ import { asc, desc, eq, inArray } from "drizzle-orm";
 import { BadgeDollarSign, ChevronRight, Clock, Compass, ExternalLink, Eye, Film, Flame, Heart, Layers, Loader2, Repeat, UserPlus, Users, UsersRound, Zap, type LucideIcon } from "lucide-react";
 import { AccountAvatar } from "@/components/account-avatar";
 import { PageHeader } from "@/components/page-header";
+import { YouTubeTabs } from "@/components/platform-tabs";
 import { PlatformIcon } from "@/components/platform-icon";
 import { db } from "@/lib/db";
 import { accountPosts, accounts, type Account } from "@/lib/db/schema";
@@ -488,6 +489,7 @@ export default async function YouTubePerformaPage({ searchParams }: PageProps<"/
     return (
       <>
         <PageHeader slug="youtube-performa" />
+        <YouTubeTabs current="performa" />
         <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-10 text-center">
           <PlatformIcon platform="youtube" className="size-7" />
           <p className="text-sm font-medium">Belum ada channel YouTube</p>
@@ -523,6 +525,7 @@ export default async function YouTubePerformaPage({ searchParams }: PageProps<"/
           channels={channels.map((c) => ({ id: c.a.id, name: c.a.displayName || c.a.username, handle: c.a.username, avatarUrl: c.a.avatarUrl, status: c.a.status, synced: !!c.cache }))}
         />
       </PageHeader>
+      <YouTubeTabs current="performa" />
       <AutoSync ids={missing} />
       {one ? <OneChannel c={one} /> : <AllChannels list={channels} />}
     </>

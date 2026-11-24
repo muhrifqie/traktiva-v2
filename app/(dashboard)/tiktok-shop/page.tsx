@@ -19,8 +19,8 @@ const timeFmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short
 const HEALTH = { rest: "Perlu istirahat: views turun tajam", drop: "Views turun dari minggu lalu", rare: "Jarang posting minggu ini" } as const;
 const COLOR = PLATFORM.tiktok.color;
 
-// TikTok Shop → Ringkasan (also the group button): every account side by side, each linking into its own Etalase,
-// Performa and Jadwal (?akun=<id>). Same layout as YouTube → Ringkasan (components/platform-overview.tsx).
+// TikTok (sidebar → Platform): every logged-in account as a card; the account opens its own pages, 1 Profil and
+// 2 Etalase (?akun=<id>, components/platform-tabs.tsx), plus Jadwalkan. Same layout as YouTube → Ringkasan (components/platform-overview.tsx).
 export default async function TikTokShopPage() {
   const list = await db.select().from(accounts).where(eq(accounts.platform, "tiktok")).orderBy(accounts.username);
   const ids = list.map((a) => a.id);
@@ -78,6 +78,7 @@ export default async function TikTokShopPage() {
                     key={a.id}
                     a={a}
                     loginHref="/akun?platform=tiktok"
+                    href={`/profil?akun=${a.id}`}
                     stats={[
                       { icon: Users, label: "Pengikut", value: s ? num.format(s.followers) : "—" },
                       { icon: Store, label: "Etalase", value: by(products, a.id) },
@@ -89,8 +90,8 @@ export default async function TikTokShopPage() {
                     note={s ? `Diperbarui ${timeFmt.format(s.capturedAt)} WIB` : "Belum disinkron"}
                     warning={h && h.status in HEALTH ? HEALTH[h.status as keyof typeof HEALTH] : undefined}
                     actions={[
+                      { href: `/profil?akun=${a.id}`, label: "Profil", icon: ChartNoAxesColumn },
                       { href: `/showcase?akun=${a.id}`, label: "Etalase", icon: Store },
-                      { href: `/profil?akun=${a.id}`, label: "Performa", icon: ChartNoAxesColumn },
                       { href: `/jadwal?tampilan=daftar&akun=${a.id}`, label: "Jadwalkan", icon: CalendarClock, primary: true },
                     ]}
                   />
