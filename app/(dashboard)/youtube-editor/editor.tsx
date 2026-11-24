@@ -5,11 +5,12 @@ import Link from "next/link";
 import { Check, CheckCheck, Columns2, FolderOpen, Gamepad2, Loader2, Play, RefreshCw, Rows2, Shuffle, Square, Video, X } from "lucide-react";
 import { toast } from "sonner";
 import { mediaUrl } from "@/lib/media-url";
-import type { EditorJob, Layout, SourceFile } from "@/lib/youtube-editor";
-import { openMediaFolder, refreshLists, renderStatus, renderVideos, stopRender } from "./actions";
+import type { EditorJob, SourceFile } from "@/lib/youtube-editor";
+import { DEFAULT_SETTINGS, SIZES, type EditorSettings, type Fit, type Size } from "@/lib/youtube-editor-config";
+import { openMediaFolder, previewFrame, refreshLists, renderStatus, renderVideos, stopRender } from "./actions";
 
-const KEY = "trk-yt-editor"; // picks, layout and gameplay mode survive a refresh or an app restart
-type Saved = { channel: string; picked: string[]; games: string[]; layout: Layout; random: boolean };
+const KEY = "trk-yt-editor"; // picks, settings and gameplay mode survive a refresh or an app restart
+type Saved = { channel: string; picked: string[]; games: string[]; cfg?: EditorSettings; random: boolean };
 
 function Segmented<T extends string>({ value, onChange, items, disabled }: { value: T; onChange: (v: T) => void; items: { v: T; label: React.ReactNode }[]; disabled?: boolean }) {
   return (
@@ -23,26 +24,30 @@ function Segmented<T extends string>({ value, onChange, items, disabled }: { val
   );
 }
 
-/** The frame being made, drawn small: which half holds which video. */
-function LayoutPreview({ layout }: { layout: Layout }) {
-  const half = "grid place-items-center text-[10px] font-medium";
+/** The frame being made, drawn small (until a real preview frame is ready): which part holds which video. */
+function LayoutSketch({ cfg }: { cfg: EditorSettings }) {
+  const [w, h] = cfg.size.split("x").map(Number);
+  const part = "grid place-items-center text-[10px] font-medium";
+  const track = `${cfg.ratio}fr ${100 - cfg.ratio}fr`;
   return (
-    <div className={`mx-auto grid aspect-[9/16] w-28 overflow-hidden rounded-lg border ${layout === "side" ? "grid-cols-2" : "grid-rows-2"}`}>
-      <span className={`${half} bg-sky-500/20 text-sky-700 dark:text-sky-300`}><Video className="mb-0.5 size-4" />Asli</span>
-      <span className={`${half} bg-[#ff3333]/15 text-[#ff3333]`}><Gamepad2 className="mb-0.5 size-4" />Gameplay</span>
+    <div className="grid h-full w-full overflow-hidden" style={{ aspectRatio: `${w} / ${h}`, ...(cfg.layout === "side" ? { gridTemplateColumns: track } : { gridTemplateRows: track }) }}>
+      <span className={`${part} bg-sky-500/20 text-sky-700 dark:text-sky-300`}><Video className="mb-0.5 size-4" />Asli</span>
+      <span className={`${part} bg-[#ff3333]/15 text-[#ff3333]`}><Gamepad2 className="mb-0.5 size-4" />Gameplay</span>
     </div>
   );
 }
 
-// Pick downloaded Shorts (left) + gameplay clips, choose the layout, render: one 1080×1920 Short per original.
+// Pick downloaded Shorts + gameplay clips, set size/layout/share/fit (with a real preview frame), render one video each.
 export function VideoEditor({ originals, initialGameplay, initialResults, initialJob }: { originals: { channel: string; files: SourceFile[] }[]; initialGameplay: SourceFile[]; initialResults: SourceFile[]; initialJob: EditorJob | null }) {
   const [channel, setChannel] = useState(originals[0]?.channel ?? "");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [games, setGames] = useState<Set<string>>(new Set());
   const [gameplay, setGameplay] = useState(initialGameplay);
   const [results, setResults] = useState(initialResults);
-  const [layout, setLayout] = useState<Layout>("side");
+  const [cfg, setCfg] = useState<EditorSettings>(DEFAULT_SETTINGS);
+  const set = <K extends keyof EditorSettings>(k: K, v: EditorSettings[K]) => setCfg((c) => ({ ...c, [k]: v }));
   const [random, setRandom] = useState(true);
+  const [preview, setPreview] = useState<{ url: string | null; busy: boolean; error: string | null }>({ url: null, busy: false, error: null });
   const [job, setJob] = useState(initialJob);
   const restored = useRef(false);
   const running = !!job?.running;
@@ -56,7 +61,7 @@ export function VideoEditor({ originals, initialGameplay, initialResults, initia
           if (originals.some((c) => c.channel === s.channel)) setChannel(s.channel);
           setPicked(new Set(s.picked));
           setGames(new Set(s.games));
-          setLayout(s.layout ?? "side");
+          setCfg({ ...DEFAULT_SETTINGS, ...s.cfg });
           setRandom(s.random ?? true);
         }
       } catch {}
@@ -67,9 +72,9 @@ export function VideoEditor({ originals, initialGameplay, initialResults, initia
   useEffect(() => {
     if (!restored.current) return;
     try {
-      localStorage.setItem(KEY, JSON.stringify({ channel, picked: [...picked], games: [...games], layout, random } satisfies Saved));
+      localStorage.setItem(KEY, JSON.stringify({ channel, picked: [...picked], games: [...games], cfg, random } satisfies Saved));
     } catch {}
-  }, [channel, picked, games, layout, random]);
+  }, [channel, picked, games, cfg, random]);
 
   useEffect(() => {
     if (!running) return;
@@ -83,6 +88,25 @@ export function VideoEditor({ originals, initialGameplay, initialResults, initia
 
   const files = useMemo(() => originals.find((c) => c.channel === channel)?.files ?? [], [originals, channel]);
   const chosen = files.filter((f) => picked.has(f.rel));
+
+  // real preview: one frame of the result from the first picked original + gameplay, redone when a setting changes
+  const sampleOriginal = (chosen[0] ?? files[0])?.rel;
+  const sampleGame = (gameplay.find((g) => games.has(g.rel)) ?? gameplay[0])?.rel;
+  useEffect(() => {
+    if (!sampleOriginal || !sampleGame) return;
+    let live = true;
+    const t = setTimeout(async () => {
+      setPreview((p) => ({ ...p, busy: true, error: null }));
+      const r = await previewFrame(sampleOriginal, sampleGame, cfg);
+      if (!live) return;
+      if ("error" in r) setPreview((p) => ({ ...p, busy: false, error: r.error ?? "Gagal membuat preview" }));
+      else setPreview({ url: `${mediaUrl(r.ok!)}?v=${Date.now()}`, busy: false, error: null });
+    }, 350);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [sampleOriginal, sampleGame, cfg]);
   const toggle = (set: Set<string>, rel: string) => {
     const n = new Set(set);
     if (n.has(rel)) n.delete(rel);
@@ -99,7 +123,7 @@ export function VideoEditor({ originals, initialGameplay, initialResults, initia
   };
 
   const render = async () => {
-    const r = await renderVideos({ originals: chosen.map((f) => f.rel), gameplay: [...games], layout, random });
+    const r = await renderVideos({ originals: chosen.map((f) => f.rel), gameplay: [...games], settings: cfg, random });
     if ("error" in r) return toast.error(r.error);
     setJob(r.ok ?? null);
     toast.success(`Merender ${chosen.length} video`);
@@ -179,11 +203,43 @@ export function VideoEditor({ originals, initialGameplay, initialResults, initia
       {/* settings + action, stays in view */}
       <aside className="space-y-3 lg:sticky lg:top-0">
         <section className="space-y-3 rounded-xl border bg-card p-4">
-          <LayoutPreview layout={layout} />
-          <div className="space-y-1.5">
-            <p className="text-xs text-muted-foreground">Tata letak (1080×1920)</p>
-            <Segmented value={layout} onChange={setLayout} disabled={running} items={[{ v: "side", label: <><Columns2 className="size-3.5" /> Kiri–kanan</> }, { v: "stack", label: <><Rows2 className="size-3.5" /> Atas–bawah</> }]} />
+          {/* preview: the real frame once made, the sketch until then (or without gameplay) */}
+          <div className="relative mx-auto flex max-h-[340px] items-center justify-center overflow-hidden rounded-lg border bg-muted" style={{ aspectRatio: cfg.size.replace("x", " / "), width: cfg.size === "1920x1080" ? "100%" : cfg.size === "1080x1080" ? "75%" : "56%" }}>
+            {preview.url && sampleGame ? (
+              // eslint-disable-next-line @next/next/no-img-element -- generated local preview frame
+              <img src={preview.url} alt="Preview hasil" className="h-full w-full object-contain" />
+            ) : (
+              <LayoutSketch cfg={cfg} />
+            )}
+            {preview.busy && <span className="absolute inset-0 grid place-items-center bg-background/40"><Loader2 className="size-5 animate-spin" /></span>}
           </div>
+          <p className="text-center text-[11px] text-muted-foreground">
+            {preview.error ? <span className="text-destructive">{preview.error}</span> : sampleGame ? "Preview frame dari video yang dipilih" : "Tambahkan gameplay untuk preview sungguhan"}
+          </p>
+
+          <label className="block space-y-1.5">
+            <span className="text-xs text-muted-foreground">Ukuran hasil</span>
+            <select value={cfg.size} onChange={(e) => set("size", e.target.value as Size)} disabled={running} className="h-8 w-full rounded-lg border bg-background px-2 text-xs">
+              {Object.entries(SIZES).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
+          </label>
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground">Tata letak</p>
+            <Segmented value={cfg.layout} onChange={(v) => set("layout", v)} disabled={running} items={[{ v: "side", label: <><Columns2 className="size-3.5" /> Kiri–kanan</> }, { v: "stack", label: <><Rows2 className="size-3.5" /> Atas–bawah</> }]} />
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground">Porsi video asli : gameplay</p>
+            <Segmented value={String(cfg.ratio) as "50" | "60" | "70"} onChange={(v) => set("ratio", Number(v) as EditorSettings["ratio"])} disabled={running} items={[{ v: "50", label: "50 : 50" }, { v: "60", label: "60 : 40" }, { v: "70", label: "70 : 30" }]} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {([["fitOriginal", "Video asli"], ["fitGame", "Gameplay"]] as const).map(([k, label]) => (
+              <div key={k} className="space-y-1.5">
+                <p className="text-xs text-muted-foreground">{label}</p>
+                <Segmented value={cfg[k]} onChange={(v: Fit) => set(k, v)} disabled={running} items={[{ v: "cover", label: "Penuh" }, { v: "contain", label: "Utuh" }]} />
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-muted-foreground"><b>Penuh</b>: memenuhi bagiannya (tepi terpotong). <b>Utuh</b>: tidak terpotong, sisanya diisi blur.</p>
           <div className="space-y-1.5">
             <p className="text-xs text-muted-foreground">Klip gameplay per video</p>
             <Segmented value={random ? "acak" : "urut"} onChange={(v) => setRandom(v === "acak")} disabled={running} items={[{ v: "acak", label: <><Shuffle className="size-3.5" /> Acak</> }, { v: "urut", label: "Bergiliran" }]} />

@@ -18,7 +18,8 @@ export const GAMEPLAY_DIR = () => path.join(MEDIA_DIR, "Gameplay");
 const OUT = () => path.join(MEDIA_DIR, "YouTube Editor");
 const VIDEO = /\.(mp4|mov|webm|mkv)$/i;
 
-export type Layout = "side" | "stack"; // kiri-kanan | atas-bawah
+import type { EditorSettings, Fit } from "@/lib/youtube-editor-config";
+export { DEFAULT_SETTINGS, SIZES, type EditorSettings, type Fit, type Layout, type Size } from "@/lib/youtube-editor-config";
 export type SourceFile = { rel: string; name: string };
 
 const list = (dir: string) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => VIDEO.test(f)).sort().reverse() : []);
@@ -49,11 +50,40 @@ async function duration(file: string) {
   return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : 0;
 }
 
-/** ffmpeg filter: both videos cropped to fill their half of a 1080×1920 frame, then joined. */
-export function layoutFilter(layout: Layout) {
-  const [w, h] = layout === "side" ? [540, 1920] : [1080, 960];
-  const fit = (i: number, tag: string) => `[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=30[${tag}]`;
-  return `${fit(0, "a")};${fit(1, "b")};[a][b]${layout === "side" ? "hstack" : "vstack"}=inputs=2:shortest=1[v]`;
+const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+
+/** ffmpeg filter: each video fills (or fits into) its part of the frame, original first (left/top), then joined. */
+export function layoutFilter(o: EditorSettings) {
+  const [W, H] = o.size.split("x").map(Number);
+  const side = o.layout === "side";
+  const a = side ? even((W * o.ratio) / 100) : even((H * o.ratio) / 100); // the original's share
+  const parts: [number, number][] = side ? [[a, H], [W - a, H]] : [[W, a], [W, H - a]];
+  const fit = (i: number, tag: string, mode: Fit) => {
+    const [w, h] = parts[i];
+    const cover = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`;
+    if (mode === "cover") return `[${i}:v]${cover},setsar=1,fps=30[${tag}]`;
+    // whole video on a blurred, cropped copy of itself
+    return (
+      `[${i}:v]split[${tag}bg][${tag}fg];[${tag}bg]${cover},boxblur=20:2[${tag}b];` +
+      `[${tag}fg]scale=${w}:${h}:force_original_aspect_ratio=decrease[${tag}f];` +
+      `[${tag}b][${tag}f]overlay=(main_w-overlay_w)/2:(main_h-overlay_h)/2,setsar=1,fps=30[${tag}]`
+    );
+  };
+  return `${fit(0, "a", o.fitOriginal)};${fit(1, "b", o.fitGame)};[a][b]${side ? "hstack" : "vstack"}=inputs=2:shortest=1[v]`;
+}
+
+/** One still of the result (original at 2 s, gameplay at 5 s) with these settings: the Editor's live preview. */
+export async function renderPreview(original: string, gameplay: string, o: EditorSettings) {
+  if (!ffmpegPath) throw new Error("ffmpeg tidak tersedia di perangkat ini.");
+  const dir = path.join(OUT(), ".preview");
+  fs.mkdirSync(dir, { recursive: true });
+  const out = path.join(dir, "preview.jpg");
+  await run(
+    ffmpegPath,
+    ["-y", "-hide_banner", "-loglevel", "error", "-ss", "2", "-i", original, "-ss", "5", "-i", gameplay, "-filter_complex", layoutFilter(o), "-map", "[v]", "-frames:v", "1", "-q:v", "4", out],
+    { windowsHide: true },
+  );
+  return toRel(out);
 }
 
 // One render queue at a time, kept on globalThis so page polls and dev reloads see the same job.
@@ -61,7 +91,7 @@ export type EditorJob = { total: number; done: { name: string; rel: string }[]; 
 const g = globalThis as { __ytEditor?: EditorJob; __ytEditorProc?: ReturnType<typeof spawn> };
 export const editorJob = () => g.__ytEditor ?? null;
 
-async function renderOne(original: string, gameplay: string, layout: Layout, out: string) {
+async function renderOne(original: string, gameplay: string, o: EditorSettings, out: string) {
   const len = await duration(original);
   const gameLen = await duration(gameplay);
   // start the gameplay somewhere random (it loops), so two renders with the same clip still look different
@@ -70,7 +100,7 @@ async function renderOne(original: string, gameplay: string, layout: Layout, out
     "-y", "-hide_banner", "-loglevel", "error",
     "-i", original,
     "-stream_loop", "-1", "-ss", offset.toFixed(2), "-i", gameplay,
-    "-filter_complex", layoutFilter(layout),
+    "-filter_complex", layoutFilter(o),
     "-map", "[v]", "-map", "0:a?",
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
     "-c:a", "aac", "-b:a", "160k",
@@ -89,7 +119,7 @@ async function renderOne(original: string, gameplay: string, layout: Layout, out
 }
 
 /** Render every original with a gameplay clip (picked in turn from the chosen ones, or at random). */
-export async function startRender(c: { originals: string[]; gameplay: string[]; layout: Layout; random: boolean }) {
+export async function startRender(c: { originals: string[]; gameplay: string[]; settings: EditorSettings; random: boolean }) {
   if (!ffmpegPath) throw new Error("ffmpeg tidak tersedia di perangkat ini.");
   if (g.__ytEditor?.running) throw new Error("Masih ada video yang sedang dirender, tunggu selesai dulu.");
   const pool = c.gameplay.length ? c.gameplay : listGameplay().map((x) => x.rel);
@@ -107,7 +137,7 @@ export async function startRender(c: { originals: string[]; gameplay: string[]; 
       const stamp = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 19).replace(/[-:T]/g, ""); // WIB wall clock
       const out = path.join(OUT(), `${stamp} ${name.replace(/[<>:"/\\|?*]+/g, "").slice(0, 60)}.mp4`);
       try {
-        await renderOne(abs(rel), abs(game), c.layout, out);
+        await renderOne(abs(rel), abs(game), c.settings, out);
         job.done.push({ name, rel: toRel(out) });
       } catch (e) {
         if (!job.cancelled) job.failed.push(`${name}: ${e instanceof Error ? e.message.slice(0, 160) : e}`);

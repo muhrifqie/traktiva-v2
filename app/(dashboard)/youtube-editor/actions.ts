@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { z } from "zod";
 import { resolveMedia } from "@/lib/media";
-import { cancelRender, editorJob, GAMEPLAY_DIR, listGameplay, listResults, startRender } from "@/lib/youtube-editor";
+import { cancelRender, editorJob, GAMEPLAY_DIR, listGameplay, listResults, renderPreview, SIZES, startRender, type EditorSettings } from "@/lib/youtube-editor";
 
 // errors come back as { error } (thrown server-action errors are hidden in production)
 const safe = async <T,>(f: () => Promise<T>) => {
@@ -15,10 +15,23 @@ const safe = async <T,>(f: () => Promise<T>) => {
   }
 };
 const Rel = z.string().min(3).max(400);
+const Settings = z.object({
+  layout: z.enum(["side", "stack"]),
+  size: z.enum(Object.keys(SIZES) as [keyof typeof SIZES, ...(keyof typeof SIZES)[]]),
+  ratio: z.union([z.literal(50), z.literal(60), z.literal(70)]),
+  fitOriginal: z.enum(["cover", "contain"]),
+  fitGame: z.enum(["cover", "contain"]),
+});
 
-export const renderVideos = async (input: { originals: string[]; gameplay: string[]; layout: "side" | "stack"; random: boolean }) =>
+export const previewFrame = async (original: string, gameplay: string, settings: EditorSettings) =>
   safe(async () => {
-    const d = z.object({ originals: z.array(Rel).min(1).max(200), gameplay: z.array(Rel).max(50), layout: z.enum(["side", "stack"]), random: z.boolean() }).parse(input);
+    const [o, g] = [Rel.parse(original), Rel.parse(gameplay)];
+    return renderPreview(resolveMedia(o), resolveMedia(g), Settings.parse(settings));
+  });
+
+export const renderVideos = async (input: { originals: string[]; gameplay: string[]; settings: EditorSettings; random: boolean }) =>
+  safe(async () => {
+    const d = z.object({ originals: z.array(Rel).min(1).max(200), gameplay: z.array(Rel).max(50), settings: Settings, random: z.boolean() }).parse(input);
     for (const rel of [...d.originals, ...d.gameplay]) if (!fs.existsSync(resolveMedia(rel))) throw new Error(`File tidak ditemukan: ${rel}`);
     return startRender(d);
   });
