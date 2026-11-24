@@ -192,6 +192,20 @@ async function createWindow() {
   ipcMain.handle("update:install", (e) =>
     e.sender === win.webContents ? updater.install((p) => !win.isDestroyed() && win.webContents.send("update:progress", p)) : { ok: false },
   );
+  // automatic updates: download quietly, install when the app is closed (a mandatory release right away)
+  ipcMain.removeHandler("update:status");
+  ipcMain.handle("update:status", () => updater.status());
+  updater.startAuto({
+    isMandatory: (version) => {
+      try {
+        const latest = JSON.parse(fs.readFileSync(path.join(app.getPath("userData"), "server-info.json"), "utf8")).latest;
+        return latest?.version === version && !!latest.mandatory;
+      } catch {
+        return false;
+      }
+    },
+    onReady: (s) => !win.isDestroyed() && win.webContents.send("update:ready", s),
+  });
 }
 
 // Zoom: Ctrl +/=/-/0 and Ctrl+scroll, clamped 50–200%, remembered across restarts.
@@ -252,4 +266,7 @@ app.whenReady().then(createWindow).catch((e) => {
   app.quit();
 });
 app.on("window-all-closed", () => app.quit());
-app.on("before-quit", () => server?.kill());
+app.on("before-quit", () => {
+  updater.installOnQuit(); // a downloaded update is installed quietly as the app closes
+  server?.kill();
+});

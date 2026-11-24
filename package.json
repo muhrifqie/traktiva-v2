@@ -1,6 +1,6 @@
 {
   "name": "traktiva",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -85,7 +85,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "shortcutName": "Traktiva",
-      "artifactName": "Traktiva-Setup-${version}.${ext}"
+      "artifactName": "Traktiva-Setup-${version}.${ext}",
+      "include": "resources/installer.nsh"
     },
     "afterPack": "scripts/after-pack.js",
     "icon": "resources/icon.png"

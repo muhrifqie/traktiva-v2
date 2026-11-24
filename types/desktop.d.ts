@@ -13,6 +13,9 @@ interface Window {
     update?: {
       install(): Promise<{ ok: boolean; message?: string }>;
       onProgress(cb: (p: DesktopUpdateProgress) => void): () => void;
+      /** Automatic updates (newer builds only: check before calling): the version downloaded and waiting for the next close. */
+      status?(): Promise<{ ready: string | null }>;
+      onReady?(cb: (s: { version: string }) => void): () => void;
     };
     window: {
       state(): Promise<DesktopWindowState>;

@@ -11,6 +11,13 @@ contextBridge.exposeInMainWorld("desktop", {
   /** In-app update: download, verify and install the newest version (the app restarts). */
   update: {
     install: () => ipcRenderer.invoke("update:install"),
+    /** The version already downloaded (installed automatically when the app closes), or null. */
+    status: () => ipcRenderer.invoke("update:status"),
+    onReady: (cb) => {
+      const listener = (_e, s) => cb(s);
+      ipcRenderer.on("update:ready", listener);
+      return () => ipcRenderer.removeListener("update:ready", listener);
+    },
     /** { stage: "check" | "download" | "verify" | "install", received?, total? }; returns an unsubscribe function. */
     onProgress: (cb) => {
       const listener = (_e, p) => cb(p);
