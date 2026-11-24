@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { z } from "zod";
 import { resolveMedia } from "@/lib/media";
+import { updateSettings } from "@/lib/settings";
 import { cancelRender, editorJob, GAMEPLAY_DIR, listGameplay, listResults, renderPreview, SIZES, startRender, type EditorSettings } from "@/lib/youtube-editor";
 
 // errors come back as { error } (thrown server-action errors are hidden in production)
@@ -21,7 +22,13 @@ const Settings = z.object({
   ratio: z.union([z.literal(50), z.literal(60), z.literal(70)]),
   fitOriginal: z.enum(["cover", "contain"]),
   fitGame: z.enum(["cover", "contain"]),
+  fill: z.enum(["blur", "black", "white"]),
 });
+
+/** Save the Editor configuration in settings.json (not only this browser). */
+export async function saveEditorSettings(settings: EditorSettings) {
+  updateSettings({ youtubeEditor: Settings.parse(settings) });
+}
 
 export const previewFrame = async (original: string, gameplay: string, settings: EditorSettings) =>
   safe(async () => {

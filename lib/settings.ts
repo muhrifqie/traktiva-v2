@@ -6,6 +6,7 @@ import { DATA_DIR } from "@/lib/db";
 import { remoteFlag } from "@/lib/server-info";
 import type { EditTemplate } from "@/lib/edit";
 import { DEFAULT_WRITING, type WritingRules } from "@/lib/writing";
+import { DEFAULT_SETTINGS as EDITOR_DEFAULTS, type EditorSettings } from "@/lib/youtube-editor-config";
 
 // Small app preferences in DATA_DIR/settings.json (not worth a DB table).
 
@@ -42,7 +43,7 @@ export const YOUTUBE_UPLOAD_DEFAULTS: YouTubeUploadDefaults = {
   madeForKids: false,
   aiContent: true,
 };
-type Settings = { activeAccountId?: number | null /* social account shown in the sidebar */; myConcepts?: MyConcept[]; voice: VoiceSettings; editTemplates?: EditTemplate[]; chatgpt?: ChatgptSettings | null; writing?: WritingRules; youtubeUpload?: Partial<YouTubeUploadDefaults> };
+type Settings = { activeAccountId?: number | null /* social account shown in the sidebar */; myConcepts?: MyConcept[]; voice: VoiceSettings; editTemplates?: EditTemplate[]; chatgpt?: ChatgptSettings | null; writing?: WritingRules; youtubeUpload?: Partial<YouTubeUploadDefaults>; youtubeEditor?: Partial<EditorSettings> };
 const DEFAULTS: Settings = { voice: { provider: "flow" } };
 const FILE = path.join(/* turbopackIgnore: true */ DATA_DIR, "settings.json");
 
@@ -76,6 +77,8 @@ export function updateSettings(patch: Partial<Settings>) {
 }
 
 export const youtubeUploadDefaults = (): YouTubeUploadDefaults => ({ ...YOUTUBE_UPLOAD_DEFAULTS, ...getSettings().youtubeUpload });
+/** YouTube → Editor configuration (size, layout, share, fit, fill), kept across refreshes, restarts and updates. */
+export const youtubeEditorSettings = (): EditorSettings => ({ ...EDITOR_DEFAULTS, ...getSettings().youtubeEditor });
 
 /** Owner's writing rules (CTA, banned words, extra notes) with defaults filled in. */
 export const writingRules = (): WritingRules => ({ ...DEFAULT_WRITING, ...getSettings().writing });

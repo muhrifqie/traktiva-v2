@@ -2,25 +2,55 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Check, CheckCheck, Columns2, FolderOpen, Gamepad2, Loader2, Play, RefreshCw, Rows2, Shuffle, Square, Video, X } from "lucide-react";
+import { Check, CheckCheck, Columns2, Crop, Eye, FolderOpen, Gamepad2, LayoutPanelLeft, Loader2, Palette, PieChart, Play, Ratio, RefreshCw, Rows2, Save, Shuffle, Square, Video, X, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { mediaUrl } from "@/lib/media-url";
 import type { EditorJob, SourceFile } from "@/lib/youtube-editor";
-import { DEFAULT_SETTINGS, SIZES, type EditorSettings, type Fit, type Size } from "@/lib/youtube-editor-config";
-import { openMediaFolder, previewFrame, refreshLists, renderStatus, renderVideos, stopRender } from "./actions";
+import { SIZES, type EditorSettings, type Fill, type Fit, type Size } from "@/lib/youtube-editor-config";
+import { openMediaFolder, previewFrame, refreshLists, renderStatus, renderVideos, saveEditorSettings, stopRender } from "./actions";
 
 const KEY = "trk-yt-editor"; // picks, settings and gameplay mode survive a refresh or an app restart
-type Saved = { channel: string; picked: string[]; games: string[]; cfg?: EditorSettings; random: boolean };
+type Saved = { channel: string; picked: string[]; games: string[]; random: boolean }; // the configuration itself lives in settings.json
+const RED = "#ff3333";
 
 function Segmented<T extends string>({ value, onChange, items, disabled }: { value: T; onChange: (v: T) => void; items: { v: T; label: React.ReactNode }[]; disabled?: boolean }) {
   return (
     <div className="grid auto-cols-fr grid-flow-col gap-0.5 rounded-lg bg-muted p-0.5">
       {items.map((it) => (
-        <button key={it.v} type="button" disabled={disabled} onClick={() => onChange(it.v)} aria-pressed={value === it.v} className={`flex h-7 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors disabled:opacity-50 ${value === it.v ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"}`}>
+        <button key={it.v} type="button" disabled={disabled} onClick={() => onChange(it.v)} aria-pressed={value === it.v} className={`flex h-7 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors disabled:opacity-50 ${value === it.v ? "bg-[#ff3333] text-white shadow-xs" : "text-muted-foreground hover:text-foreground"}`}>
           {it.label}
         </button>
       ))}
     </div>
+  );
+}
+
+/** One setting: colored icon + label, then its control. */
+function Field({ icon: Icon, color, label, children }: { icon: LucideIcon; color: string; label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <p className="flex items-center gap-1.5 text-xs font-medium">
+        <span className="grid size-5 place-items-center rounded-md" style={{ background: `${color}22`, color }}><Icon className="size-3" /></span>
+        {label}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+/** Size button: the frame's shape drawn at its aspect ratio, name and pixels. */
+function SizeButton({ size, active, onClick, disabled }: { size: Size; active: boolean; onClick: () => void; disabled?: boolean }) {
+  const [w, h] = size.split("x").map(Number);
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} aria-pressed={active} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors disabled:opacity-50 ${active ? "border-[#ff3333] bg-[#ff3333]/10" : "hover:bg-accent"}`}>
+      <span className="grid size-7 shrink-0 place-items-center">
+        <span className={`block rounded-[3px] border-2 ${active ? "border-[#ff3333]" : "border-muted-foreground/60"}`} style={w >= h ? { width: 22, height: Math.round((22 * h) / w) } : { height: 24, width: Math.round((24 * w) / h) }} />
+      </span>
+      <span className="min-w-0">
+        <span className={`block text-xs font-semibold ${active ? "text-[#ff3333]" : ""}`}>{SIZES[size].label}</span>
+        <span className="block text-[10px] text-muted-foreground tabular-nums">{SIZES[size].note}</span>
+      </span>
+    </button>
   );
 }
 
@@ -38,14 +68,18 @@ function LayoutSketch({ cfg }: { cfg: EditorSettings }) {
 }
 
 // Pick downloaded Shorts + gameplay clips, set size/layout/share/fit (with a real preview frame), render one video each.
-export function VideoEditor({ originals, initialGameplay, initialResults, initialJob }: { originals: { channel: string; files: SourceFile[] }[]; initialGameplay: SourceFile[]; initialResults: SourceFile[]; initialJob: EditorJob | null }) {
+export function VideoEditor({ originals, initialGameplay, initialResults, initialJob, initialSettings }: { originals: { channel: string; files: SourceFile[] }[]; initialGameplay: SourceFile[]; initialResults: SourceFile[]; initialJob: EditorJob | null; initialSettings: EditorSettings }) {
   const [channel, setChannel] = useState(originals[0]?.channel ?? "");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [games, setGames] = useState<Set<string>>(new Set());
   const [gameplay, setGameplay] = useState(initialGameplay);
   const [results, setResults] = useState(initialResults);
-  const [cfg, setCfg] = useState<EditorSettings>(DEFAULT_SETTINGS);
-  const set = <K extends keyof EditorSettings>(k: K, v: EditorSettings[K]) => setCfg((c) => ({ ...c, [k]: v }));
+  const [cfg, setCfg] = useState<EditorSettings>(initialSettings);
+  const [saved, setSaved] = useState(true);
+  const set = <K extends keyof EditorSettings>(k: K, v: EditorSettings[K]) => {
+    setSaved(false);
+    setCfg((c) => ({ ...c, [k]: v }));
+  };
   const [random, setRandom] = useState(true);
   const [preview, setPreview] = useState<{ url: string | null; busy: boolean; error: string | null }>({ url: null, busy: false, error: null });
   const [job, setJob] = useState(initialJob);
@@ -61,7 +95,6 @@ export function VideoEditor({ originals, initialGameplay, initialResults, initia
           if (originals.some((c) => c.channel === s.channel)) setChannel(s.channel);
           setPicked(new Set(s.picked));
           setGames(new Set(s.games));
-          setCfg({ ...DEFAULT_SETTINGS, ...s.cfg });
           setRandom(s.random ?? true);
         }
       } catch {}
@@ -72,9 +105,27 @@ export function VideoEditor({ originals, initialGameplay, initialResults, initia
   useEffect(() => {
     if (!restored.current) return;
     try {
-      localStorage.setItem(KEY, JSON.stringify({ channel, picked: [...picked], games: [...games], cfg, random } satisfies Saved));
+      localStorage.setItem(KEY, JSON.stringify({ channel, picked: [...picked], games: [...games], random } satisfies Saved));
     } catch {}
-  }, [channel, picked, games, cfg, random]);
+  }, [channel, picked, games, random]);
+
+  // the configuration is saved on the server (settings.json) a moment after each change
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        await saveEditorSettings(cfg);
+        setSaved(true);
+      } catch {
+        toast.error("Konfigurasi Editor gagal disimpan");
+      }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [cfg]);
 
   useEffect(() => {
     if (!running) return;
@@ -214,37 +265,48 @@ export function VideoEditor({ originals, initialGameplay, initialResults, initia
             {preview.busy && <span className="absolute inset-0 grid place-items-center bg-background/40"><Loader2 className="size-5 animate-spin" /></span>}
           </div>
           <p className="text-center text-[11px] text-muted-foreground">
+            <Eye className="mr-1 inline size-3" />
             {preview.error ? <span className="text-destructive">{preview.error}</span> : sampleGame ? "Preview frame dari video yang dipilih" : "Tambahkan gameplay untuk preview sungguhan"}
           </p>
 
-          <label className="block space-y-1.5">
-            <span className="text-xs text-muted-foreground">Ukuran hasil</span>
-            <select value={cfg.size} onChange={(e) => set("size", e.target.value as Size)} disabled={running} className="h-8 w-full rounded-lg border bg-background px-2 text-xs">
-              {Object.entries(SIZES).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-            </select>
-          </label>
-          <div className="space-y-1.5">
-            <p className="text-xs text-muted-foreground">Tata letak</p>
+          <Field icon={Ratio} color={RED} label="Ukuran hasil">
+            <div className="grid grid-cols-2 gap-1.5">
+              {(Object.keys(SIZES) as Size[]).map((sz) => <SizeButton key={sz} size={sz} active={cfg.size === sz} onClick={() => set("size", sz)} disabled={running} />)}
+            </div>
+          </Field>
+          <Field icon={LayoutPanelLeft} color="#0ea5e9" label="Tata letak">
             <Segmented value={cfg.layout} onChange={(v) => set("layout", v)} disabled={running} items={[{ v: "side", label: <><Columns2 className="size-3.5" /> Kiri–kanan</> }, { v: "stack", label: <><Rows2 className="size-3.5" /> Atas–bawah</> }]} />
-          </div>
-          <div className="space-y-1.5">
-            <p className="text-xs text-muted-foreground">Porsi video asli : gameplay</p>
+          </Field>
+          <Field icon={PieChart} color="#8b5cf6" label="Porsi video asli : gameplay">
             <Segmented value={String(cfg.ratio) as "50" | "60" | "70"} onChange={(v) => set("ratio", Number(v) as EditorSettings["ratio"])} disabled={running} items={[{ v: "50", label: "50 : 50" }, { v: "60", label: "60 : 40" }, { v: "70", label: "70 : 30" }]} />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {([["fitOriginal", "Video asli"], ["fitGame", "Gameplay"]] as const).map(([k, label]) => (
-              <div key={k} className="space-y-1.5">
-                <p className="text-xs text-muted-foreground">{label}</p>
-                <Segmented value={cfg[k]} onChange={(v: Fit) => set(k, v)} disabled={running} items={[{ v: "cover", label: "Penuh" }, { v: "contain", label: "Utuh" }]} />
-              </div>
-            ))}
-          </div>
-          <p className="text-[11px] text-muted-foreground"><b>Penuh</b>: memenuhi bagiannya (tepi terpotong). <b>Utuh</b>: tidak terpotong, sisanya diisi blur.</p>
-          <div className="space-y-1.5">
-            <p className="text-xs text-muted-foreground">Klip gameplay per video</p>
+          </Field>
+          <Field icon={Crop} color="#f59e0b" label="Mode tampil">
+            <div className="grid grid-cols-2 gap-2">
+              {([["fitOriginal", "Video asli", Video], ["fitGame", "Gameplay", Gamepad2]] as const).map(([k, label, Icon]) => (
+                <div key={k} className="space-y-1">
+                  <p className="flex items-center gap-1 text-[11px] text-muted-foreground"><Icon className="size-3" /> {label}</p>
+                  <Segmented value={cfg[k]} onChange={(v: Fit) => set(k, v)} disabled={running} items={[{ v: "cover", label: "Penuh" }, { v: "contain", label: "Utuh" }]} />
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground"><b>Penuh</b>: memenuhi bagiannya (tepi terpotong). <b>Utuh</b>: tidak terpotong, sisanya diisi warna latar.</p>
+          </Field>
+          <Field icon={Palette} color="#10b981" label="Warna latar (mode Utuh)">
+            <div className="grid grid-cols-3 gap-1.5">
+              {([["blur", "Blur", "linear-gradient(135deg,#94a3b8,#475569)"], ["black", "Hitam", "#000"], ["white", "Putih", "#fff"]] as [Fill, string, string][]).map(([v, label, bg]) => (
+                <button key={v} type="button" onClick={() => set("fill", v)} disabled={running} aria-pressed={cfg.fill === v} className={`flex h-8 items-center justify-center gap-1.5 rounded-lg border text-xs font-medium disabled:opacity-50 ${cfg.fill === v ? "border-[#ff3333] bg-[#ff3333]/10 text-[#ff3333]" : "hover:bg-accent"}`}>
+                  <span className="size-3.5 rounded-full border" style={{ background: bg }} /> {label}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field icon={Shuffle} color="#ec4899" label="Klip gameplay per video">
             <Segmented value={random ? "acak" : "urut"} onChange={(v) => setRandom(v === "acak")} disabled={running} items={[{ v: "acak", label: <><Shuffle className="size-3.5" /> Acak</> }, { v: "urut", label: "Bergiliran" }]} />
-          </div>
-          <p className="text-[11px] text-muted-foreground">Suara dari video asli. Gameplay tanpa suara, diputar ulang dari titik acak supaya tiap hasil beda.</p>
+          </Field>
+          <p className="flex items-center gap-1.5 border-t pt-2.5 text-[11px] text-muted-foreground">
+            {saved ? <Save className="size-3.5 text-status-ok" /> : <Loader2 className="size-3.5 animate-spin" />}
+            {saved ? "Konfigurasi tersimpan" : "Menyimpan konfigurasi…"} · suara dari video asli, gameplay dibisukan
+          </p>
         </section>
 
         {job && (job.running || job.total > 0) && (

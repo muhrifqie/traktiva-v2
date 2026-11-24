@@ -19,7 +19,7 @@ const OUT = () => path.join(MEDIA_DIR, "YouTube Editor");
 const VIDEO = /\.(mp4|mov|webm|mkv)$/i;
 
 import type { EditorSettings, Fit } from "@/lib/youtube-editor-config";
-export { DEFAULT_SETTINGS, SIZES, type EditorSettings, type Fit, type Layout, type Size } from "@/lib/youtube-editor-config";
+export { DEFAULT_SETTINGS, SIZES, type EditorSettings, type Fill, type Fit, type Layout, type Size } from "@/lib/youtube-editor-config";
 export type SourceFile = { rel: string; name: string };
 
 const list = (dir: string) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => VIDEO.test(f)).sort().reverse() : []);
@@ -62,6 +62,8 @@ export function layoutFilter(o: EditorSettings) {
     const [w, h] = parts[i];
     const cover = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`;
     if (mode === "cover") return `[${i}:v]${cover},setsar=1,fps=30[${tag}]`;
+    // whole video on a plain color
+    if (o.fill !== "blur") return `[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=${o.fill},setsar=1,fps=30[${tag}]`;
     // whole video on a blurred, cropped copy of itself
     return (
       `[${i}:v]split[${tag}bg][${tag}fg];[${tag}bg]${cover},boxblur=20:2[${tag}b];` +
