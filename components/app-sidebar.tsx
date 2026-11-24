@@ -14,8 +14,8 @@ import { NAV, NAV_GROUPS, type NavCounts, type NavItem } from "@/lib/nav";
 
 type Group = (typeof NAV_GROUPS)[number];
 /** Groups that belong to one platform get its mark next to the label, and the label opens that platform's page. */
-const GROUP_PLATFORM: Partial<Record<Group, "tiktok" | "youtube">> = { "TikTok Shop": "tiktok", YouTube: "youtube" };
-const GROUP_HREF: Partial<Record<Group, string>> = { "TikTok Shop": "/tiktok-shop", YouTube: "/youtube" };
+const GROUP_PLATFORM: Partial<Record<Group, "tiktok" | "youtube" | "instagram" | "facebook">> = { "TikTok Shop": "tiktok", YouTube: "youtube", Instagram: "instagram", Facebook: "facebook" };
+const GROUP_HREF: Partial<Record<Group, string>> = { "TikTok Shop": "/tiktok-shop", YouTube: "/youtube", Instagram: "/instagram", Facebook: "/facebook" };
 /**
  * Sidebar sections, top to bottom, each with a small label. A live platform (TikTok Shop) is a button with its menus on
  * a branch line; platforms not live yet are listed right under it, so the roadmap shows without opening anything.
@@ -24,7 +24,7 @@ const GROUP_HREF: Partial<Record<Group, string>> = { "TikTok Shop": "/tiktok-sho
 const SECTIONS: { label: string | null; groups: Group[]; tree?: Group[] }[] = [
   { label: null, groups: ["Utama"] },
   { label: "Konten", groups: ["Buat Konten", "Pustaka"] },
-  { label: "Platform", tree: ["TikTok Shop", "YouTube"], groups: ["Segera hadir"] },
+  { label: "Platform", tree: ["TikTok Shop", "YouTube", "Instagram", "Facebook"], groups: ["Segera hadir"] },
   { label: null, groups: ["Akun", "Pengaturan"] },
 ];
 

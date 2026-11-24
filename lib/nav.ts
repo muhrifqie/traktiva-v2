@@ -20,8 +20,8 @@ export const NAV = [
   { slug: "profil", title: "Profil & Postingan", short: "Performa akun", icon: UserCircle, group: "TikTok Shop", color: "#ff3b6b", desc: "Profil, poin akun, dan performa postingan tiap akun." },
   // platforms not live yet: placeholder pages until they are built (status follows the website roadmap)
   { slug: "shopee", title: "Shopee", icon: Store, group: "Segera hadir", platform: "shopee", status: "Segera", color: "#ee4d2d", desc: "Akun Shopee Video, etalase, dan jadwal upload dari video yang sama. Sedang dikerjakan." },
-  { slug: "instagram", title: "Instagram", icon: Store, group: "Segera hadir", platform: "instagram", status: "Rencana", color: "#ff2d7a", desc: "Upload Reels ke akun Instagram Business/Creator dari video yang sama. Direncanakan." },
-  { slug: "facebook", title: "Facebook", icon: Store, group: "Segera hadir", platform: "facebook", status: "Rencana", color: "#3b82f6", desc: "Upload Reels ke Facebook Page dari video yang sama. Direncanakan." },
+  { slug: "instagram", title: "Instagram", short: "Ringkasan", icon: LayoutDashboard, group: "Instagram", platform: "instagram", color: "#ff2d7a", desc: "Akun Instagram yang tersambung dan sesi loginnya. Upload Reels menyusul." },
+  { slug: "facebook", title: "Facebook", short: "Ringkasan", icon: LayoutDashboard, group: "Facebook", platform: "facebook", color: "#3b82f6", desc: "Akun Facebook yang tersambung dan sesi loginnya. Upload Reels ke Page menyusul." },
   { slug: "youtube", title: "YouTube", short: "Ringkasan", icon: LayoutDashboard, group: "YouTube", platform: "youtube", color: "#ff3333", desc: "Channel YouTube yang tersambung, sesi login, dan alat YouTube." }, // overview: first branch + the group button
   { slug: "youtube-performa", title: "Performa Channel", short: "Performa", icon: ChartNoAxesColumn, group: "YouTube", color: "#ff3333", desc: "Semua video & Shorts, Insight 28 hari, dan progres monetisasi dari YouTube Studio." },
   { slug: "youtube-shorts", title: "Shorts Downloader", short: "Unduh Shorts", icon: Download, group: "YouTube", color: "#ff3333", desc: "Unduh semua Shorts dari satu channel YouTube ke folder video kamu." },
@@ -30,7 +30,7 @@ export const NAV = [
   { slug: "pengaturan", title: "Pengaturan", icon: Settings, group: "Pengaturan", color: "#8b7cf6", desc: "Lisensi, akun Google, aturan naskah, suara, dan mesin AI." },
 ] as const;
 
-export const NAV_GROUPS = ["Utama", "Buat Konten", "Pustaka", "TikTok Shop", "YouTube", "Segera hadir", "Akun", "Pengaturan"] as const;
+export const NAV_GROUPS = ["Utama", "Buat Konten", "Pustaka", "TikTok Shop", "YouTube", "Instagram", "Facebook", "Segera hadir", "Akun", "Pengaturan"] as const;
 
 export type NavItem = (typeof NAV)[number];
 export type NavCounts = Partial<Record<string, number>>;

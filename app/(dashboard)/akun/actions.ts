@@ -8,6 +8,7 @@ import { accountPosts, accounts, accountStats } from "@/lib/db/schema";
 import { deleteProfile, isProfileKey } from "@/lib/browser/chrome";
 import { removeMedia } from "@/lib/media";
 import * as tiktok from "@/lib/platforms/tiktok";
+import * as meta from "@/lib/platforms/meta";
 import * as youtube from "@/lib/platforms/youtube";
 
 // Accounts are only created by a real platform login (username/uid read from the session), never typed in by hand.
@@ -39,7 +40,7 @@ export async function deleteAccount(id: number) {
  * Upsert an account after a successful login.
  * Match order: same platform id (username may have changed) → same username → new row.
  */
-async function saveLogin(platform: "tiktok" | "youtube", sessionKey: string, who: tiktok.TikTokIdentity) {
+async function saveLogin(platform: "tiktok" | "youtube" | meta.MetaPlatform, sessionKey: string, who: tiktok.TikTokIdentity) {
   const now = new Date();
   const values = {
     username: who.username,
@@ -231,4 +232,46 @@ export async function checkYouTubeSession(id: number) {
   refresh();
   revalidatePath("/youtube");
   return { valid: res.valid };
+}
+
+// ---------- Instagram & Facebook: login + stored session (a Chrome profile per account) ----------
+
+const MetaP = z.enum(["instagram", "facebook"]);
+const metaPaths = (p: meta.MetaPlatform) => {
+  refresh();
+  revalidatePath(`/${p}`);
+};
+
+export async function startMetaLogin(platform: meta.MetaPlatform, accountId?: number) {
+  const a = accountId ? await getAccount(accountId) : null;
+  return meta.startLogin(MetaP.parse(platform), a && isProfileKey(a.sessionKey) ? a.sessionKey : undefined);
+}
+
+export async function pollMetaLogin(loginId: string): Promise<LoginPoll> {
+  const s = meta.getLogin(z.string().uuid().parse(loginId));
+  if (!s) return { status: "failed", error: "Sesi login tidak ditemukan. Coba lagi." };
+  if (s.status !== "done" || !s.result) return { status: s.status === "done" ? "identifying" : s.status, error: s.error };
+  const r = s.result;
+  const saved = await saveLogin(s.platform, s.sessionKey, { username: r.username, uid: r.uid, nickname: r.name, avatar: r.avatar });
+  metaPaths(s.platform);
+  return { status: "done" as const, accountId: saved.id, created: saved.created, username: r.username };
+}
+
+export async function cancelMetaLogin(loginId: string) {
+  await meta.cancelLogin(z.string().uuid().parse(loginId));
+}
+
+export async function checkMetaSession(id: number) {
+  const a = await getAccount(id);
+  const platform = MetaP.parse(a.platform);
+  const res = isProfileKey(a.sessionKey) ? await meta.checkSession(platform, a.sessionKey) : { valid: false as const, checkpoint: false };
+  // same account only: a profile now signed in as someone else must not silently move this row
+  const same = res.valid && (!a.externalId || res.uid === a.externalId);
+  const identity = same ? { username: res.username, externalId: res.uid, displayName: res.name, ...(res.avatar ? { avatarUrl: res.avatar } : {}) } : {};
+  await db
+    .update(accounts)
+    .set({ status: same ? "active" : "need_login", lastCheckAt: new Date(), ...identity })
+    .where(eq(accounts.id, a.id));
+  metaPaths(platform);
+  return { valid: same, checkpoint: !res.valid && res.checkpoint, other: res.valid && !same };
 }

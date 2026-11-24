@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { CloudDownload, Loader2, LogIn, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { confirmDialog } from "@/components/confirm-dialog";
-import { checkTikTokSession, checkYouTubeSession, deleteAccount, syncTikTokAccount } from "./actions";
-import { connectTikTok, connectYouTube } from "./tiktok-connect";
+import { checkMetaSession, checkTikTokSession, checkYouTubeSession, deleteAccount, syncTikTokAccount } from "./actions";
+import { connectMeta, connectTikTok, connectYouTube } from "./tiktok-connect";
 
 type Props = { id: number; platform: string; username: string; hasSession: boolean; needsLogin: boolean };
 
@@ -19,7 +19,8 @@ export function AccountActions({ id, platform, username, hasSession, needsLogin 
   const [busy, setBusy] = useState<null | "check" | "login" | "sync" | "delete">(null);
   const isTikTok = platform === "tiktok";
   const isYouTube = platform === "youtube";
-  const canLogin = isTikTok || isYouTube;
+  const isMeta = platform === "instagram" || platform === "facebook";
+  const canLogin = isTikTok || isYouTube || isMeta;
   const at = isTikTok ? `@${username}` : username;
 
   async function run(kind: NonNullable<typeof busy>, fn: () => Promise<void>) {
@@ -38,6 +39,11 @@ export function AccountActions({ id, platform, username, hasSession, needsLogin 
     run("login", async () => {
       const t = toast.loading(`Membuka login ${at}...`);
       try {
+        if (isMeta) {
+          const s = await connectMeta(platform as "instagram" | "facebook", id, (msg) => toast.loading(msg, { id: t }));
+          toast.success(`Sesi ${s.username} diperbarui`, { id: t });
+          return;
+        }
         if (isYouTube) {
           const s = await connectYouTube(id, (msg) => toast.loading(msg, { id: t }));
           toast.success(`Sesi ${s.username} diperbarui`, { id: t });
@@ -65,6 +71,14 @@ export function AccountActions({ id, platform, username, hasSession, needsLogin 
 
   const check = () =>
     run("check", async () => {
+      if (isMeta) {
+        const r = await checkMetaSession(id);
+        if (r.valid) toast.success(`Sesi ${at} masih aktif`);
+        else if (r.checkpoint) toast.warning(`${at} diminta verifikasi keamanan. Klik Login lalu selesaikan di jendela yang terbuka.`);
+        else if (r.other) toast.warning(`Profil browser ${at} sekarang login sebagai akun lain. Login ulang akun ini.`);
+        else toast.warning(`Sesi ${at} habis, perlu login ulang`);
+        return;
+      }
       const r = await (isYouTube ? checkYouTubeSession : checkTikTokSession)(id);
       if (r.valid) toast.success(`Sesi ${at} masih aktif`);
       else toast.warning(`Sesi ${at} habis, perlu login ulang`);

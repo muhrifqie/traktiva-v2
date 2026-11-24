@@ -9,7 +9,9 @@ import { PLATFORMS } from "@/lib/db/schema";
 import { PLATFORM } from "@/lib/platforms";
 import { syncShowcase } from "../showcase/actions";
 import { syncYouTubeAccount } from "../youtube-performa/actions";
-import { pollTikTokLogin, pollYouTubeLogin, startTikTokLogin, startYouTubeLogin, syncTikTokAccount } from "./actions";
+import { pollMetaLogin, pollTikTokLogin, pollYouTubeLogin, startMetaLogin, startTikTokLogin, startYouTubeLogin, syncTikTokAccount } from "./actions";
+
+type Connectable = "tiktok" | "youtube" | "instagram" | "facebook";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -54,14 +56,30 @@ export async function connectYouTube(accountId?: number, onStep?: (msg: string) 
   }
 }
 
+/** Instagram / Facebook: their own login page in a Chrome profile; a security check is finished by the user there. */
+export async function connectMeta(platform: "instagram" | "facebook", accountId?: number, onStep?: (msg: string) => void) {
+  const { loginId } = await startMetaLogin(platform, accountId);
+  onStep?.(`Silakan login ${PLATFORM[platform].label} di jendela yang terbuka (selesaikan verifikasi kalau diminta)...`);
+  for (;;) {
+    await sleep(1500);
+    const s = await pollMetaLogin(loginId);
+    if (s.status === "identifying") onStep?.("Login terdeteksi, mengenali akun...");
+    if (s.status === "done") return s;
+    if (s.status === "failed" || s.status === "cancelled") throw new Error(s.error || "Login gagal");
+  }
+}
+
 export function useConnect() {
   const router = useRouter();
-  const [busy, setBusy] = useState<null | "tiktok" | "youtube">(null);
-  async function connect(platform: "tiktok" | "youtube" = "tiktok") {
+  const [busy, setBusy] = useState<null | Connectable>(null);
+  async function connect(platform: Connectable = "tiktok") {
     setBusy(platform);
     const t = toast.loading(`Membuka jendela login ${PLATFORM[platform].label}...`);
     try {
-      if (platform === "youtube") {
+      if (platform === "instagram" || platform === "facebook") {
+        const s = await connectMeta(platform, undefined, (msg) => toast.loading(msg, { id: t }));
+        toast.success(`${s.created ? `${s.username} tersambung` : `Sesi ${s.username} diperbarui`} (${PLATFORM[platform].label})`, { id: t });
+      } else if (platform === "youtube") {
         const s = await connectYouTube(undefined, (msg) => toast.loading(msg, { id: t }));
         toast.success(`${s.created ? `${s.username} tersambung` : `Sesi ${s.username} diperbarui`}${s.videos != null ? ` · ${s.videos} video` : ""}`, { id: t });
       } else {
@@ -80,7 +98,7 @@ export function useConnect() {
 }
 
 // Platforms with a working login flow; the rest show as "Segera".
-const READY = new Set(["tiktok", "youtube"]);
+const READY = new Set(["tiktok", "youtube", "instagram", "facebook"]);
 
 export function TikTokConnectButton() {
   const { busy, connect } = useConnect();
@@ -117,7 +135,7 @@ export function ConnectTile() {
               key={p}
               type="button"
               disabled={!ready || !!busy}
-              onClick={() => connect(p as "tiktok" | "youtube")}
+              onClick={() => connect(p as Connectable)}
               title={ready ? `Hubungkan ${PLATFORM[p].label}` : "Segera hadir"}
               className="flex items-center gap-2 rounded-lg border bg-background px-2.5 py-2 text-left text-xs font-medium hover:border-ring/40 hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-background"
             >
