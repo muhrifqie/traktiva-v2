@@ -41,6 +41,15 @@ exports.default = async ({ appOutDir }) => {
     const to = path.join(dest, rel);
     if (!fs.existsSync(to)) fs.copyFileSync(path.join(root, rel), to);
   }
+  // Next's production runtimes are picked per route type at runtime; the trace only keeps the page ones, so every
+  // route handler (/api/media images & videos, /api/status, ...) failed with "Cannot find module
+  // next/dist/compiled/next-server/app-route-turbo.runtime.prod.js" (0.2.2). Ship all of them.
+  const runtimes = path.join("node_modules", "next", "dist", "compiled", "next-server");
+  for (const f of fs.readdirSync(path.join(root, runtimes))) {
+    if (!f.endsWith(".runtime.prod.js")) continue;
+    const to = path.join(dest, runtimes, f);
+    if (!fs.existsSync(to)) fs.copyFileSync(path.join(root, runtimes, f), to);
+  }
   for (const dir of fs.readdirSync(path.join(dest, ".next", "node_modules"), { withFileTypes: true })) {
     if (dir.name.startsWith("playwright-core-")) {
       const to = path.join(dest, ".next", "node_modules", dir.name, "browsers.json");
@@ -52,6 +61,7 @@ exports.default = async ({ appOutDir }) => {
   const links = symlinks(dest);
   if (links.length) throw new Error(`app-server masih berisi symlink (akan rusak di PC lain):\n${links.join("\n")}`);
   if (fs.existsSync(path.join(dest, "data"))) throw new Error("app-server berisi folder data/ (DB dev): build ulang dengan npm run build");
+  if (!fs.existsSync(path.join(dest, runtimes, "app-route-turbo.runtime.prod.js"))) throw new Error("app-server tanpa runtime route handler Next: /api/* (gambar, video) akan error 500");
 
   if (!fs.existsSync(path.join(dest, ".next", "server", "chunks", "ssr", "[turbopack]_runtime.js"))) throw new Error("app-server tanpa .next/server/chunks/ssr: halaman tidak akan jalan");
 
