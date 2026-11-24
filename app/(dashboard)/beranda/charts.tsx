@@ -7,7 +7,7 @@ const shortFmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "shor
 const num = new Intl.NumberFormat("id-ID");
 
 /** One series per chart: daily counts as thin bars (4px rounded tops, 2px gaps, baseline-anchored), hover tooltip. */
-export function DailyBars({ data, color, unit, label }: { data: { day: number; n: number }[]; color: string; unit: string; label: string }) {
+export function DailyBars({ data, color, unit, label, period = "14 hari" }: { data: { day: number; n: number }[]; color: string; unit: string; label: string; period?: string }) {
   const [hover, setHover] = useState<number | null>(null);
   const max = Math.max(1, ...data.map((d) => d.n));
   const total = data.reduce((n, d) => n + d.n, 0);
@@ -16,7 +16,7 @@ export function DailyBars({ data, color, unit, label }: { data: { day: number; n
     <figure className="min-w-0">
       <figcaption className="mb-2 flex items-baseline justify-between gap-2 text-xs">
         <span className="text-muted-foreground">{label}</span>
-        <span className="font-medium tabular-nums">{h ? `${dayFmt.format(h.day * 1000)}: ${h.n} ${unit}` : `${total} ${unit} · 14 hari`}</span>
+        <span className="font-medium tabular-nums">{h ? `${dayFmt.format(h.day * 1000)}: ${h.n} ${unit}` : `${total} ${unit} · ${period}`}</span>
       </figcaption>
       <div
         className="relative flex h-24 items-end gap-[2px] border-b border-border"

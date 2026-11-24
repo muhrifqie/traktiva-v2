@@ -8,6 +8,7 @@ import { PlatformIcon } from "@/components/platform-icon";
 import { PLATFORMS } from "@/lib/db/schema";
 import { PLATFORM } from "@/lib/platforms";
 import { syncShowcase } from "../showcase/actions";
+import { syncYouTubeAccount } from "../youtube-performa/actions";
 import { pollTikTokLogin, pollYouTubeLogin, startTikTokLogin, startYouTubeLogin, syncTikTokAccount } from "./actions";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -43,7 +44,12 @@ export async function connectYouTube(accountId?: number, onStep?: (msg: string) 
     await sleep(1500);
     const s = await pollYouTubeLogin(loginId);
     if (s.status === "identifying") onStep?.("Login terdeteksi, mengenali channel...");
-    if (s.status === "done") return s;
+    if (s.status === "done") {
+      // pull videos + Insight right away, so Performa is filled without pressing anything
+      onStep?.(`${s.username} tersambung, mengambil data dari YouTube Studio (±1 menit)...`);
+      const synced = await syncYouTubeAccount(s.accountId).catch(() => null); // no channel yet / Studio busy: the auto-sync retries
+      return { ...s, videos: synced?.videos ?? null };
+    }
     if (s.status === "failed" || s.status === "cancelled") throw new Error(s.error || "Login gagal");
   }
 }
@@ -57,7 +63,7 @@ export function useConnect() {
     try {
       if (platform === "youtube") {
         const s = await connectYouTube(undefined, (msg) => toast.loading(msg, { id: t }));
-        toast.success(`${s.created ? `${s.username} tersambung` : `Sesi ${s.username} diperbarui`}`, { id: t });
+        toast.success(`${s.created ? `${s.username} tersambung` : `Sesi ${s.username} diperbarui`}${s.videos != null ? ` · ${s.videos} video` : ""}`, { id: t });
       } else {
         const s = await connectTikTok(undefined, (msg) => toast.loading(msg, { id: t }));
         const shop = s.showcaseCount != null ? ` · ${s.showcaseCount} produk etalase` : "";

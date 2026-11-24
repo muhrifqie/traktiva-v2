@@ -1,7 +1,8 @@
 import "server-only";
 import { and, desc, eq, gt, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { accounts, accountStats, uploadJobs } from "@/lib/db/schema";
+import { accounts, accountStats, shopCache, uploadJobs } from "@/lib/db/schema";
+import { YT_CACHE } from "@/lib/platforms/youtube-studio";
 import { isUploadBusy } from "@/lib/uploads";
 
 // Profil & Postingan (and the content analysis on Beranda/Profil) stay current without pressing Sinkronkan:
@@ -13,6 +14,8 @@ const CHECK_MS = 2 * 60_000;
 export const PROFILE_SYNC_EVERY_MIN = 30;
 const AFTER_POST_MIN = 3; // TikTok needs a moment before a new post shows on the profile
 const RETRY_MIN = 10; // after a failed sync, wait this long before trying that account again
+// YouTube channels: Studio is read every few hours only (4 page loads per sync; Google flags busy sessions)
+export const YOUTUBE_SYNC_EVERY_MIN = 180;
 
 const g = globalThis as unknown as { __profileTimer?: ReturnType<typeof setInterval>; __profileBusy?: boolean; __profileTried?: Map<number, number> };
 
@@ -45,6 +48,18 @@ export async function tickProfileSync() {
       if (!newPost && !newUpload && now - last < PROFILE_SYNC_EVERY_MIN * 60_000) continue;
       tried.set(a.id, now);
       await syncTikTokAccount(a.id).catch((e) => console.warn("[profil-sync]", a.username, e instanceof Error ? e.message : e));
+    }
+
+    const yt = await db.select().from(accounts).where(and(eq(accounts.platform, "youtube"), eq(accounts.status, "active")));
+    const { syncYouTubeAccount } = await import("@/app/(dashboard)/youtube-performa/actions");
+    for (const a of yt) {
+      if (!a.sessionKey?.startsWith("cfx_") || !a.externalId?.startsWith("UC")) continue;
+      const now = Date.now();
+      if (now - (tried.get(a.id) ?? 0) < RETRY_MIN * 60_000) continue;
+      const last = (await db.select({ at: shopCache.capturedAt }).from(shopCache).where(and(eq(shopCache.accountId, a.id), eq(shopCache.key, YT_CACHE))).get())?.at.getTime() ?? 0;
+      if (now - last < YOUTUBE_SYNC_EVERY_MIN * 60_000) continue;
+      tried.set(a.id, now);
+      await syncYouTubeAccount(a.id).catch((e) => console.warn("[youtube-sync]", a.username, e instanceof Error ? e.message : e));
     }
   } finally {
     g.__profileBusy = false;
