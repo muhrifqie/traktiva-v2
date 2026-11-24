@@ -72,7 +72,11 @@ function Monogram({ letter, bg, fg = "#fff", label, className = "size-4" }: { le
   );
 }
 export const CartesiaIcon = ({ className }: { className?: string }) => <Monogram letter="C" bg="#111111" label="Cartesia" className={className} />;
-export const KaloDataIcon = ({ className }: { className?: string }) => <Monogram letter="K" bg="#FF5A1F" label="KaloData" className={className} />;
+/** KaloData's own mark (public/brands/kalodata.png, transparent background). */
+export const KaloDataIcon = ({ className = "size-4" }: { className?: string }) => (
+  // eslint-disable-next-line @next/next/no-img-element -- tiny static brand mark
+  <img src="/brands/kalodata.png" alt="KaloData" className={`${className} object-contain`} />
+);
 
 /** simple-icons mark in its brand color (dark marks switch to the text color so they show on dark themes). */
 function SimpleIcon({ icon, className = "size-4" }: { icon: { path: string; hex: string; title: string }; className?: string }) {

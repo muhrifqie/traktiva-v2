@@ -184,7 +184,8 @@ async function session() {
  * Written to <userData>/server-info.json, which the app's Next server reads (lib/server-info.ts).
  */
 // where the app's Next server reads it: userData when packaged, ./data in dev (next dev's DATA_DIR)
-const infoFile = () => path.join(app.isPackaged ? app.getPath("userData") : path.join(__dirname, "..", "data"), "server-info.json");
+// (TRAKTIVA_DATA_DIR in dev = run against another data folder, e.g. the installed app's, with the same license)
+const infoFile = () => path.join(process.env.TRAKTIVA_DATA_DIR || (app.isPackaged ? app.getPath("userData") : path.join(__dirname, "..", "data")), "server-info.json");
 
 async function writeServerInfo(info) {
   const file = infoFile();
