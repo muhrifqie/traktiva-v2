@@ -8,6 +8,7 @@ import { accountPosts, accounts, accountStats } from "@/lib/db/schema";
 import { deleteProfile, isProfileKey } from "@/lib/browser/chrome";
 import { removeMedia } from "@/lib/media";
 import * as tiktok from "@/lib/platforms/tiktok";
+import * as youtube from "@/lib/platforms/youtube";
 
 // Accounts are only created by a real platform login (username/uid read from the session), never typed in by hand.
 
@@ -35,10 +36,10 @@ export async function deleteAccount(id: number) {
 }
 
 /**
- * Upsert a TikTok account after a successful login.
- * Match order: same TikTok uid (username may have changed) → same username → new row.
+ * Upsert an account after a successful login.
+ * Match order: same platform id (username may have changed) → same username → new row.
  */
-async function saveTikTokLogin(sessionKey: string, who: tiktok.TikTokIdentity) {
+async function saveLogin(platform: "tiktok" | "youtube", sessionKey: string, who: tiktok.TikTokIdentity) {
   const now = new Date();
   const values = {
     username: who.username,
@@ -51,13 +52,13 @@ async function saveTikTokLogin(sessionKey: string, who: tiktok.TikTokIdentity) {
     ...(who.avatar ? { avatarUrl: who.avatar } : {}),
   };
   const existing =
-    (who.uid && (await db.select().from(accounts).where(and(eq(accounts.platform, "tiktok"), eq(accounts.externalId, who.uid))).get())) ||
-    (await db.select().from(accounts).where(and(eq(accounts.platform, "tiktok"), eq(accounts.username, who.username))).get());
+    (who.uid && (await db.select().from(accounts).where(and(eq(accounts.platform, platform), eq(accounts.externalId, who.uid))).get())) ||
+    (await db.select().from(accounts).where(and(eq(accounts.platform, platform), eq(accounts.username, who.username))).get());
 
   if (existing) {
     if (existing.username !== who.username) {
       // uid matched but the user renamed; drop a stale row holding the new name so the unique index holds
-      await db.delete(accounts).where(and(eq(accounts.platform, "tiktok"), eq(accounts.username, who.username)));
+      await db.delete(accounts).where(and(eq(accounts.platform, platform), eq(accounts.username, who.username)));
     }
     await db.update(accounts).set(values).where(eq(accounts.id, existing.id));
     // the old browser profile is replaced by the one that just logged in
@@ -66,7 +67,7 @@ async function saveTikTokLogin(sessionKey: string, who: tiktok.TikTokIdentity) {
     }
     return { id: existing.id, created: false };
   }
-  const [{ id }] = await db.insert(accounts).values({ platform: "tiktok", ...values }).returning({ id: accounts.id });
+  const [{ id }] = await db.insert(accounts).values({ platform, ...values }).returning({ id: accounts.id });
   return { id, created: true };
 }
 
@@ -89,7 +90,7 @@ export async function pollTikTokLogin(loginId: string): Promise<LoginPoll> {
   const s = tiktok.getLogin(z.string().uuid().parse(loginId));
   if (!s) return { status: "failed", error: "Sesi login tidak ditemukan. Coba lagi." };
   if (s.status !== "done" || !s.result) return { status: s.status === "done" ? "identifying" : s.status, error: s.error };
-  const saved = await saveTikTokLogin(s.sessionKey, s.result);
+  const saved = await saveLogin("tiktok", s.sessionKey, s.result);
   refresh();
   return { status: "done" as const, accountId: saved.id, created: saved.created, username: s.result.username };
 }
@@ -190,4 +191,39 @@ export async function syncTikTokAccount(id: number) {
 
   refresh();
   return { videos: p.videos.length, removed, followers: p.followers, playlists: p.playlists.length };
+}
+
+// ---------- YouTube: login + stored session (a Chrome profile per channel) ----------
+
+const ytWho = (r: youtube.YouTubeIdentity): tiktok.TikTokIdentity => ({ username: r.username, uid: r.channelId ?? r.email, nickname: r.name, avatar: r.avatar });
+
+export async function startYouTubeLogin(accountId?: number) {
+  const a = accountId ? await getAccount(accountId) : null;
+  return youtube.startLogin(a && isProfileKey(a.sessionKey) ? a.sessionKey : undefined);
+}
+
+export async function pollYouTubeLogin(loginId: string): Promise<LoginPoll> {
+  const s = youtube.getLogin(z.string().uuid().parse(loginId));
+  if (!s) return { status: "failed", error: "Sesi login tidak ditemukan. Coba lagi." };
+  if (s.status !== "done" || !s.result) return { status: s.status === "done" ? "identifying" : s.status, error: s.error };
+  const saved = await saveLogin("youtube", s.sessionKey, ytWho(s.result));
+  refresh();
+  revalidatePath("/youtube");
+  return { status: "done" as const, accountId: saved.id, created: saved.created, username: s.result.username };
+}
+
+export async function cancelYouTubeLogin(loginId: string) {
+  await youtube.cancelLogin(z.string().uuid().parse(loginId));
+}
+
+export async function checkYouTubeSession(id: number) {
+  const a = await getAccount(id);
+  const res = isProfileKey(a.sessionKey) ? await youtube.checkSession(a.sessionKey) : { valid: false as const };
+  await db
+    .update(accounts)
+    .set({ status: res.valid ? "active" : "need_login", lastCheckAt: new Date(), ...(res.valid ? { username: res.username, externalId: res.channelId ?? res.email, displayName: res.name, ...(res.avatar ? { avatarUrl: res.avatar } : {}) } : {}) })
+    .where(eq(accounts.id, a.id));
+  refresh();
+  revalidatePath("/youtube");
+  return { valid: res.valid };
 }

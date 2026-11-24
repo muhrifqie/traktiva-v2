@@ -1,5 +1,5 @@
 import {
-  CalendarClock, Clapperboard, Film, FolderKanban, ImagePlus, Images, LayoutDashboard, Settings, Store, TrendingUp, UserCircle, Users,
+  CalendarClock, Clapperboard, Download, Film, FolderKanban, ImagePlus, Images, LayoutDashboard, Settings, Store, TrendingUp, UserCircle, Users,
 } from "lucide-react";
 
 // Single source for sidebar, page headers, command menu and placeholder routes. Add a menu here, then build its page.
@@ -22,7 +22,8 @@ export const NAV = [
   { slug: "shopee", title: "Shopee", icon: Store, group: "Segera hadir", platform: "shopee", status: "Segera", color: "#ee4d2d", desc: "Akun Shopee Video, etalase, dan jadwal upload dari video yang sama. Sedang dikerjakan." },
   { slug: "instagram", title: "Instagram", icon: Store, group: "Segera hadir", platform: "instagram", status: "Rencana", color: "#ff2d7a", desc: "Upload Reels ke akun Instagram Business/Creator dari video yang sama. Direncanakan." },
   { slug: "facebook", title: "Facebook", icon: Store, group: "Segera hadir", platform: "facebook", status: "Rencana", color: "#3b82f6", desc: "Upload Reels ke Facebook Page dari video yang sama. Direncanakan." },
-  { slug: "youtube", title: "YouTube Shorts", icon: Store, group: "YouTube", platform: "youtube", color: "#ff3333", desc: "Unduh semua Shorts dari satu channel YouTube ke folder video kamu." }, // live: Shorts downloader; upload comes later
+  { slug: "youtube", title: "YouTube", icon: Store, group: "YouTube", platform: "youtube", color: "#ff3333", desc: "Channel YouTube yang tersambung, sesi login, dan alat YouTube.", sidebar: false }, // the group button
+  { slug: "youtube-shorts", title: "Shorts Downloader", short: "Unduh Shorts", icon: Download, group: "YouTube", color: "#ff3333", desc: "Unduh semua Shorts dari satu channel YouTube ke folder video kamu." },
   { slug: "akun", title: "Akun Sosial", icon: Users, group: "Akun", color: "#26b5ce", desc: "Kelola akun TikTok, Instagram, Facebook, YouTube, dan Shopee." },
   { slug: "pengaturan", title: "Pengaturan", icon: Settings, group: "Pengaturan", color: "#8b7cf6", desc: "Lisensi, akun Google, aturan naskah, suara, dan mesin AI." },
 ] as const;
