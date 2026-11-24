@@ -12,6 +12,7 @@ const fs = require("node:fs");
 const https = require("node:https");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const zlib = require("node:zlib");
 
 const BASE = "https://download.traktiva.site/";
 let running = null;
@@ -30,11 +31,12 @@ function newer(a, b) {
   return false;
 }
 
-function get(url, onData) {
+function get(url, onData, headers = {}) {
   return new Promise((resolve, reject) => {
     https
-      .get(url, { headers: { "cache-control": "no-cache" } }, (res) => {
-        if (res.statusCode !== 200) {
+      .get(url, { headers: { "cache-control": "no-cache", ...headers } }, (res) => {
+        // a Range request must get exactly that part back (206), never the whole file
+        if (res.statusCode !== (headers.range ? 206 : 200)) {
           res.resume();
           return reject(new Error(`Server update menjawab ${res.statusCode}`));
         }
@@ -82,6 +84,17 @@ async function fetchVerified(send) {
     return dest;
   }
   const part = `${dest}.part`; // never a half file under the real name
+  // first try to build it from the installed version's installer + only the changed blocks
+  try {
+    if (await fetchDelta(info, part, send)) {
+      fs.renameSync(part, dest);
+      ready = { version: info.version, file: dest };
+      return dest;
+    }
+  } catch (e) {
+    console.warn("[update] unduhan sebagian gagal, unduh penuh:", e instanceof Error ? e.message : e);
+  }
+  fs.rmSync(part, { force: true });
   const hash = crypto.createHash("sha512");
   const out = fs.createWriteStream(part);
   let received = 0;
@@ -109,6 +122,101 @@ async function fetchVerified(send) {
   fs.renameSync(part, dest);
   ready = { version: info.version, file: dest };
   return dest;
+}
+
+/** A release's .blockmap (electron-builder): its blocks' { checksums, sizes, offset }, or null when unavailable. */
+async function blockmap(file) {
+  const parts = [];
+  try {
+    await get(BASE + encodeURIComponent(`${file}.blockmap`), (res) => res.on("data", (d) => parts.push(d)));
+    const f = JSON.parse(zlib.gunzipSync(Buffer.concat(parts))).files?.[0];
+    return f && Array.isArray(f.checksums) && f.checksums.length === f.sizes?.length ? f : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Differential download (like electron-updater): the new installer is written block by block, copying the blocks
+ * it shares with the installed version's installer (kept in the cache by the installer itself, see
+ * resources/installer.nsh) and fetching only the changed ones with HTTP Range. Must end with latest.yml's SHA-512.
+ * Resolves false when there is nothing to build from (no cached installer or blockmap): the caller downloads it all.
+ */
+async function fetchDelta(info, part, send) {
+  const current = `Traktiva-Setup-${app.getVersion()}.exe`;
+  const base = path.join(cacheDir(), current);
+  if (!fs.existsSync(base)) return false;
+  const [oldMap, newMap] = await Promise.all([blockmap(current), blockmap(info.file)]);
+  if (!oldMap || !newMap) return false;
+  if (oldMap.sizes.reduce((a, b) => a + b, 0) !== fs.statSync(base).size) return false; // not the file the map describes
+  // where every block of the old installer starts
+  const at = new Map();
+  let off = oldMap.offset || 0;
+  oldMap.checksums.forEach((c, i) => {
+    if (!at.has(c)) at.set(c, off);
+    off += oldMap.sizes[i];
+  });
+  // runs of "copy from the old installer" / "download from the new one", neighbours merged
+  const ops = [];
+  let pos = newMap.offset || 0;
+  newMap.checksums.forEach((c, i) => {
+    const size = newMap.sizes[i];
+    const from = at.get(c);
+    const last = ops[ops.length - 1];
+    if (from != null) {
+      if (last?.copy && last.from + last.size === from) last.size += size;
+      else ops.push({ copy: true, from, size });
+    } else if (last && !last.copy && last.start + last.size === pos) last.size += size;
+    else ops.push({ copy: false, start: pos, size });
+    pos += size;
+  });
+  const total = ops.reduce((n, o) => n + (o.copy ? 0 : o.size), 0);
+  console.log(`[update] ${info.version}: unduh ${(total / 1048576).toFixed(1)} MB dari ${(pos / 1048576).toFixed(1)} MB (${ops.filter((o) => !o.copy).length} potongan)`);
+  const hash = crypto.createHash("sha512");
+  const src = await fs.promises.open(base, "r");
+  const dst = await fs.promises.open(part, "w");
+  let received = 0;
+  let last = 0;
+  try {
+    for (const o of ops) {
+      if (o.copy) {
+        for (let done = 0; done < o.size; ) {
+          const n = Math.min(4 * 1048576, o.size - done);
+          const buf = Buffer.allocUnsafe(n);
+          const { bytesRead } = await src.read(buf, 0, n, o.from + done);
+          if (bytesRead !== n) throw new Error("installer lama terpotong");
+          hash.update(buf);
+          await dst.write(buf);
+          done += n;
+        }
+      } else {
+        const chunks = [];
+        await get(
+          BASE + encodeURIComponent(info.file),
+          (res) =>
+            res.on("data", (d) => {
+              chunks.push(d);
+              received += d.length;
+              if (Date.now() - last > 250) {
+                last = Date.now();
+                send({ stage: "download", received, total });
+              }
+            }),
+          { range: `bytes=${o.start}-${o.start + o.size - 1}` },
+        );
+        const buf = Buffer.concat(chunks);
+        if (buf.length !== o.size) throw new Error("potongan update tidak lengkap");
+        hash.update(buf);
+        await dst.write(buf);
+      }
+    }
+  } finally {
+    await src.close();
+    await dst.close();
+  }
+  send({ stage: "verify" });
+  if (hash.digest("base64") !== info.sha512) throw new Error("hasil rakitan tidak cocok dengan SHA-512 rilis");
+  return true;
 }
 
 /** Run the installer silently into the same folder. `restart`: start the app again when done. */
@@ -144,12 +252,16 @@ async function install(send) {
 /** For the app: the version already downloaded and verified (installed on close), or null. */
 const status = () => ({ ready: ready && fs.existsSync(ready.file) ? ready.version : null });
 
-/** Installers of versions this app already has are not needed any more. */
+/**
+ * Keep the installed version's installer (the base of the next differential update) and newer ones; installers of
+ * older versions and half downloads are not needed any more.
+ */
 function cleanCache() {
   try {
     for (const f of fs.readdirSync(cacheDir())) {
-      const v = f.match(/^Traktiva-Setup-([\d.]+)\.exe(\.part)?$/)?.[1];
-      if (!v || !newer(v, app.getVersion())) fs.rmSync(path.join(cacheDir(), f), { force: true });
+      const m = f.match(/^Traktiva-Setup-([\d.]+)\.exe(\.part)?$/);
+      const keep = m && (newer(m[1], app.getVersion()) || (!m[2] && m[1] === app.getVersion()));
+      if (!keep) fs.rmSync(path.join(cacheDir(), f), { force: true });
     }
   } catch {}
 }
