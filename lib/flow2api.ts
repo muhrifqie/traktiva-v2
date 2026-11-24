@@ -250,14 +250,24 @@ export async function checkFlow2Api(cfg: Flow2ApiConfig) {
 
 export type BrowserCookie = { name: string; value: string; domain: string; path: string; expires: number; httpOnly: boolean; secure: boolean; sameSite?: string };
 
-/** Register (or refresh) a Google/Flow session in flow2api. Returns the flow2api token id, email and credits. */
-export async function upsertFlowSession(input: { tokenId?: number | null; st: string; cookies: BrowserCookie[]; remark: string }) {
+/**
+ * Register (or refresh) a Google/Flow session in flow2api. Returns the flow2api token id, email and credits.
+ * The saved token id is only reused when flow2api still has that session for the same account: after flow2api's
+ * own database was reset (fresh sidecar, reinstall) a PUT to a missing id answers 200 without saving anything, and
+ * the id may by then belong to another account. In both cases the session is registered anew.
+ */
+export async function upsertFlowSession(input: { tokenId?: number | null; email: string; st: string; cookies: BrowserCookie[]; remark: string }) {
   const cfg = await requireFlow2Api();
   const body = JSON.stringify({ st: input.st, google_cookies: JSON.stringify(input.cookies), remark: input.remark, video_enabled: true, image_enabled: true });
-  if (input.tokenId) {
-    await admin(cfg, `/api/tokens/${input.tokenId}`, { method: "PUT", body });
-    const credits = await refreshFlowCredits(input.tokenId).catch(() => null);
-    return { id: input.tokenId, email: null as string | null, credits };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- flow2api JSON
+  const tokens: any[] = await admin(cfg, "/api/tokens").then((t) => (Array.isArray(t) ? t : []));
+  const mine = (t: { email?: string; remark?: string }) => String(t.email ?? "").toLowerCase() === input.email.toLowerCase() || t.remark === input.remark;
+  // the saved id when it is still this account's, else this account's session under another id (no duplicate)
+  const id = Number((tokens.find((t) => Number(t.id) === input.tokenId && mine(t)) ?? tokens.find(mine))?.id) || null;
+  if (id) {
+    await admin(cfg, `/api/tokens/${id}`, { method: "PUT", body });
+    const credits = await refreshFlowCredits(id).catch(() => null);
+    return { id, email: null as string | null, credits };
   }
   const j = await admin(cfg, "/api/tokens", { method: "POST", body });
   return { id: Number(j.token.id), email: (j.token.email as string) ?? null, credits: j.token.credits != null ? Number(j.token.credits) : null };
