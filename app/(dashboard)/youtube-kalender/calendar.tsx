@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, CalendarDays, CalendarRange, Check, ChevronLeft, ChevronRight, Clock, Film, Play, Plus, Search, Sparkles, Trash2, Upload, X } from "lucide-react";
+import { CalendarClock, CalendarDays, CalendarRange, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Film, Play, Plus, Search, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
+import { Popover } from "@base-ui/react/popover";
+import { confirmDialog } from "@/components/confirm-dialog";
 import { openLightbox } from "@/components/media-lightbox";
 import { accountColor } from "@/lib/account-color";
 import { mediaUrl } from "@/lib/media-url";
@@ -202,10 +204,6 @@ export function YouTubeCalendar({ channels, videos, jobs }: { channels: Channel[
     }
     return out;
   })();
-  const range = view === "week" ? weekDays.map(dayKey) : monthWeeks.flat().filter((d) => d.getMonth() === base.getMonth()).map(dayKey);
-  const inRange = (day: string) => range.includes(day);
-  const draftCount = drafts.filter((d) => inRange(d.day)).length;
-  const jobCount = jobs.filter((j) => inRange(dayKey(new Date(j.at)))).length;
   const step = (n: number) => setCursor((c) => (view === "week" ? addDays(c ?? new Date(), n * 7) : new Date((c ?? new Date()).getFullYear(), (c ?? new Date()).getMonth() + n, 1)));
   const title = view === "week" ? `${SHORT.format(weekDays[0])} – ${SHORT.format(weekDays[6])} ${weekDays[6].getFullYear()}` : MONTH.format(base);
 
@@ -285,56 +283,61 @@ export function YouTubeCalendar({ channels, videos, jobs }: { channels: Channel[
 
   return (
     <div className="flex min-h-[calc(100vh-190px)] flex-1 flex-col gap-3">
-      {/* ── toolbar: channels · upload hours · drafts ─────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border bg-card p-3">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="mr-1 text-xs font-medium text-muted-foreground">Channel</span>
+      {/* ── toolbar: where dropped videos go · at which hours · the drafts ─────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+          <span className="px-1.5 text-xs font-medium text-muted-foreground">Posting ke</span>
           {channels.map((c) => {
             const on = picked.includes(c.id);
+            const n = drafts.filter((d) => d.channelId === c.id).length;
+            const color = accountColor(c.id);
             return (
               <button
                 key={c.id}
                 type="button"
                 onClick={() => setPicked((p) => (on ? p.filter((x) => x !== c.id) : [...p, c.id]))}
                 aria-pressed={on}
-                title={c.active ? undefined : "Perlu login ulang"}
-                className={`flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors ${on ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"} ${c.active ? "" : "opacity-50"}`}
-                style={on ? { borderColor: accountColor(c.id) } : undefined}
+                title={c.active ? (on ? "Klik untuk tidak memakai channel ini" : "Klik untuk ikut memakai channel ini") : "Perlu login ulang"}
+                className={`flex h-8 items-center gap-1.5 rounded-lg pr-2.5 pl-1 text-xs font-medium transition-colors ${on ? "text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"} ${c.active ? "" : "opacity-50"}`}
+                style={on ? { background: `${color}26`, boxShadow: `inset 0 0 0 1px ${color}` } : undefined}
               >
                 {c.avatar ? (
                   // eslint-disable-next-line @next/next/no-img-element -- remote channel avatar
-                  <img src={c.avatar} alt="" className="size-5 rounded-full" style={{ boxShadow: `0 0 0 2px ${accountColor(c.id)}` }} />
+                  <img src={c.avatar} alt="" className={`size-6 rounded-md ${on ? "" : "opacity-60 grayscale"}`} />
                 ) : (
-                  <span className="size-2.5 rounded-full" style={{ background: accountColor(c.id) }} />
+                  <span className="grid size-6 place-items-center rounded-md text-[11px] font-semibold text-white" style={{ background: color }}>{c.name.slice(0, 1)}</span>
                 )}
                 {c.name}
-                {on && <Check className="size-3" />}
+                {n > 0 && <span className="min-w-4 rounded-full bg-background/80 px-1 text-center text-[10px] tabular-nums">{n}</span>}
               </button>
             );
           })}
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="mr-1 flex items-center gap-1 text-xs font-medium text-muted-foreground"><Clock className="size-3.5" /> Jam tayang</span>
-          {sortedSlots.map((t) => (
-            <span key={t} className="flex h-7 items-center gap-1 rounded-md bg-muted px-2 text-xs tabular-nums">
-              {dot(t)}
-              {slots.length > 1 && (
-                <button type="button" onClick={() => setSlots((s) => s.filter((x) => x !== t))} aria-label={`Hapus jam ${t}`} className="text-muted-foreground hover:text-destructive"><X className="size-3" /></button>
-              )}
-            </span>
-          ))}
-          <span className="flex items-center gap-1">
-            <input type="time" value={newSlot} onChange={(e) => setNewSlot(e.target.value)} aria-label="Jam baru" className="h-7 rounded-md border bg-background px-1.5 text-xs" />
-            <button type="button" onClick={() => newSlot && !slots.includes(newSlot) && setSlots((s) => [...s, newSlot])} className="grid size-7 place-items-center rounded-md border hover:bg-accent" aria-label="Tambah jam" title="Tambah jam tayang"><Plus className="size-3.5" /></button>
-          </span>
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">{drafts.length ? `${drafts.length} draf` : "Belum ada draf"}</span>
-          {drafts.length > 0 && (
-            <button type="button" onClick={() => setDrafts([])} className="flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-muted-foreground hover:bg-accent hover:text-destructive"><Trash2 className="size-3.5" /> Kosongkan</button>
+          {channels.length > 1 && (
+            <button type="button" onClick={() => setPicked(picked.length === channels.length ? [] : channels.map((c) => c.id))} className="h-8 rounded-lg px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground">
+              {picked.length === channels.length ? "Kosongkan pilihan" : "Pilih semua"}
+            </button>
           )}
-          <button type="button" disabled title="Menyusul: draf diubah jadi jadwal upload sungguhan" className="flex h-9 items-center gap-1.5 rounded-lg bg-[#ff3333] px-3.5 text-[13px] font-semibold text-white opacity-50">
-            <Upload className="size-4" /> Masukkan ke antrean
+        </div>
+
+
+        <div className="flex items-center gap-1 border-l pl-2">
+          <span className={`px-1.5 text-xs ${drafts.length ? "" : "text-muted-foreground"}`}>
+            {drafts.length ? <><b className="tabular-nums">{drafts.length}</b> draf</> : "Belum ada draf"}
+          </span>
+          {drafts.length > 0 && (
+            <button
+              type="button"
+              onClick={async () => (await confirmDialog({ title: `Hapus ${drafts.length} draf?`, description: "Hanya draf di kalender ini; jadwal yang sudah di antrean tidak tersentuh.", danger: true })) && setDrafts([])}
+              aria-label="Hapus semua draf"
+              title="Hapus semua draf"
+              className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-destructive"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          )}
+          <button type="button" disabled title="Menyusul: draf diubah jadi jadwal upload sungguhan" className="flex h-8 cursor-not-allowed items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium text-muted-foreground">
+            <Upload className="size-3.5" /> Masukkan ke antrean
+            <span className="rounded bg-muted px-1 text-[10px] font-normal">segera</span>
           </button>
         </div>
       </div>
@@ -397,7 +400,45 @@ export function YouTubeCalendar({ channels, videos, jobs }: { channels: Channel[
                 </button>
               ))}
             </div>
-            <span className="ml-auto text-xs text-muted-foreground">{draftCount} draf · {jobCount} di antrean/terposting</span>
+            <div className="ml-auto" />
+            <Popover.Root>
+              <Popover.Trigger className="flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs hover:bg-accent data-[popup-open]:bg-accent">
+                <Clock className="size-3.5 text-muted-foreground" />
+                <span className="text-muted-foreground">Jam tayang</span>
+                <span className="font-medium tabular-nums">{sortedSlots.slice(0, 4).map(dot).join(" · ")}{sortedSlots.length > 4 ? ` +${sortedSlots.length - 4}` : ""}</span>
+                <ChevronDown className="size-3.5 text-muted-foreground" />
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Positioner sideOffset={6} align="end" className="isolate z-50 outline-none">
+                  <Popover.Popup className="w-64 rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg outline-none">
+                    <p className="text-sm font-medium">Jam tayang</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">Video yang ditarik ke sebuah tanggal memakai jam kosong pertama di daftar ini, untuk tiap channel.</p>
+                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                      {sortedSlots.map((t) => (
+                        <span key={t} className="flex h-7 items-center gap-1 rounded-md bg-muted pr-1 pl-2 text-xs font-medium tabular-nums">
+                          {dot(t)}
+                          <button type="button" disabled={slots.length < 2} onClick={() => setSlots((s) => s.filter((x) => x !== t))} aria-label={`Hapus jam ${dot(t)}`} className="grid size-5 place-items-center rounded text-muted-foreground hover:text-destructive disabled:opacity-30">
+                            <X className="size-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <form
+                      className="mt-2.5 flex items-center gap-1.5 border-t pt-2.5"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (!newSlot) return;
+                        if (slots.includes(newSlot)) return toast.info(`Jam ${dot(newSlot)} sudah ada.`);
+                        setSlots((s) => [...s, newSlot]);
+                      }}
+                    >
+                      <input type="time" value={newSlot} onChange={(e) => setNewSlot(e.target.value)} aria-label="Jam baru" className="h-8 flex-1 rounded-md border bg-background px-2 text-xs" />
+                      <button type="submit" className="flex h-8 items-center gap-1 rounded-md bg-foreground px-2.5 text-xs font-medium text-background hover:opacity-90"><Plus className="size-3.5" /> Tambah</button>
+                    </form>
+                  </Popover.Popup>
+                </Popover.Positioner>
+              </Popover.Portal>
+            </Popover.Root>
           </div>
 
           {view === "week" ? (
