@@ -19,7 +19,7 @@ export const GAMEPLAY_DIR = () => path.join(MEDIA_DIR, "Gameplay");
 const OUT = () => path.join(MEDIA_DIR, "YouTube Editor");
 const VIDEO = /\.(mp4|mov|webm|mkv)$/i;
 
-import type { EditorSettings, Fit, Flip } from "@/lib/youtube-editor-config";
+import { even, pipBox, type EditorSettings, type Fit, type Flip } from "@/lib/youtube-editor-config";
 export { DEFAULT_SETTINGS, SIZES, type EditorSettings, type Fill, type Fit, type Layout, type Size } from "@/lib/youtube-editor-config";
 export type SourceFile = { rel: string; name: string; date?: string };
 
@@ -66,7 +66,10 @@ function markRendered(source: string, result: string) {
   fs.writeFileSync(RENDERED(), JSON.stringify({ ...listRendered(), [source]: result }));
 }
 
-const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+/** Gray mask (white = visible) of a w×h box with rounded corners of radius r; one frame, repeated forever. */
+const mask = (w: number, h: number, r: number, tag: string) =>
+  `color=c=black:s=${w}x${h}:r=30:d=1,format=gray,` +
+  `geq=lum='255*lte(pow(max(0,abs(X-${w / 2})-${w / 2 - r}),2)+pow(max(0,abs(Y-${h / 2})-${h / 2 - r}),2),${r * r})',loop=loop=-1:size=1[${tag}]`;
 
 /** ffmpeg video filter → [v]. Input 0 = original, 1 = gameplay. */
 export function layoutFilter(o: EditorSettings) {
@@ -89,18 +92,23 @@ export function layoutFilter(o: EditorSettings) {
   };
 
   if (o.layout === "pip") {
-    // reaction: one video fills the frame, the other sits small in a corner with a thin white frame
+    // reaction: one video fills the frame, the other is a free overlay: cropped (aspect, zoom, focus), shaped, framed, placed
     const main = o.pipMain === "original" ? 0 : 1;
     const small = 1 - main;
-    const sw = even((W * Math.min(Math.max(o.pipSize, 20), 50)) / 100);
-    const m = Math.round(Math.min(W, H) * 0.035);
-    const x = o.pipCorner.endsWith("l") ? `${m}` : `main_w-overlay_w-${m}`;
-    const y = o.pipCorner.startsWith("t") ? `${m}` : `main_h-overlay_h-${m}`;
-    return (
-      `${fit(main, "m", W, H, fitOf(main))};` +
-      `${src(small)}scale=${sw}:-2,setsar=1,fps=30,pad=iw+8:ih+8:4:4:color=white[s];` +
-      `[m][s]overlay=x=${x}:y=${y}:shortest=1[v]`
-    );
+    const p = pipBox(o, W, H);
+    const z = Math.min(Math.max(o.pipZoom, 100), 300) / 100;
+    const cw = `min(iw,ih*${p.a.toFixed(5)})/${z}`;
+    const crop = `crop=w='${cw}':h='${cw}/${p.a.toFixed(5)}':x='(iw-ow)*${o.pipFocusX / 100}':y='(ih-oh)*${o.pipFocusY / 100}'`;
+    let f = `${fit(main, "m", W, H, fitOf(main))};${src(small)}${crop},scale=${p.w}:${p.h},setsar=1,fps=30`;
+    if (p.r > 0) f += `,format=yuva420p[sv];${mask(p.w, p.h, p.r, "sm")};[sv][sm]alphamerge[s0]`;
+    else f += "[s0]";
+    if (p.b > 0) {
+      const color = o.pipBorderColor === "black" ? "black" : "white";
+      f += `;color=c=${color}:s=${p.tw}x${p.th}:r=30,format=yuva420p`;
+      f += p.r > 0 ? `[pc];${mask(p.tw, p.th, p.r + p.b, "pm")};[pc][pm]alphamerge[pl]` : "[pl]";
+      f += `;[pl][s0]overlay=${p.b}:${p.b}:shortest=1[s]`;
+    } else f += ";[s0]null[s]";
+    return `${f};[m][s]overlay=x=${p.x}:y=${p.y}:shortest=1[v]`;
   }
 
   const side = o.layout === "side";
@@ -127,7 +135,7 @@ export function audioFilter(o: EditorSettings, has: { original: boolean; game: b
   return `${parts[0]}[a0];${parts[1]}[a1];[a0][a1]amix=inputs=2:duration=first:normalize=0[aout]`;
 }
 
-/** One still of the result at `at` seconds (gameplay 5 s further in) with these settings: the Editor's live preview. */
+/** One still of the result at `at` seconds (overlay at its start + at, or 5 s further in) with these settings: the Editor's live preview. */
 export async function renderPreview(original: string, gameplay: string, o: EditorSettings, at = 2) {
   if (!ffmpegPath) throw new Error("ffmpeg tidak tersedia di perangkat ini.");
   const dir = path.join(OUT(), ".preview");
@@ -135,7 +143,7 @@ export async function renderPreview(original: string, gameplay: string, o: Edito
   const out = path.join(dir, "preview.jpg");
   await run(
     ffmpegPath,
-    ["-y", "-hide_banner", "-loglevel", "error", "-ss", at.toFixed(2), "-i", original, "-ss", (at + 5).toFixed(2), "-i", gameplay, "-filter_complex", layoutFilter(o), "-map", "[v]", "-frames:v", "1", "-q:v", "4", out],
+    ["-y", "-hide_banner", "-loglevel", "error", "-ss", at.toFixed(2), "-i", original, "-ss", (o.gameStart >= 0 ? o.gameStart + at : at + 5).toFixed(2), "-i", gameplay, "-filter_complex", layoutFilter(o), "-map", "[v]", "-frames:v", "1", "-q:v", "4", out],
     { windowsHide: true },
   );
   return toRel(out);
@@ -149,8 +157,8 @@ export const editorJob = () => g.__ytEditor ?? null;
 async function renderOne(original: string, gameplay: string, o: EditorSettings, out: string, title: string) {
   const [a, b] = await Promise.all([probe(original), probe(gameplay)]);
   const len = a.len;
-  // start the gameplay somewhere random (it loops), so two renders with the same clip still look different
-  const offset = b.len > len + 5 ? Math.random() * (b.len - len - 2) : 0;
+  // the overlay starts where the user chose, or somewhere random (it loops) so two renders with the same clip differ
+  const offset = o.gameStart >= 0 ? Math.min(o.gameStart, Math.max(0, b.len - 1)) : b.len > len + 5 ? Math.random() * (b.len - len - 2) : 0;
   const sound = audioFilter(o, { original: a.audio, game: b.audio });
   const args = [
     "-y", "-hide_banner", "-loglevel", "error",

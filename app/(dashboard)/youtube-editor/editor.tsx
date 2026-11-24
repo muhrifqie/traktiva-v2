@@ -3,17 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeft, Blend, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Columns2, Crop, FlipHorizontal2, FolderOpen, Gamepad2, Loader2, Palette, PictureInPicture2,
+  ArrowLeft, Blend, Check, Frame, Layers, Maximize2, Move, Play, Scissors, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Columns2, Crop, FlipHorizontal2, FolderOpen, Loader2, Palette, PictureInPicture2,
   Plus, Ratio, RefreshCw, Rows2, Search, Shuffle, Square, Timer, Upload, Video, Volume2, VolumeX, X, type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { mediaUrl } from "@/lib/media-url";
 import type { EditorJob, SourceFile } from "@/lib/youtube-editor";
-import { PIP_RANGE, RATIO_RANGE, SIZES, type Corner, type EditorSettings, type Fill, type Fit, type Flip, type Seam, type Size } from "@/lib/youtube-editor-config";
+import { ASPECTS, PIP_RANGE, pipBox, RATIO_RANGE, SIZES, type Aspect, type EditorSettings, type Fill, type Fit, type Flip, type Seam, type Shape, type Size } from "@/lib/youtube-editor-config";
 import { clipLengths, openMediaFolder, previewFrame, refreshLists, renderStatus, renderVideos, saveEditorSettings, stopRender } from "./actions";
 
 // YouTube → Editor, full screen over the app (sidebar hidden): media on the left, the live monitor in the middle,
-// settings on the right. Click Shorts to pick them, drag the divider (or click a corner) on the monitor, press Render.
+// settings on the right. Click Shorts to pick them, drag the divider (or the reaction overlay) on the monitor, press Render.
 
 const KEY = "trk-yt-editor"; // picks and media filters survive a refresh (the configuration lives in settings.json)
 type Tab = "asli" | "game" | "hasil";
@@ -22,13 +22,13 @@ type Show = "all" | "todo" | "done";
 type Saved = { channel: string; queue: string[]; games: string[]; random: boolean; q: string; sort: Sort; show: Show; tab: Tab };
 const PAGE = 24;
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-const ON = "border-primary bg-primary/10 font-semibold text-primary";
+const ON = "border-primary bg-primary/10 font-semibold text-primary dark:border-emerald-500/60 dark:bg-emerald-500/10 dark:text-emerald-400";
 
 function Segmented<T extends string>({ value, onChange, items, disabled }: { value: T; onChange: (v: T) => void; items: { v: T; label: React.ReactNode; title?: string }[]; disabled?: boolean }) {
   return (
     <div className="grid auto-cols-fr grid-flow-col gap-0.5 rounded-lg bg-muted p-0.5">
       {items.map((it) => (
-        <button key={it.v} type="button" title={it.title} disabled={disabled} onClick={() => onChange(it.v)} aria-pressed={value === it.v} className={`flex h-8 items-center justify-center gap-1 rounded-md px-1.5 text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-50 ${value === it.v ? "bg-background text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:text-foreground"}`}>
+        <button key={it.v} type="button" title={it.title} disabled={disabled} onClick={() => onChange(it.v)} aria-pressed={value === it.v} className={`flex h-8 items-center justify-center gap-1 rounded-md px-1.5 text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-50 ${value === it.v ? "bg-primary/15 text-primary shadow-sm ring-1 ring-primary/30 dark:bg-emerald-500/15 dark:text-emerald-400 dark:ring-emerald-500/30" : "text-muted-foreground hover:bg-background/60 hover:text-foreground"}`}>
           {it.label}
         </button>
       ))}
@@ -68,20 +68,17 @@ function Row({ icon: Icon, label, children }: { icon: LucideIcon; label: string;
 function LayoutSketch({ cfg }: { cfg: EditorSettings }) {
   const part = "grid h-full w-full place-items-center text-[11px] font-medium";
   const asli = <span className={`${part} bg-sky-500/20 text-sky-300`}><Video className="mb-0.5 size-5" />Asli</span>;
-  const game = <span className={`${part} bg-violet-500/20 text-violet-300`}><Gamepad2 className="mb-0.5 size-5" />Gameplay</span>;
-  if (cfg.layout === "pip") {
-    const [big, small] = cfg.pipMain === "original" ? [asli, game] : [game, asli];
-    const pos = { tl: "top-2 left-2", tr: "top-2 right-2", bl: "bottom-2 left-2", br: "bottom-2 right-2" }[cfg.pipCorner];
-    return (
-      <div className="relative h-full w-full">
-        {big}
-        <div className={`absolute ${pos} aspect-[9/16] overflow-hidden rounded border-2 border-white bg-background`} style={{ width: `${cfg.pipSize}%` }}>{small}</div>
-      </div>
-    );
-  }
+  const game = <span className={`${part} bg-violet-500/20 text-violet-300`}><Layers className="mb-0.5 size-5" />Overlay</span>;
+  if (cfg.layout === "pip") return cfg.pipMain === "original" ? asli : game;
   const track = `${cfg.ratio}fr ${100 - cfg.ratio}fr`;
   return <div className="grid h-full w-full" style={cfg.layout === "side" ? { gridTemplateColumns: track } : { gridTemplateRows: track }}>{asli}{game}</div>;
 }
+
+const SHAPES: { v: Shape; label: string; radius: string }[] = [
+  { v: "rect", label: "Kotak", radius: "1px" },
+  { v: "round", label: "Bulat", radius: "4px" },
+  { v: "circle", label: "Lingkaran", radius: "999px" },
+];
 
 const FLIPS: { v: Flip; label: string; title: string }[] = [
   { v: "none", label: "Asli", title: "Tidak dibalik" },
@@ -111,6 +108,9 @@ export function VideoEditor({
   const [job, setJob] = useState(initialJob);
   const [preview, setPreview] = useState<{ url: string | null; busy: boolean; error: string | null }>({ url: null, busy: false, error: null });
   const [drag, setDrag] = useState<number | null>(null);
+  // reaction overlay being moved/resized on the monitor (committed on release)
+  const [ov, setOv] = useState<{ x: number; y: number; size: number } | null>(null);
+  const ovStart = useRef<{ cx: number; cy: number; mode: "move" | "size"; scale: number; box: ReturnType<typeof pipBox> } | null>(null);
   const [at, setAt] = useState(2); // monitor time (s) inside the clip
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<Sort>("new");
@@ -118,10 +118,11 @@ export function VideoEditor({
   const [page, setPage] = useState(0);
   const restored = useRef(false);
   const running = !!job?.running;
-  const set = <K extends keyof EditorSettings>(k: K, v: EditorSettings[K]) => {
+  const setMany = (patch: Partial<EditorSettings>) => {
     setSaved(false);
-    setCfg((c) => ({ ...c, [k]: v }));
+    setCfg((c) => ({ ...c, ...patch }));
   };
+  const set = <K extends keyof EditorSettings>(k: K, v: EditorSettings[K]) => setMany({ [k]: v } as Partial<EditorSettings>);
 
   // restore picks and media filters after mount (no localStorage during the server render)
   useEffect(() => {
@@ -220,14 +221,16 @@ export function VideoEditor({
   const pool = gameplay.filter((g) => games.has(g.rel)).length ? gameplay.filter((g) => games.has(g.rel)) : gameplay;
   const sampleGame = (random ? pool[0] : pool[Math.max(idx, 0) % Math.max(pool.length, 1)])?.rel;
   const clipLen = clip ? (lengths[clip] ?? 0) : 0;
+  const gameLen = sampleGame ? (lengths[sampleGame] ?? 0) : 0;
   useEffect(() => {
-    if (!clip || clip in lengths) return;
+    const need = [clip, sampleGame].filter((r): r is string => !!r && !(r in lengths));
+    if (!need.length) return;
     let live = true;
-    void clipLengths([clip]).then((r) => live && setLengths((l) => ({ ...l, ...r })));
+    void clipLengths(need).then((r) => live && setLengths((l) => ({ ...l, ...r })));
     return () => {
       live = false;
     };
-  }, [clip, lengths]);
+  }, [clip, sampleGame, lengths]);
   useEffect(() => {
     if (!clip || !sampleGame) return;
     let live = true;
@@ -252,11 +255,7 @@ export function VideoEditor({
   };
   const onDown = (e: React.PointerEvent) => {
     if (running) return;
-    if (cfg.layout === "pip") {
-      const r = box.current!.getBoundingClientRect();
-      set("pipCorner", `${e.clientY - r.top < r.height / 2 ? "t" : "b"}${e.clientX - r.left < r.width / 2 ? "l" : "r"}` as Corner);
-      return;
-    }
+    if (cfg.layout === "pip") return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     setDrag(pctAt(e));
   };
@@ -270,6 +269,34 @@ export function VideoEditor({
   };
   const line = drag ?? cfg.ratio;
   const [W, H] = cfg.size.split("x").map(Number);
+  const pb = pipBox(ov ? { ...cfg, pipX: ov.x, pipY: ov.y, pipSize: ov.size } : cfg, W, H);
+  const ovDown = (e: React.PointerEvent, mode: "move" | "size") => {
+    if (running) return;
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    ovStart.current = { cx: e.clientX, cy: e.clientY, mode, scale: box.current!.getBoundingClientRect().width / W, box: pipBox(cfg, W, H) };
+    setOv({ x: cfg.pipX, y: cfg.pipY, size: cfg.pipSize });
+  };
+  const ovMove = (e: React.PointerEvent) => {
+    const st = ovStart.current;
+    if (!st) return;
+    const dx = (e.clientX - st.cx) / st.scale;
+    const dy = (e.clientY - st.cy) / st.scale;
+    const b = st.box;
+    const clamp = (v: number, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v)));
+    if (st.mode === "size") setOv((o) => o && { ...o, size: clamp(((b.w + dx) / W) * 100, PIP_RANGE[0], PIP_RANGE[1]) });
+    else {
+      const fx = W - b.tw - 2 * b.m;
+      const fy = H - b.th - 2 * b.m;
+      setOv((o) => o && { ...o, x: fx > 0 ? clamp(((b.x + dx - b.m) / fx) * 100, 0, 100) : o.x, y: fy > 0 ? clamp(((b.y + dy - b.m) / fy) * 100, 0, 100) : o.y });
+    }
+  };
+  const ovUp = () => {
+    if (!ovStart.current || !ov) return;
+    ovStart.current = null;
+    setMany({ pipX: ov.x, pipY: ov.y, pipSize: ov.size });
+    setOv(null);
+  };
 
   // ---- actions ----------------------------------------------------------------------------------------------------
   const reload = async () => {
@@ -278,10 +305,10 @@ export function VideoEditor({
     setResults(r.results);
     setRendered(r.rendered);
     setGames((g) => new Set([...g].filter((x) => r.gameplay.some((y) => y.rel === x))));
-    toast.success(`${r.gameplay.length} klip gameplay`);
+    toast.success(`${r.gameplay.length} video overlay`);
   };
   const render = async () => {
-    if (!gameplay.length) return toast.error("Tambahkan gameplay dulu (tab Gameplay → Folder Gameplay).");
+    if (!gameplay.length) return toast.error("Tambahkan video overlay dulu (tab Overlay → Folder overlay).");
     const r = await renderVideos({ originals: queue, gameplay: [...games], settings: cfg, random });
     if ("error" in r) return toast.error(r.error);
     setJob(r.ok ?? null);
@@ -315,7 +342,7 @@ export function VideoEditor({
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         {back}
         <div className="h-5 w-px bg-border" />
-        <span className="flex items-center gap-1.5 px-1 text-[13px] font-semibold"><Clapperboard className="size-4 text-primary" /> Editor Video</span>
+        <span className="flex items-center gap-1.5 px-1 text-[13px] font-semibold"><Clapperboard className="size-4 text-primary dark:text-emerald-400" /> Editor Video</span>
         <div className="mx-1 h-5 w-px bg-border" />
         <div className="flex gap-1">
           {(Object.keys(SIZES) as Size[]).map((sz) => {
@@ -334,7 +361,7 @@ export function VideoEditor({
           <Segmented value={cfg.layout} onChange={(v) => set("layout", v)} disabled={running} items={[{ v: "side", label: <><Columns2 className="size-3.5" /> Samping</> }, { v: "stack", label: <><Rows2 className="size-3.5" /> Tumpuk</> }, { v: "pip", label: <><PictureInPicture2 className="size-3.5" /> Reaction</> }]} />
         </div>
         <span className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          {saved ? <Check className="size-3.5 text-primary" /> : <Loader2 className="size-3.5 animate-spin" />} {saved ? "Tersimpan" : "Menyimpan…"}
+          {saved ? <Check className="size-3.5 text-primary dark:text-emerald-400" /> : <Loader2 className="size-3.5 animate-spin" />} {saved ? "Tersimpan" : "Menyimpan…"}
         </span>
         {running && (
           <button type="button" onClick={() => void stopRender()} className="flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium hover:border-destructive/40 hover:text-destructive"><Square className="size-4" /> Batalkan</button>
@@ -351,7 +378,7 @@ export function VideoEditor({
         {/* media */}
         <section className={`${card} flex min-h-0 flex-col overflow-hidden`}>
           <div className="grid grid-cols-3 gap-1 border-b p-1.5 text-xs font-medium">
-            {([["asli", "Video asli", Video, queue.length], ["game", "Gameplay", Gamepad2, games.size], ["hasil", "Hasil", Check, results.length]] as const).map(([t, label, Icon, n]) => (
+            {([["asli", "Video asli", Video, queue.length], ["game", "Overlay", Layers, games.size], ["hasil", "Hasil", Check, results.length]] as const).map(([t, label, Icon, n]) => (
               <button key={t} type="button" onClick={() => setTab(t)} className={`flex h-8 items-center justify-center gap-1 rounded-md transition-colors ${tab === t ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                 <Icon className="size-3.5" /> {label}
                 {n > 0 && <span className={`rounded-full px-1.5 text-[10px] tabular-nums ${tab === t ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{n}</span>}
@@ -381,18 +408,19 @@ export function VideoEditor({
                 <button type="button" onClick={() => setQueue((qq) => [...qq, ...shown.map((f) => f.rel).filter((r) => !qq.includes(r))])} className="flex h-7 items-center gap-1 rounded-md px-2 hover:bg-accent"><Plus className="size-3" /> Pilih halaman</button>
                 {queue.length > 0 && <button type="button" onClick={() => setQueue([])} className="flex h-7 items-center gap-1 rounded-md px-2 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-3" /> Hapus</button>}
               </div>
-              <div className="no-scrollbar grid min-h-0 flex-1 auto-rows-min grid-cols-3 gap-1.5 overflow-y-auto">
+              <div className="no-scrollbar -mx-1 grid min-h-0 flex-1 auto-rows-min grid-cols-3 gap-2 overflow-y-auto p-1">
                 {shown.map((f) => {
                   const on = inQueue.has(f.rel);
                   const n = queue.indexOf(f.rel) + 1;
                   return (
-                    <div key={f.rel} className={`group relative overflow-hidden rounded-lg border bg-muted transition-shadow ${on ? "ring-2 ring-primary" : "hover:ring-2 hover:ring-border"} ${f.rel === clip ? "outline-2 outline-offset-2 outline-sky-400" : ""}`}>
+                    <div key={f.rel} className={`group relative overflow-hidden rounded-lg border bg-muted transition-shadow ${on ? "ring-2 ring-primary dark:ring-emerald-500" : "hover:ring-2 hover:ring-border"}`}>
                       <button type="button" onClick={() => pick(f.rel)} title={`${on ? "Batal pilih" : "Pilih"}: ${f.name}`} className="block w-full text-left">
                         <video src={`${mediaUrl(f.rel)}#t=1`} preload="metadata" muted className="aspect-[9/16] w-full object-cover" />
                         <span className="absolute inset-x-0 bottom-0 line-clamp-2 bg-gradient-to-t from-black/85 to-transparent p-1.5 pt-5 text-[9px] leading-tight text-white">{f.name}</span>
                       </button>
                       <span className={`pointer-events-none absolute top-1 left-1 grid size-5 place-items-center rounded-full text-[10px] font-bold ${on ? "bg-primary text-primary-foreground" : "border border-white/70 bg-black/30 text-white opacity-0 group-hover:opacity-100"}`}>{on ? n : <Plus className="size-3" />}</span>
-                      {rendered[f.rel] && <span className="pointer-events-none absolute top-1 right-1 rounded bg-black/60 px-1 text-[8px] font-semibold text-emerald-300">✓ Sudah</span>}
+                      {f.rel === clip && <span className="pointer-events-none absolute top-1 right-1 rounded bg-sky-500 px-1 text-[8px] font-semibold text-white">Di layar</span>}
+                      {rendered[f.rel] && f.rel !== clip && <span className="pointer-events-none absolute top-1 right-1 rounded bg-black/60 px-1 text-[8px] font-semibold text-emerald-300">✓ Sudah</span>}
                       <button type="button" onClick={() => setActive(f.rel)} title="Lihat di layar" className="absolute right-1 bottom-8 rounded bg-black/60 px-1.5 py-0.5 text-[9px] text-white opacity-0 group-hover:opacity-100">Lihat</button>
                     </div>
                   );
@@ -409,23 +437,23 @@ export function VideoEditor({
           {tab === "game" && (
             <div className="flex min-h-0 flex-1 flex-col gap-2 p-2.5">
               <div className="flex gap-1.5">
-                <button type="button" onClick={() => void openMediaFolder("gameplay")} className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border text-xs hover:bg-accent"><FolderOpen className="size-3.5" /> Folder Gameplay</button>
+                <button type="button" onClick={() => void openMediaFolder("gameplay")} className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border text-xs hover:bg-accent"><FolderOpen className="size-3.5" /> Folder overlay</button>
                 <button type="button" onClick={reload} aria-label="Muat ulang" title="Muat ulang" className="grid size-9 place-items-center rounded-lg border hover:bg-accent"><RefreshCw className="size-3.5" /></button>
               </div>
-              <Segmented value={random ? "acak" : "urut"} onChange={(v) => setRandom(v === "acak")} disabled={running} items={[{ v: "acak", label: <><Shuffle className="size-3.5" /> Acak</>, title: "Tiap video dapat gameplay acak" }, { v: "urut", label: "Bergiliran", title: "Gameplay dipakai bergantian sesuai urutan" }]} />
+              <Segmented value={random ? "acak" : "urut"} onChange={(v) => setRandom(v === "acak")} disabled={running} items={[{ v: "acak", label: <><Shuffle className="size-3.5" /> Acak</>, title: "Tiap video dapat overlay acak" }, { v: "urut", label: "Bergiliran", title: "Overlay dipakai bergantian sesuai urutan" }]} />
               <p className="text-[11px] text-muted-foreground">{games.size ? `${games.size} dipilih` : "Belum ada yang dipilih = semua dipakai"}</p>
-              <div className="no-scrollbar grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-1.5 overflow-y-auto">
+              <div className="no-scrollbar -mx-1 grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-2 overflow-y-auto p-1">
                 {gameplay.map((f) => {
                   const on = games.has(f.rel);
                   return (
-                    <button key={f.rel} type="button" onClick={() => toggleGame(f.rel)} title={f.name} className={`relative overflow-hidden rounded-lg border bg-muted text-left transition-shadow ${on ? "ring-2 ring-primary" : "hover:ring-2 hover:ring-border"}`}>
+                    <button key={f.rel} type="button" onClick={() => toggleGame(f.rel)} title={f.name} className={`relative overflow-hidden rounded-lg border bg-muted text-left transition-shadow ${on ? "ring-2 ring-primary dark:ring-emerald-500" : "hover:ring-2 hover:ring-border"}`}>
                       <video src={`${mediaUrl(f.rel)}#t=2`} preload="metadata" muted className="aspect-video w-full object-cover" />
                       <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/85 to-transparent p-1 pt-3 text-[10px] text-white">{f.name}</span>
                       {on && <span className="absolute top-1 left-1 grid size-5 place-items-center rounded-full bg-primary text-primary-foreground"><Check className="size-3" /></span>}
                     </button>
                   );
                 })}
-                {!gameplay.length && <p className="col-span-2 p-3 text-center text-xs text-muted-foreground">Taruh video gameplay (mp4) di Folder Gameplay, lalu muat ulang.</p>}
+                {!gameplay.length && <p className="col-span-2 p-3 text-center text-xs text-muted-foreground">Taruh video (mp4) di Folder overlay, lalu muat ulang.</p>}
               </div>
             </div>
           )}
@@ -433,7 +461,7 @@ export function VideoEditor({
             <div className="flex min-h-0 flex-1 flex-col gap-2 p-2.5">
               <button type="button" onClick={() => void openMediaFolder("results")} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border text-xs hover:bg-accent"><FolderOpen className="size-3.5" /> Buka folder hasil</button>
               {job?.failed.map((f) => <p key={f} className="text-[11px] text-destructive">{f}</p>)}
-              <div className="no-scrollbar grid min-h-0 flex-1 auto-rows-min grid-cols-3 gap-1.5 overflow-y-auto">
+              <div className="no-scrollbar -mx-1 grid min-h-0 flex-1 auto-rows-min grid-cols-3 gap-2 overflow-y-auto p-1">
                 {results.map((r) => (
                   <a key={r.rel} href={mediaUrl(r.rel)} target="_blank" rel="noreferrer" title={r.name} className="overflow-hidden rounded-lg border bg-muted hover:ring-2 hover:ring-border">
                     <video src={`${mediaUrl(r.rel)}#t=1`} preload="metadata" muted className="aspect-[9/16] w-full object-cover" />
@@ -461,7 +489,7 @@ export function VideoEditor({
               onPointerDown={onDown}
               onPointerMove={onMove}
               onPointerUp={onUp}
-              className={`relative touch-none overflow-hidden rounded-md bg-black select-none ${cfg.layout === "pip" ? "cursor-pointer" : cfg.layout === "side" ? "cursor-ew-resize" : "cursor-ns-resize"}`}
+              className={`relative touch-none overflow-hidden rounded-md bg-black select-none ${cfg.layout === "pip" ? "" : cfg.layout === "side" ? "cursor-ew-resize" : "cursor-ns-resize"}`}
               style={{ aspectRatio: `${W} / ${H}`, width: `min(100cqw, calc(100cqh * ${(W / H).toFixed(4)}))` }}
             >
               {preview.url && sampleGame ? (
@@ -478,7 +506,24 @@ export function VideoEditor({
                   </span>
                 </span>
               )}
-              {drag != null && <span className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded bg-black/70 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-white tabular-nums">Asli {drag}% · Gameplay {100 - drag}%</span>}
+              {cfg.layout === "pip" && (
+                <div
+                  onPointerDown={(e) => ovDown(e, "move")}
+                  onPointerMove={ovMove}
+                  onPointerUp={ovUp}
+                  title="Geser untuk memindah overlay"
+                  className={`group/ov absolute cursor-move border-2 border-dashed ${ov ? "border-primary bg-primary/10" : "border-white/70 hover:border-primary"}`}
+                  style={{
+                    left: `${(pb.x / W) * 100}%`, top: `${(pb.y / H) * 100}%`, width: `${(pb.tw / W) * 100}%`, height: `${(pb.th / H) * 100}%`,
+                    borderRadius: cfg.pipShape === "circle" ? "50%" : `${((pb.r + pb.b) / pb.tw) * 100}% / ${((pb.r + pb.b) / pb.th) * 100}%`,
+                  }}
+                >
+                  <span className="pointer-events-none absolute top-1/2 left-1/2 grid size-7 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/60 text-white opacity-0 group-hover/ov:opacity-100"><Move className="size-3.5" /></span>
+                  <span onPointerDown={(e) => ovDown(e, "size")} onPointerMove={ovMove} onPointerUp={ovUp} title="Tarik untuk mengubah ukuran" className="absolute -right-2 -bottom-2 size-4 cursor-nwse-resize rounded-full border-2 border-white bg-primary shadow" />
+                  {ov && <span className="pointer-events-none absolute -top-6 left-0 rounded bg-black/70 px-1.5 py-0.5 text-[10px] whitespace-nowrap text-white tabular-nums">{ov.size}% lebar</span>}
+                </div>
+              )}
+              {drag != null && <span className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded bg-black/70 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-white tabular-nums">Asli {drag}% · Overlay {100 - drag}%</span>}
               {preview.busy && drag == null && <span className="pointer-events-none absolute top-2 right-2 grid size-7 place-items-center rounded-full bg-black/60"><Loader2 className="size-4 animate-spin text-white" /></span>}
             </div>
           </div>
@@ -489,26 +534,84 @@ export function VideoEditor({
             <span className="w-9 text-right tabular-nums">{fmt(clipLen)}</span>
           </div>
           <p className="text-center text-[11px] text-white/50">
-            {preview.error ? <span className="text-red-400">{preview.error}</span> : cfg.layout === "pip" ? "Klik pojok di layar untuk memindah video kecil" : "Geser garis di layar untuk mengatur porsi"}
+            {preview.error ? <span className="text-red-400">{preview.error}</span> : cfg.layout === "pip" ? "Geser overlay untuk memindah, tarik titik hijau untuk mengubah ukuran" : "Geser garis di layar untuk mengatur porsi"}
           </p>
         </section>
 
         {/* settings */}
         <section className={`${card} no-scrollbar min-h-0 overflow-y-auto`}>
           {cfg.layout === "pip" ? (
-            <Section icon={PictureInPicture2} tone="bg-violet-500/15 text-violet-500" title="Reaction" value={`kecil ${cfg.pipSize}%`}>
-              <Segmented value={cfg.pipMain} onChange={(v) => set("pipMain", v)} disabled={running} items={[{ v: "original", label: "Asli penuh" }, { v: "game", label: "Gameplay penuh" }]} />
-              <Slider label="Ukuran video kecil" value={cfg.pipSize} min={PIP_RANGE[0]} max={PIP_RANGE[1]} onChange={(v) => set("pipSize", v)} disabled={running} />
-              <div className="grid grid-cols-4 gap-1">
-                {([["tl", "Kiri atas"], ["tr", "Kanan atas"], ["bl", "Kiri bawah"], ["br", "Kanan bawah"]] as [Corner, string][]).map(([c, label]) => (
-                  <button key={c} type="button" title={label} aria-label={label} aria-pressed={cfg.pipCorner === c} onClick={() => set("pipCorner", c)} disabled={running} className={`relative h-9 rounded-md border ${cfg.pipCorner === c ? ON : "hover:bg-accent"}`}>
-                    <span className={`absolute size-2.5 rounded-sm ${cfg.pipCorner === c ? "bg-primary" : "bg-muted-foreground/50"} ${c[0] === "t" ? "top-1" : "bottom-1"} ${c[1] === "l" ? "left-1.5" : "right-1.5"}`} />
-                  </button>
-                ))}
-              </div>
-            </Section>
+            <>
+              <Section icon={PictureInPicture2} tone="bg-violet-500/15 text-violet-500" title="Overlay" value={`${cfg.pipSize}% lebar`}>
+                <Segmented value={cfg.pipMain} onChange={(v) => set("pipMain", v)} disabled={running} items={[{ v: "original", label: "Asli di belakang" }, { v: "game", label: "Overlay di belakang" }]} />
+                <Row icon={Frame} label="Bentuk">
+                  <div className="grid grid-cols-3 gap-1">
+                    {SHAPES.map((sh) => (
+                      <button key={sh.v} type="button" onClick={() => set("pipShape", sh.v)} disabled={running} aria-pressed={cfg.pipShape === sh.v} className={`flex h-8 items-center justify-center gap-1.5 rounded-md border text-[11px] ${cfg.pipShape === sh.v ? ON : "hover:bg-accent"}`}>
+                        <span className="size-3 border-[1.5px] border-current" style={{ borderRadius: sh.radius }} /> {sh.label}
+                      </button>
+                    ))}
+                  </div>
+                </Row>
+                <Row icon={Maximize2} label="Ukuran">
+                  <div className="flex items-center gap-2">
+                    <Slider label="Ukuran overlay" value={cfg.pipSize} min={PIP_RANGE[0]} max={PIP_RANGE[1]} onChange={(v) => set("pipSize", v)} disabled={running} />
+                    <span className="w-9 shrink-0 text-right text-[11px] tabular-nums">{cfg.pipSize}%</span>
+                  </div>
+                </Row>
+                <Row icon={Move} label="Posisi">
+                  <div className="grid w-fit grid-cols-3 gap-1">
+                    {[0, 50, 100].flatMap((y) => [0, 50, 100].map((x) => ({ x, y }))).map(({ x, y }) => {
+                      const on = cfg.pipX === x && cfg.pipY === y;
+                      return (
+                        <button key={`${x}-${y}`} type="button" onClick={() => setMany({ pipX: x, pipY: y })} disabled={running} aria-label={`Posisi ${x}% ${y}%`} className={`relative size-7 rounded-md border ${on ? ON : "hover:bg-accent"}`}>
+                          <span className={`absolute size-2 rounded-sm ${on ? "bg-primary" : "bg-muted-foreground/50"}`} style={{ left: `calc(${x}% * 0.55 + 3px)`, top: `calc(${y}% * 0.55 + 3px)` }} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Row>
+              </Section>
+              <Section icon={Scissors} tone="bg-pink-500/15 text-pink-500" title="Crop overlay" value={cfg.pipShape === "circle" ? "1:1" : cfg.pipAspect}>
+                <div className="grid grid-cols-5 gap-1">
+                  {(Object.keys(ASPECTS) as Aspect[]).map((a) => {
+                    const on = cfg.pipShape === "circle" ? a === "1:1" : cfg.pipAspect === a;
+                    const r = ASPECTS[a];
+                    return (
+                      <button key={a} type="button" onClick={() => set("pipAspect", a)} disabled={running || cfg.pipShape === "circle"} aria-pressed={on} className={`flex h-11 flex-col items-center justify-center gap-1 rounded-md border text-[10px] tabular-nums disabled:opacity-50 ${on ? ON : "hover:bg-accent"}`}>
+                        <span className="block rounded-[2px] border-[1.5px] border-current" style={r >= 1 ? { width: 16, height: Math.round(16 / r) } : { height: 16, width: Math.round(16 * r) }} />
+                        {a}
+                      </button>
+                    );
+                  })}
+                </div>
+                {cfg.pipShape === "circle" && <p className="text-[11px] text-muted-foreground">Lingkaran selalu 1:1.</p>}
+                <Row icon={Scissors} label="Zoom">
+                  <div className="flex items-center gap-2">
+                    <Slider label="Zoom crop" value={cfg.pipZoom} min={100} max={300} step={10} onChange={(v) => set("pipZoom", v)} disabled={running} />
+                    <span className="w-9 shrink-0 text-right text-[11px] tabular-nums">{(cfg.pipZoom / 100).toFixed(1)}×</span>
+                  </div>
+                </Row>
+                <Row icon={Move} label="Geser ←→">
+                  <Slider label="Fokus crop kiri-kanan" value={cfg.pipFocusX} min={0} max={100} onChange={(v) => set("pipFocusX", v)} disabled={running} />
+                </Row>
+                <Row icon={Move} label="Geser ↑↓">
+                  <Slider label="Fokus crop atas-bawah" value={cfg.pipFocusY} min={0} max={100} onChange={(v) => set("pipFocusY", v)} disabled={running} />
+                </Row>
+              </Section>
+              <Section icon={Frame} tone="bg-slate-500/15 text-slate-400" title="Bingkai">
+                <Segmented value={String(cfg.pipBorder) as "0" | "1" | "2" | "3"} onChange={(v) => set("pipBorder", Number(v) as 0 | 1 | 2 | 3)} disabled={running} items={[{ v: "0", label: "Tanpa" }, { v: "1", label: "Tipis" }, { v: "2", label: "Sedang" }, { v: "3", label: "Tebal" }]} />
+                <div className="grid grid-cols-2 gap-1">
+                  {([["white", "Putih", "#fff"], ["black", "Hitam", "#000"]] as const).map(([v, label, bg]) => (
+                    <button key={v} type="button" onClick={() => set("pipBorderColor", v)} disabled={running || !cfg.pipBorder} aria-pressed={cfg.pipBorderColor === v} className={`flex h-8 items-center justify-center gap-1.5 rounded-md border text-[11px] disabled:opacity-50 ${cfg.pipBorderColor === v ? ON : "hover:bg-accent"}`}>
+                      <span className="size-3 rounded-full border" style={{ background: bg }} /> {label}
+                    </button>
+                  ))}
+                </div>
+              </Section>
+            </>
           ) : (
-            <Section icon={Ratio} tone="bg-violet-500/15 text-violet-500" title="Porsi asli : gameplay" value={`${cfg.ratio} : ${100 - cfg.ratio}`}>
+            <Section icon={Ratio} tone="bg-violet-500/15 text-violet-500" title="Porsi asli : overlay" value={`${cfg.ratio} : ${100 - cfg.ratio}`}>
               <Slider label="Porsi video asli" value={cfg.ratio} min={RATIO_RANGE[0]} max={RATIO_RANGE[1]} onChange={(v) => set("ratio", v)} disabled={running} />
               <div className="flex gap-1">
                 {[50, 60, 70].map((r) => (
@@ -520,8 +623,18 @@ export function VideoEditor({
               </Row>
             </Section>
           )}
+          <Section icon={Play} tone="bg-cyan-500/15 text-cyan-500" title="Mulai overlay" value={cfg.gameStart < 0 ? "acak" : `detik ${fmt(cfg.gameStart)}`}>
+            <Segmented value={cfg.gameStart < 0 ? "acak" : "pilih"} onChange={(v) => set("gameStart", v === "acak" ? -1 : 0)} disabled={running} items={[{ v: "acak", label: <><Shuffle className="size-3.5" /> Acak</>, title: "Tiap render mulai dari titik acak" }, { v: "pilih", label: <><Timer className="size-3.5" /> Dari detik…</>, title: "Semua render mulai dari detik yang sama" }]} />
+            {cfg.gameStart >= 0 && (
+              <div className="flex items-center gap-2">
+                <Slider label="Detik mulai overlay" value={Math.min(cfg.gameStart, Math.max(1, Math.floor(gameLen) - 1))} min={0} max={Math.max(1, Math.floor(gameLen) - 1)} step={1} onChange={(v) => set("gameStart", v)} disabled={running} />
+                <input type="number" aria-label="Detik mulai" min={0} max={Math.floor(gameLen) || undefined} value={cfg.gameStart} onChange={(e) => set("gameStart", Math.max(0, Math.round(Number(e.target.value) || 0)))} disabled={running} className="h-8 w-16 shrink-0 rounded-md border bg-background px-2 text-right text-xs tabular-nums" />
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">{gameLen ? `Video overlay ${fmt(gameLen)}. ` : ""}Diputar ulang kalau lebih pendek dari video asli.</p>
+          </Section>
           <Section icon={Crop} tone="bg-amber-500/15 text-amber-500" title="Tampilan">
-            {([["fitOriginal", "Video asli", Video], ["fitGame", "Gameplay", Gamepad2]] as const).map(([k, label, Icon]) => (
+            {([["fitOriginal", "Video asli", Video], ["fitGame", "Overlay", Layers]] as const).map(([k, label, Icon]) => (
               <Row key={k} icon={Icon} label={label}>
                 <Segmented value={cfg[k]} onChange={(v: Fit) => set(k, v)} disabled={running} items={[{ v: "cover", label: "Penuh", title: "Memenuhi bagiannya, tepi terpotong" }, { v: "contain", label: "Utuh", title: "Tidak terpotong, sisanya diisi warna latar" }]} />
               </Row>
@@ -537,14 +650,14 @@ export function VideoEditor({
             </Row>
           </Section>
           <Section icon={FlipHorizontal2} tone="bg-sky-500/15 text-sky-500" title="Cermin / balik">
-            {([["flipOriginal", "Video asli", Video], ["flipGame", "Gameplay", Gamepad2]] as const).map(([k, label, Icon]) => (
+            {([["flipOriginal", "Video asli", Video], ["flipGame", "Overlay", Layers]] as const).map(([k, label, Icon]) => (
               <Row key={k} icon={Icon} label={label}>
                 <Segmented value={cfg[k]} onChange={(v: Flip) => set(k, v)} disabled={running} items={FLIPS} />
               </Row>
             ))}
           </Section>
           <Section icon={Volume2} tone="bg-emerald-500/15 text-emerald-500" title="Suara">
-            {([["volOriginal", "Video asli", Video, 150, 100], ["volGame", "Gameplay", Gamepad2, 100, 40]] as const).map(([k, label, Icon, max, unmute]) => (
+            {([["volOriginal", "Video asli", Video, 150, 100], ["volGame", "Overlay", Layers, 100, 40]] as const).map(([k, label, Icon, max, unmute]) => (
               <Row key={k} icon={Icon} label={label}>
                 <div className="flex items-center gap-2">
                   <button type="button" onClick={() => set(k, cfg[k] ? 0 : unmute)} disabled={running} title={cfg[k] ? "Bisukan" : "Nyalakan"} className="grid size-7 shrink-0 place-items-center rounded-md hover:bg-accent">
