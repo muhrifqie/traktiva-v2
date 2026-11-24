@@ -8,7 +8,7 @@ import type { VideoProject } from "@/lib/db/schema";
 import { mediaUrl } from "@/lib/media-url";
 import { renderOverlays } from "@/lib/render-overlays";
 import { openProjectFolder } from "../project-actions";
-import { exportQuick, prepareQuickEdit } from "./quick-actions";
+import { exportQuick, prepareQuickEdit, releaseQuickExport } from "./quick-actions";
 
 type Project = Omit<VideoProject, "updatedAt"> & { updatedAt: number };
 
@@ -25,37 +25,55 @@ export function QuickResult({ p, onEdit, label, href }: { p: Project; onEdit?: (
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const started = useRef<number | null>(null);
-  const waiting = useRef<ReturnType<typeof setInterval> | null>(null);
-  // stop polling once the other run finished (or when leaving the tab)
-  useEffect(() => () => void (waiting.current && clearInterval(waiting.current)), []);
+  // this page's claim on the export lock: "Coba lagi" here takes it again, another tab/window waits for it
+  const [owner] = useState(() => crypto.randomUUID());
+  const waiting = useRef<{ poll: ReturnType<typeof setInterval>; retry: ReturnType<typeof setTimeout> } | null>(null);
+  const stopWaiting = () => {
+    if (!waiting.current) return;
+    clearInterval(waiting.current.poll);
+    clearTimeout(waiting.current.retry);
+    waiting.current = null;
+  };
+  // stop waiting once the other run finished (or when leaving the tab)
+  useEffect(() => () => stopWaiting(), []);
   useEffect(() => {
-    if (exported && waiting.current) clearInterval(waiting.current);
+    if (exported) stopWaiting();
   }, [exported]);
 
   useEffect(() => {
     if (exported || started.current === attempt) return; // dev StrictMode mounts twice: one export per attempt
     started.current = attempt;
     void (async () => {
+      let mine = false; // this page holds the lock (prepare went through)
       try {
-        const r = await prepareQuickEdit(p.id);
+        const r = await prepareQuickEdit(p.id, owner);
         if (r.busy) {
-          // another tab/window (or "Buat video sekarang") is making this video: wait for it, never export twice
+          // another tab/window (or "Buat video sekarang") is making this video: wait for it, never export twice.
+          // If that page was closed halfway its lock runs out: ask again then instead of waiting forever.
           setStage(2);
-          const timer = setInterval(() => router.refresh(), 4000);
-          waiting.current = timer;
+          stopWaiting();
+          waiting.current = {
+            poll: setInterval(() => router.refresh(), 4000),
+            retry: setTimeout(() => {
+              stopWaiting();
+              setAttempt((n) => n + 1);
+            }, Math.max(2000, r.retryAt - Date.now() + 500)),
+          };
           return;
         }
+        mine = true;
         const edit = r.edit;
         setStage(1);
         const overlays = await renderOverlays(edit);
         setStage(2);
-        await exportQuick(p.id, overlays);
+        await exportQuick(p.id, overlays, owner);
         router.refresh();
       } catch (e) {
+        if (mine) void releaseQuickExport(p.id, owner).catch(() => {}); // free the project for "Coba lagi" / other tabs
         setError(e instanceof Error ? e.message : "Gagal membuat video final");
       }
     })();
-  }, [exported, attempt, p.id, router]);
+  }, [exported, attempt, p.id, router, owner]);
 
   // one of several versions on the Hasil tab: a small card (video, buttons, short caption)
   if (label) {
