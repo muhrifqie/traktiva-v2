@@ -1,8 +1,9 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
+import { ChevronDown, PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
 import { PlatformIcon } from "@/components/platform-icon";
 import { UserCard, type UserInfo } from "@/components/user-card";
 import {
@@ -12,8 +13,32 @@ import {
 import { NAV, NAV_GROUPS, type NavCounts, type NavItem } from "@/lib/nav";
 
 type Group = (typeof NAV_GROUPS)[number];
-/** Groups that belong to one platform get its mark next to the label. */
+/** Groups that belong to one platform get its mark next to the label, and the label opens that platform's page. */
 const GROUP_PLATFORM: Partial<Record<Group, "tiktok">> = { "TikTok Shop": "tiktok" };
+const GROUP_HREF: Partial<Record<Group, string>> = { "TikTok Shop": "/showcase" };
+/** Groups with one menu need no folding (the label alone would hide a single link). */
+const FOLDABLE = (n: number) => n > 1;
+
+// folded groups, remembered per PC (localStorage; the server renders everything open)
+const KEY = "trk-sidebar-folded";
+const read = () => {
+  try {
+    return localStorage.getItem(KEY) ?? "";
+  } catch {
+    return "";
+  }
+};
+const listeners = new Set<() => void>();
+const subscribe = (cb: () => void) => (listeners.add(cb), window.addEventListener("storage", cb), () => (listeners.delete(cb), window.removeEventListener("storage", cb)));
+function toggleFolded(name: string) {
+  const set = new Set(read().split("|").filter(Boolean));
+  if (set.has(name)) set.delete(name);
+  else set.add(name);
+  try {
+    localStorage.setItem(KEY, [...set].join("|"));
+  } catch {}
+  listeners.forEach((l) => l());
+}
 
 function NavItems({ items, counts, rail }: { items: readonly NavItem[]; counts: NavCounts; rail: boolean }) {
   const pathname = usePathname();
@@ -49,21 +74,53 @@ function NavItems({ items, counts, rail }: { items: readonly NavItem[]; counts: 
 }
 
 function Group({ name, counts, rail, className = "" }: { name: Group; counts: NavCounts; rail: boolean; className?: string }) {
+  const pathname = usePathname();
+  const folded = useSyncExternalStore(subscribe, read, () => "").split("|").includes(name);
   const items = NAV.filter((n) => n.group === name && !("sidebar" in n && n.sidebar === false));
   if (!items.length) return null;
   const platform = GROUP_PLATFORM[name];
+  const href = GROUP_HREF[name];
+  const foldable = FOLDABLE(items.length) && !rail;
+  // the group of the page you are on stays open, even when folded
+  const here = items.some((n) => pathname === `/${n.slug}` || pathname.startsWith(`/${n.slug}/`));
+  const open = !foldable || !folded || here;
+  const labelCls = "flex min-w-0 flex-1 items-center gap-1.5 truncate";
   return (
     <SidebarGroup className={`px-2 py-1.5 ${className}`}>
       {/* the first group (Beranda, Riset, Kalender) needs no label */}
       {name !== "Utama" && !rail && (
-        <SidebarGroupLabel className="h-6 gap-1.5 px-2 text-[11px] font-medium tracking-wide text-muted-foreground/80 uppercase">
-          {platform && <PlatformIcon platform={platform} className="size-3" />}
-          {name}
+        <SidebarGroupLabel className="group/label h-6 gap-1 px-2 text-[11px] font-medium tracking-wide text-muted-foreground/80 uppercase">
+          {href ? (
+            <Link href={href} className={`${labelCls} rounded hover:text-foreground`} title={`Buka ${name}`}>
+              {platform && <PlatformIcon platform={platform} className="size-3" />}
+              {name}
+            </Link>
+          ) : foldable ? (
+            <button type="button" onClick={() => toggleFolded(name)} className={`${labelCls} text-left uppercase hover:text-foreground`} aria-expanded={open}>
+              {name}
+            </button>
+          ) : (
+            <span className={labelCls}>{name}</span>
+          )}
+          {foldable && !open && <span className="text-[10px] font-normal tracking-normal text-muted-foreground/70 normal-case">{items.length}</span>}
+          {foldable && (
+            <button
+              type="button"
+              onClick={() => toggleFolded(name)}
+              aria-label={open ? `Lipat ${name}` : `Buka ${name}`}
+              aria-expanded={open}
+              className="grid size-5 shrink-0 place-items-center rounded hover:bg-sidebar-accent hover:text-foreground"
+            >
+              <ChevronDown className={`size-3.5 transition-transform ${open ? "" : "-rotate-90"}`} />
+            </button>
+          )}
         </SidebarGroupLabel>
       )}
-      <SidebarGroupContent>
-        <NavItems items={items} counts={counts} rail={rail} />
-      </SidebarGroupContent>
+      {open && (
+        <SidebarGroupContent>
+          <NavItems items={items} counts={counts} rail={rail} />
+        </SidebarGroupContent>
+      )}
     </SidebarGroup>
   );
 }
