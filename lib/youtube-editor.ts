@@ -46,7 +46,7 @@ export function listResults(): SourceFile[] {
 }
 
 /** Length (s) and whether the file has a sound track. */
-async function probe(file: string) {
+export async function probe(file: string) {
   const r = await run(ffmpegPath!, ["-hide_banner", "-i", file], { windowsHide: true }).catch((e: { stderr?: string }) => ({ stderr: e.stderr ?? "" }));
   const t = String(r.stderr);
   const m = t.match(/Duration:\s*(\d+):(\d+):([\d.]+)/);
@@ -127,15 +127,15 @@ export function audioFilter(o: EditorSettings, has: { original: boolean; game: b
   return `${parts[0]}[a0];${parts[1]}[a1];[a0][a1]amix=inputs=2:duration=first:normalize=0[aout]`;
 }
 
-/** One still of the result (original at 2 s, gameplay at 5 s) with these settings: the Editor's live preview. */
-export async function renderPreview(original: string, gameplay: string, o: EditorSettings) {
+/** One still of the result at `at` seconds (gameplay 5 s further in) with these settings: the Editor's live preview. */
+export async function renderPreview(original: string, gameplay: string, o: EditorSettings, at = 2) {
   if (!ffmpegPath) throw new Error("ffmpeg tidak tersedia di perangkat ini.");
   const dir = path.join(OUT(), ".preview");
   fs.mkdirSync(dir, { recursive: true });
   const out = path.join(dir, "preview.jpg");
   await run(
     ffmpegPath,
-    ["-y", "-hide_banner", "-loglevel", "error", "-ss", "2", "-i", original, "-ss", "5", "-i", gameplay, "-filter_complex", layoutFilter(o), "-map", "[v]", "-frames:v", "1", "-q:v", "4", out],
+    ["-y", "-hide_banner", "-loglevel", "error", "-ss", at.toFixed(2), "-i", original, "-ss", (at + 5).toFixed(2), "-i", gameplay, "-filter_complex", layoutFilter(o), "-map", "[v]", "-frames:v", "1", "-q:v", "4", out],
     { windowsHide: true },
   );
   return toRel(out);

@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { z } from "zod";
 import { resolveMedia } from "@/lib/media";
 import { updateSettings } from "@/lib/settings";
-import { cancelRender, editorJob, GAMEPLAY_DIR, listGameplay, listRendered, listResults, renderPreview, SIZES, startRender, type EditorSettings } from "@/lib/youtube-editor";
+import { cancelRender, editorJob, GAMEPLAY_DIR, listGameplay, listRendered, listResults, probe, renderPreview, SIZES, startRender, type EditorSettings } from "@/lib/youtube-editor";
 
 // errors come back as { error } (thrown server-action errors are hidden in production)
 const safe = async <T,>(f: () => Promise<T>) => {
@@ -38,11 +38,19 @@ export async function saveEditorSettings(settings: EditorSettings) {
   updateSettings({ youtubeEditor: Settings.parse(settings) });
 }
 
-export const previewFrame = async (original: string, gameplay: string, settings: EditorSettings) =>
+export const previewFrame = async (original: string, gameplay: string, settings: EditorSettings, at = 2) =>
   safe(async () => {
     const [o, g] = [Rel.parse(original), Rel.parse(gameplay)];
-    return renderPreview(resolveMedia(o), resolveMedia(g), Settings.parse(settings));
+    return renderPreview(resolveMedia(o), resolveMedia(g), Settings.parse(settings), z.number().min(0).max(36_000).parse(at));
   });
+
+/** Lengths (s) of the clips on the timeline. */
+export const clipLengths = async (rels: string[]) => {
+  const list = z.array(Rel).max(200).parse(rels);
+  const out: Record<string, number> = {};
+  for (const rel of list) out[rel] = (await probe(resolveMedia(rel)).catch(() => ({ len: 0 }))).len;
+  return out;
+};
 
 export const renderVideos = async (input: { originals: string[]; gameplay: string[]; settings: EditorSettings; random: boolean }) =>
   safe(async () => {
