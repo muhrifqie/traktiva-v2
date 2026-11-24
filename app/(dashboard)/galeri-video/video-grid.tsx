@@ -40,7 +40,9 @@ export function VideoGrid({ videos }: { videos: GalleryVideo[] }) {
   }, [videos, filter, q]);
 
   const remove = async (v: GalleryVideo) => {
-    if (!(await confirmDialog({ title: "Hapus dari Galeri Video?", description: `“${v.title}” (${v.label}) dihapus dari galeri. File di folder proyeknya tetap ada.`, confirmLabel: "Hapus", danger: true }))) return;
+    const yt = v.source === "youtube";
+    const description = yt ? `“${v.title}” dipindah ke Recycle Bin (ini satu-satunya file hasil Editor-nya). Jadwal yang memakainya akan gagal.` : `“${v.title}” (${v.label}) dihapus dari galeri. File di folder proyeknya tetap ada.`;
+    if (!(await confirmDialog({ title: "Hapus dari Galeri Video?", description, confirmLabel: "Hapus", danger: true }))) return;
     start(async () => {
       try {
         await removeGalleryVideo(v.rel);
@@ -57,7 +59,7 @@ export function VideoGrid({ videos }: { videos: GalleryVideo[] }) {
       <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-10 text-center">
         <Film className="size-7 text-muted-foreground" />
         <p className="text-sm font-medium">Belum ada video jadi</p>
-        <p className="max-w-sm text-xs text-muted-foreground">Setiap kali kamu Export di editor (termasuk varian hook A/B), videonya otomatis tersimpan di sini.</p>
+        <p className="max-w-sm text-xs text-muted-foreground">Setiap kali kamu Export di editor (termasuk varian hook A/B) atau merender di YouTube Editor, videonya otomatis tampil di sini.</p>
       </div>
     );
 
@@ -98,7 +100,11 @@ export function VideoGrid({ videos }: { videos: GalleryVideo[] }) {
                   onMouseLeave={(e) => (e.currentTarget.pause(), (e.currentTarget.currentTime = 0.6))}
                 />
                 <span className={`absolute top-2 left-2 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${S.cls}`}><S.icon className="size-3" /> {S.label}</span>
-                {v.label !== "Video utama" && <span className="absolute top-2 right-2 rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-black">{v.label.replace("Varian ", "")}</span>}
+                {v.source === "youtube" ? (
+                  <span className="absolute top-2 right-2 rounded bg-[#ff3333] px-1.5 py-0.5 text-[10px] font-bold text-white">YouTube</span>
+                ) : (
+                  v.label !== "Video utama" && <span className="absolute top-2 right-2 rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-black">{v.label.replace("Varian ", "")}</span>
+                )}
                 <span className="absolute inset-0 grid place-items-center opacity-0 transition-opacity group-hover:opacity-100"><Play className="size-9 rounded-full bg-black/45 p-2 text-white" /></span>
                 {v.views != null && <span className="absolute bottom-2 left-2 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 text-[11px] font-semibold text-white"><Eye className="size-3" /> {compact.format(v.views)}</span>}
               </button>
@@ -106,7 +112,7 @@ export function VideoGrid({ videos }: { videos: GalleryVideo[] }) {
                 <p className="line-clamp-1 text-[13px] font-medium" title={v.title}>{v.title}</p>
                 {v.hook && <p className="line-clamp-2 text-[11px] text-muted-foreground">“{v.hook}”</p>}
                 <p className="text-[10px] text-muted-foreground">
-                  {v.status === "terjadwal" && v.scheduledAt ? `Tayang ${when.format(v.scheduledAt)}` : v.status === "terposting" && v.postedAt ? `Diposting ${when.format(v.postedAt)}` : `Diekspor ${when.format(v.at)}`} · {v.sizeMb} MB
+                  {v.status === "terjadwal" && v.scheduledAt ? `Tayang ${when.format(v.scheduledAt)}` : v.status === "terposting" && v.postedAt ? `Diposting ${when.format(v.postedAt)}` : `${v.source === "youtube" ? "Dirender" : "Diekspor"} ${when.format(v.at)}`} · {v.sizeMb} MB
                 </p>
                 <div className="flex items-center gap-1 pt-0.5">
                   {v.projectId && v.status !== "terposting" && (
@@ -115,6 +121,11 @@ export function VideoGrid({ videos }: { videos: GalleryVideo[] }) {
                     </Link>
                   )}
                   <a href={`${mediaUrl(v.rel)}?download`} title="Unduh" className="grid size-7 place-items-center rounded-md border hover:bg-accent"><Download className="size-3.5" /></a>
+                  {v.source === "youtube" && v.status !== "terposting" && (
+                    <Link href={`/youtube-editor?jadwal=${encodeURIComponent(v.rel)}`} className="flex h-7 flex-1 items-center justify-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/90">
+                      <CalendarClock className="size-3.5" /> {v.status === "terjadwal" ? "Jadwalkan lagi" : "Jadwalkan"}
+                    </Link>
+                  )}
                   {v.projectId && <Link href={`/video/${v.projectId}`} title="Buka proyek" className="grid size-7 place-items-center rounded-md border hover:bg-accent"><FolderKanban className="size-3.5" /></Link>}
                   <button type="button" title="Hapus dari galeri" disabled={pending} onClick={() => void remove(v)} className="grid size-7 place-items-center rounded-md border text-muted-foreground hover:bg-accent hover:text-destructive"><Trash2 className="size-3.5" /></button>
                 </div>

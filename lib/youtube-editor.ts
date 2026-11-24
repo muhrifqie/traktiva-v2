@@ -43,7 +43,7 @@ export function listGameplay(): SourceFile[] {
 }
 
 export function listResults(): SourceFile[] {
-  return list(OUT()).slice(0, 30).map((f) => ({ rel: toRel(path.join(OUT(), f)), name: f.replace(/\.\w+$/, "") }));
+  return list(OUT()).slice(0, 200).map((f) => ({ rel: toRel(path.join(OUT(), f)), name: f.replace(/\.\w+$/, "") }));
 }
 
 /** Length (s) and whether the file has a sound track. */
@@ -68,31 +68,56 @@ export function resultTitle(resultRel: string) {
   const src = Object.entries(listRendered()).find(([, r]) => r === resultRel)?.[0];
   return pretty(path.basename(src ?? resultRel.replace(/^.*\/\d{14}\s+/, "")));
 }
-/** A result file (absolute), only when it really is a video inside YouTube Editor/. */
-function resultFile(rel: string) {
+/** A video the Editor manages (absolute): a result in YouTube Editor/, an original under YouTube Shorts/, or an
+ *  overlay under Gameplay/. Anything else is refused. */
+function editorFile(rel: string) {
   const abs = path.resolve(MEDIA_DIR, rel);
-  if (path.dirname(abs) !== path.resolve(OUT()) || !/\.mp4$/i.test(abs) || !fs.existsSync(abs)) throw new Error("File hasil tidak ditemukan.");
+  const inside = (root: string) => abs.startsWith(path.resolve(root) + path.sep);
+  const ok = path.dirname(abs) === path.resolve(OUT()) || inside(SHORTS()) || inside(GAMEPLAY_DIR());
+  if (!ok || !VIDEO.test(abs) || !fs.existsSync(abs)) throw new Error("File tidak ditemukan.");
   return abs;
 }
 
-/** Move a result to the Recycle Bin (Windows; deleted elsewhere) and forget it in the "sudah dirender" list. */
-export async function deleteResult(rel: string) {
-  const abs = resultFile(rel);
-  if (process.platform === "win32") {
-    await run(
-      "powershell.exe",
-      ["-NoProfile", "-NonInteractive", "-Command", "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($env:TRK_FILE, 'OnlyErrorDialogs', 'SendToRecycleBin')"],
-      { windowsHide: true, env: { ...process.env, TRK_FILE: abs } },
-    );
-  } else fs.rmSync(abs, { force: true });
+const toRecycleBin = async (abs: string) => {
+  if (process.platform !== "win32") return fs.rmSync(abs, { force: true });
+  // a preview may still be reading the file for a moment: try a few times before giving up
+  for (let i = 0; ; i++) {
+    try {
+      await run(
+        "powershell.exe",
+        ["-NoProfile", "-NonInteractive", "-Command", "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($env:TRK_FILE, 'OnlyErrorDialogs', 'SendToRecycleBin')"],
+        { windowsHide: true, env: { ...process.env, TRK_FILE: abs } },
+      );
+      return;
+    } catch (e) {
+      const busy = /being used by another process|sedang digunakan/i.test(String((e as { stderr?: string }).stderr ?? e));
+      if (!busy) throw new Error("Gagal memindahkan ke Recycle Bin.");
+      if (i >= 3) throw new Error("File sedang dipakai (preview atau render). Tunggu sebentar lalu coba lagi.");
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+};
+
+/** Move an Editor video to the Recycle Bin (Windows; deleted elsewhere). An original takes its downloaded
+ *  thumbnail/description along; the "sudah dirender" list forgets it either way. */
+export async function deleteEditorFile(rel: string) {
+  const abs = editorFile(rel);
+  await toRecycleBin(abs);
+  if (abs.startsWith(path.resolve(SHORTS()) + path.sep)) {
+    const base = path.basename(abs).replace(/\.\w+$/, "");
+    for (const f of fs.readdirSync(path.dirname(abs))) if (f !== path.basename(abs) && f.replace(/\.[\w.]+$/, "") === base) await toRecycleBin(path.join(path.dirname(abs), f)).catch(() => {});
+  }
   const map = listRendered();
-  const kept = Object.fromEntries(Object.entries(map).filter(([, r]) => r !== rel));
+  const kept = Object.fromEntries(Object.entries(map).filter(([src, r]) => r !== rel && src !== rel));
   if (Object.keys(kept).length !== Object.keys(map).length) fs.writeFileSync(RENDERED(), JSON.stringify(kept));
 }
 
-/** Open the OS file manager with the result selected. */
-export function revealResult(rel: string) {
-  const abs = resultFile(rel);
+/** Every result (newest first), for the Galeri. */
+export const allResults = () => list(OUT()).map((f) => ({ rel: toRel(path.join(OUT(), f)), file: path.join(OUT(), f) }));
+
+/** Open the OS file manager with the video selected. */
+export function revealEditorFile(rel: string) {
+  const abs = editorFile(rel);
   if (process.platform === "win32") spawn("explorer.exe", [`/select,${abs}`], { detached: true, stdio: "ignore" }).unref();
   else if (process.platform === "darwin") spawn("open", ["-R", abs], { detached: true, stdio: "ignore" }).unref();
   else spawn("xdg-open", [path.dirname(abs)], { detached: true, stdio: "ignore" }).unref();
@@ -256,11 +281,16 @@ export async function renderPreview(original: string, gameplay: string, o: Edito
   fs.mkdirSync(dir, { recursive: true });
   const out = path.join(dir, "preview.jpg");
   const tmp: string[] = [];
+  // seek inside both clips (the overlay loops, like in a render): a seek past the end gives no frame, and with the
+  // endless mask sources in the filter ffmpeg would then wait forever and block every later Editor action
+  const [a, b] = await Promise.all([probe(original), probe(gameplay)]);
+  const t = a.len ? Math.min(at, Math.max(0, a.len - 0.5)) : at;
+  const gameAt = b.len ? previewGameAt(o, t) % b.len : 0;
   try {
     await run(
       ffmpegPath,
-      ["-y", "-hide_banner", "-loglevel", "error", "-ss", at.toFixed(2), "-i", original, "-ss", previewGameAt(o, at).toFixed(2), "-i", gameplay, "-filter_complex", withText(layoutFilter(o), o, pretty(path.basename(original)), tmp), "-map", "[v]", "-frames:v", "1", "-q:v", "4", out],
-      { windowsHide: true },
+      ["-y", "-hide_banner", "-loglevel", "error", "-ss", t.toFixed(2), "-i", original, "-stream_loop", "-1", "-ss", gameAt.toFixed(2), "-i", gameplay, "-filter_complex", withText(layoutFilter(o), o, pretty(path.basename(original)), tmp), "-map", "[v]", "-frames:v", "1", "-q:v", "4", out],
+      { windowsHide: true, timeout: 30_000 },
     );
   } finally {
     cleanup(tmp);

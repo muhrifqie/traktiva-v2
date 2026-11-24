@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { uploadJobs, videoProjects, type VideoProject } from "@/lib/db/schema";
 import { MEDIA_DIR, resolveMedia } from "@/lib/media";
 import { projectName } from "@/lib/presets";
+import { allResults, cleanTitle, resultTitle } from "@/lib/youtube-editor";
 
 // Galeri Video: every exported final (and hook variant) is kept in MEDIA_DIR/Galeri Video as a hard link — no extra
 // disk space, and it survives deleting its project. One entry per project + label (a new export replaces the old
@@ -26,6 +27,7 @@ export type GalleryVideo = {
   scheduledAt: number | null;
   postedAt: number | null;
   views: number | null;
+  source: "proyek" | "youtube"; // a project export, or a YouTube Editor render (read from YouTube Editor/ in place)
 };
 type Meta = Pick<GalleryVideo, "projectId" | "title" | "label" | "hook" | "caption" | "productId"> & { at: number; source: string };
 
@@ -108,6 +110,31 @@ export async function listVideoGallery(): Promise<GalleryVideo[]> {
       scheduledAt: queued?.scheduledAt.getTime() ?? null,
       postedAt: posted?.postedAt?.getTime() ?? null,
       views: posted?.postId ? views.get(posted.postId) ?? null : null,
+      source: "proyek",
+    });
+  }
+  // YouTube Editor renders: their uploads are the jobs that point at the file itself
+  for (const r of allResults()) {
+    const st = await fs.stat(r.file).catch(() => null);
+    if (!st) continue;
+    const mine = jobs.filter((j) => j.video === r.rel && j.status !== "cancelled");
+    const posted = mine.find((j) => j.status === "done");
+    const queued = mine.find((j) => j.status === "queued" || j.status === "uploading");
+    out.push({
+      rel: r.rel,
+      projectId: null,
+      title: cleanTitle(resultTitle(r.rel)) || "Video YouTube Editor",
+      label: "YouTube Editor",
+      hook: null,
+      caption: queued?.caption ?? posted?.caption ?? "",
+      productId: null,
+      sizeMb: Math.round((st.size / 1048576) * 10) / 10,
+      at: st.mtimeMs,
+      status: posted ? "terposting" : queued ? "terjadwal" : mine[0]?.status === "failed" ? "gagal" : "baru",
+      scheduledAt: queued?.scheduledAt.getTime() ?? null,
+      postedAt: posted?.postedAt?.getTime() ?? null,
+      views: null,
+      source: "youtube",
     });
   }
   return out.sort((a, b) => b.at - a.at);
