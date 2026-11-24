@@ -7,6 +7,7 @@ import { Advice } from "@/components/content-advice";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { AccountTabs } from "@/components/account-avatar";
 import { PageHeader } from "@/components/page-header";
+import { TikTokTabs } from "@/components/platform-tabs";
 import { PlatformIcon } from "@/components/platform-icon";
 import { PostCover } from "./post-cover";
 import { contentHealth, HEALTH_DAYS, MIN_AVG_VIEWS } from "@/lib/content-health";
@@ -141,6 +142,7 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
         )}
       </PageHeader>
 
+      <TikTokTabs accountId={account.id} current="profil" />
       <AccountTabs list={list} current={account.id} href={(id) => `/profil?akun=${id}${byViews ? "&sort=populer" : ""}`} />
 
       <div className="flex-1 space-y-5">

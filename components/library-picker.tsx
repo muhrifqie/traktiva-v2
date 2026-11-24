@@ -51,7 +51,7 @@ export function LibraryPicker({ open, onClose, onPick, title = "Ambil dari Pusta
             <div className="flex flex-col items-center gap-1 py-12 text-center">
               <ImageIcon className="size-6 text-muted-foreground" />
               <p className="text-[13px] font-medium">{tab === "uploads" ? "Belum ada unggahan" : "Belum ada gambar AI"}</p>
-              <p className="text-xs text-muted-foreground">{tab === "uploads" ? "Foto yang kamu unggah di proyek otomatis masuk ke sini." : "Gambar adegan buatan AI akan muncul di sini."}</p>
+              <p className="text-xs text-muted-foreground">{tab === "uploads" ? "Foto yang kamu unggah di proyek otomatis masuk ke sini." : "Gambar scene buatan AI akan muncul di sini."}</p>
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">

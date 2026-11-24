@@ -15,15 +15,18 @@ import {
   CAPTION_ANIMS, CAPTION_FONTS, CAPTION_PRESETS, clamp, DEFAULT_FX, DEFAULT_SAFE, round2, SFX_DIR, toTemplate,
   type CaptionAnim, type CaptionFont, type CaptionPreset, type EditTemplate, type ProjectEdit,
 } from "@/lib/edit";
-import { backdropOf, defaultOptions, draftCaption, fitScenes, presetById, projectName, VERSIONS } from "@/lib/presets";
+import { backdropOf, castOf, defaultOptions, draftCaption, fitScenes, isLocked, isSilent, presetById, projectName, VERSIONS } from "@/lib/presets";
+import { isUnsaved, pruneUnsaved, savedOptions, UNSAVED } from "@/lib/unsaved";
 import { addToLibrary, copyIntoProject, listGenerated, listUploads } from "@/lib/library";
 import { queueImages, queueRender } from "@/lib/projects";
+import { Cancelled, cancelJob, isCancelled } from "@/lib/jobs";
 import { archiveExport } from "@/lib/video-gallery";
-import { describeProduct, matchCaptionStyle, writeOutline, writeScenes } from "@/lib/prompt-writer";
+import { describeProduct, matchCaptionStyle, writeOutline, writeScenes, writeVoScript } from "@/lib/prompt-writer";
 import { synthesize } from "@/lib/cartesia";
 import { getSettings, updateSettings, writingRules } from "@/lib/settings";
 import { applyRules } from "@/lib/writing";
-import { spoken } from "@/lib/voice";
+import { splitScript, spoken, withVoiceLine } from "@/lib/voice";
+import { versionScript, VO_STYLES, voTemplate } from "@/lib/vo-templates";
 
 const Id = z.number().int().positive();
 const MAX_SCENES = 12;
@@ -41,9 +44,10 @@ async function requireGoogle() {
 export async function createProject(presetId: string) {
   const preset = presetById(presetId);
   if (!preset?.available) throw new Error("Konsep ini belum tersedia.");
+  await pruneUnsaved();
   const [{ id }] = await db
     .insert(videoProjects)
-    .values({ presetId, title: "", product: { name: "", details: "", price: "", photos: [] }, options: defaultOptions(preset), scenes: [], folder: "" })
+    .values({ presetId, title: "", product: { name: "", details: "", price: "", photos: [] }, options: { ...defaultOptions(preset), [UNSAVED]: "1" }, scenes: [], folder: "" })
     .returning({ id: videoProjects.id });
   await db.update(videoProjects).set({ folder: await createProjectFolder(id, preset.id) }).where(eq(videoProjects.id, id));
   redirect(`/video/${id}`);
@@ -64,6 +68,7 @@ const Patch = z.object({
 export async function saveProject(id: number, patch: z.input<typeof Patch>) {
   const p = await get(id);
   const d = Patch.parse(patch);
+  if (Object.keys(d).some((k) => k !== "step" && k !== "title")) notLocked(p);
   if (d.scenes && p.status === "running") throw new Error("Proyek sedang diproses, tunggu selesai dulu.");
   // Only write fields the caller sent: a runner may be updating scenes in the background.
   const set: Partial<typeof videoProjects.$inferInsert> = { updatedAt: new Date() };
@@ -71,7 +76,8 @@ export async function saveProject(id: number, patch: z.input<typeof Patch>) {
   if (d.title) set.title = d.title;
   if (d.presetId) set.presetId = d.presetId;
   if (d.product) set.product = { ...p.product, ...d.product };
-  if (d.options) set.options = d.options;
+  // "not saved yet" belongs to the server: the wizard's copy of the options never sets or clears it
+  if (d.options) set.options = isUnsaved(p.options) ? { ...savedOptions(d.options), [UNSAVED]: "1" } : savedOptions(d.options);
   if (d.clipSec) set.clipSec = d.clipSec;
   if (d.caption !== undefined) set.caption = d.caption;
   if (d.scenes) {
@@ -87,9 +93,35 @@ export async function saveProject(id: number, patch: z.input<typeof Patch>) {
     .where(eq(videoProjects.id, p.id));
 }
 
+/**
+ * "Tulis pakai AI" (voice-over box): a fresh script in this style from the product's details. When the writer is
+ * slow to start or fails (no Google account, Gemini limit), a ready template of the same style is given instead.
+ */
+export async function aiVoScript(id: number, styleId: string, seconds: number, avoid = "") {
+  const p = await get(id);
+  const style = VO_STYLES.find((s) => s.id === styleId) ?? VO_STYLES[1];
+  if (!p.product.name.trim()) throw new Error("Isi nama produk dulu.");
+  try {
+    return { script: await writeVoScript(p, style, z.number().min(3).max(600).parse(seconds), avoid), by: "ai" as const };
+  } catch (e) {
+    console.warn("[vo] AI script failed, using a template:", e instanceof Error ? e.message : e);
+    return { script: voTemplate(style.id, p.product, avoid), by: "template" as const, reason: e instanceof Error ? e.message : "AI gagal" };
+  }
+}
+
+/** "Simpan draft": save the wizard's choices and put the project in Proyek Video as a draft. */
+export async function saveAsDraft(id: number, options: Record<string, string>, clipSec: number) {
+  await saveProject(id, { options, clipSec });
+  const p = await get(id);
+  if (isUnsaved(p.options)) await db.update(videoProjects).set({ options: savedOptions(p.options), updatedAt: new Date() }).where(eq(videoProjects.id, p.id));
+  revalidatePath("/proyek");
+  revalidatePath("/beranda");
+}
+
 /** (Re)build the storyboard from the preset template with the current product + style. Clears generated media links. */
 export async function buildStoryboard(id: number, opts: { versions?: boolean } = {}) {
   const p = await get(id);
+  notLocked(p);
   notRunning(p);
   const preset = presetById(p.presetId);
   if (!preset) throw new Error("Konsep tidak dikenal.");
@@ -103,9 +135,16 @@ export async function buildStoryboard(id: number, opts: { versions?: boolean } =
     label: outline[i] ? outline[i].split(":")[0].trim().slice(0, 60) : s.label,
     image: null, clip: null, error: null,
   }));
+  // template voice lines can carry banned words from the product title (stamina → performa, …)
+  for (const s of scenes) s.motionPrompt = applyRules(s.motionPrompt, writingRules());
+  // the owner's own voice-over script replaces the template's sample lines, split over the scenes
+  if (p.options.vo?.trim() && !isSilent(p.presetId, p.options)) {
+    const parts = splitScript(applyRules(p.options.vo, writingRules()), scenes.length);
+    scenes.forEach((s, i) => parts[i] && (s.motionPrompt = withVoiceLine(s.motionPrompt, parts[i])));
+  }
   await db
     .update(videoProjects)
-    .set({ scenes, options: { ...p.options, written: "" }, caption: p.caption || draftCaption(p.product), step: 4, updatedAt: new Date() })
+    .set({ scenes, options: { ...savedOptions(p.options), written: "" }, caption: p.caption || draftCaption(p.product), step: 4, updatedAt: new Date() })
     .where(eq(videoProjects.id, p.id));
   return opts.versions === false ? [] : makeVersions(id);
 }
@@ -137,7 +176,9 @@ async function spawnVersions(id: number, write: boolean) {
 async function spawnVersion(p: Awaited<ReturnType<typeof get>>, v: (typeof VERSIONS)[number]) {
   const base = projectName(p);
   const title = `${base.length > 100 ? `${base.slice(0, 97)}...` : base} · Versi ${v.key}`; // the suffix must survive the 120-char limit
-  const options = { ...p.options, finals: "1", versions: "", versionOf: String(p.id), angle: v.angle, background: !p.options.background || p.options.background === "auto" ? v.set : p.options.background };
+  const options: Record<string, string> = { ...p.options, finals: "1", versions: "", versionOf: String(p.id), versionKey: v.key, angle: v.angle, background: !p.options.background || p.options.background === "auto" ? v.set : p.options.background };
+  // the owner's voice-over stays the same in every version, only its hook (first sentence) changes
+  if (p.options.vo?.trim()) options.vo = versionScript(p.options.vo, v.key, p.product.name);
   const [{ id }] = await db
     .insert(videoProjects)
     .values({ presetId: p.presetId, title, step: 3, product: p.product, options, scenes: [], clipSec: p.clipSec, caption: p.caption, folder: "", status: "draft" })
@@ -160,10 +201,10 @@ async function spawnVersion(p: Awaited<ReturnType<typeof get>>, v: (typeof VERSI
 
 // ---------- product from the TikTok showcase ----------
 
-/** Showcase products of every TikTok account, for the "Ambil dari Etalase" picker in the Studio. */
+/** Showcase products of every TikTok account, for the "Ambil dari Etalase" picker in the Studio (it asks for the account first). */
 export async function listEtalase() {
   const rows = await db
-    .select({ id: showcaseProducts.id, title: showcaseProducts.title, price: showcaseProducts.price, cover: showcaseProducts.cover, inStock: showcaseProducts.inStock, detailAt: showcaseProducts.detailAt, username: accounts.username })
+    .select({ id: showcaseProducts.id, title: showcaseProducts.title, price: showcaseProducts.price, cover: showcaseProducts.cover, inStock: showcaseProducts.inStock, detailAt: showcaseProducts.detailAt, accountId: accounts.id, username: accounts.username, displayName: accounts.displayName, avatarUrl: accounts.avatarUrl, status: accounts.status })
     .from(showcaseProducts)
     .innerJoin(accounts, eq(accounts.id, showcaseProducts.accountId))
     .orderBy(asc(showcaseProducts.position));
@@ -180,6 +221,7 @@ export async function etalasePhotos(showcaseId: number) {
 /** Fill the project's product from a showcase product: name, price, AI facts (full product page) and the chosen photos (max 3). */
 export async function applyShowcaseProduct(id: number, showcaseId: number, chosen?: string[]) {
   const p = await get(id);
+  notLocked(p);
   notRunning(p);
   const { loadProductDetail, detailFacts } = await import("@/lib/showcase");
   const r = await loadProductDetail(z.number().int().positive().parse(showcaseId));
@@ -215,6 +257,54 @@ async function pendingVersions(p: Awaited<ReturnType<typeof get>>) {
  * (automatic limit, see parallelLimit), so extra images/clips wait for a free slot instead of a whole video waiting its turn;
  * the AI writer browser is locked per profile, so its turns line up by themselves.
  */
+/**
+ * "Batalkan": stop this project's run (and, from the main video, its versions B–E). Scenes still waiting are never
+ * sent to Flow; requests already in Flow are dropped (Flow may still charge for those). The project goes back to
+ * draft with everything finished so far kept.
+ */
+export async function cancelProject(id: number) {
+  const p = await get(id);
+  const ids = [p.id, ...(p.options.versionOf ? [] : (p.options.versions ?? "").split(",").map(Number).filter(Boolean))];
+  const rows = await db.select().from(videoProjects).where(inArray(videoProjects.id, ids));
+  const running = rows.filter((r) => r.status === "running");
+  if (!running.length) return 0;
+  for (const r of running) {
+    cancelJob(r.id);
+    const scenes = r.scenes.map((s) => (s.state === "queued" || s.state === "working" ? { ...s, state: null, stage: null, pct: null } : s));
+    await db.update(videoProjects).set({ status: "draft", progress: null, error: null, scenes, updatedAt: new Date() }).where(eq(videoProjects.id, r.id));
+  }
+  revalidatePath("/proyek");
+  return running.length;
+}
+
+/**
+ * Character concepts: the main video and its versions share ONE face, made before any of them starts. Before this,
+ * every version made its own AI face first, so some versions started their images minutes later than others (and
+ * each version showed a different woman).
+ */
+async function shareFace(ids: number[]) {
+  const rows = await db.select().from(videoProjects).where(inArray(videoProjects.id, ids));
+  const need = rows.filter((r) => castOf(r) && !r.options.face);
+  const mainOf = (r: { id: number; options: Record<string, string> }) => Number(r.options.versionOf) || r.id;
+  for (const mainId of new Set(need.map(mainOf))) {
+    const group = need.filter((r) => mainOf(r) === mainId);
+    const main = await db.select().from(videoProjects).where(eq(videoProjects.id, mainId)).get();
+    let face = main?.options.face;
+    let ai = main?.options.faceAi;
+    if (!face) {
+      await db.update(videoProjects).set({ progress: "AI membuat wajah karakter..." }).where(inArray(videoProjects.id, group.map((r) => r.id)));
+      const { makeAiFace } = await import("@/lib/projects");
+      face = await makeAiFace(mainId).catch(() => undefined);
+      ai = "1";
+    }
+    if (!face) continue; // each version makes its own then
+    for (const r of group.filter((x) => x.id !== mainId)) {
+      const cur = await get(r.id);
+      await db.update(videoProjects).set({ options: { ...cur.options, face, faceAi: ai ?? "1" } }).where(eq(videoProjects.id, r.id));
+    }
+  }
+}
+
 async function startAll(ids: number[]) {
   quick.__quick ??= new Set();
   const add = ids.filter((x) => !quick.__quick!.has(x));
@@ -222,14 +312,18 @@ async function startAll(ids: number[]) {
   for (const x of add) quick.__quick.add(x);
   await db.update(videoProjects).set({ status: "running", progress: "Menyiapkan...", error: null }).where(inArray(videoProjects.id, add));
   const { autoFinish } = await import("@/lib/autopilot");
+  const faceReady = shareFace(add).catch((e) => console.warn("[wajah] gagal membuat wajah bersama:", e));
   for (const id of add) {
-    const step = (stage: string) => db.update(videoProjects).set({ status: "running", progress: stage, error: null }).where(eq(videoProjects.id, id));
+    const step = async (stage: string) => {
+      if (!isCancelled(id)) await db.update(videoProjects).set({ status: "running", progress: stage, error: null }).where(eq(videoProjects.id, id));
+    };
     void (async () => {
       try {
+        await faceReady; // all versions start their images together, with the same face
         const cur = await get(id);
         await autoFinish(id, step, { written: cur.options.written === "1" });
       } catch (e) {
-        await db.update(videoProjects).set({ status: "failed", progress: null, error: e instanceof Error ? e.message.slice(0, 300) : String(e) }).where(eq(videoProjects.id, id));
+        if (!(e instanceof Cancelled) && !isCancelled(id)) await db.update(videoProjects).set({ status: "failed", progress: null, error: e instanceof Error ? e.message.slice(0, 300) : String(e) }).where(eq(videoProjects.id, id));
       } finally {
         quick.__quick?.delete(id);
         revalidatePath("/proyek");
@@ -246,8 +340,10 @@ async function startAll(ids: number[]) {
  */
 export async function quickMake(id: number) {
   const p = await get(id);
+  notLocked(p);
   if (!(await db.select().from(googleAccounts).where(eq(googleAccounts.status, "active")).get())) throw new Error("Tambahkan akun Google di Pengaturan dulu (dipakai untuk Flow).");
   if (!p.scenes.length) throw new Error("Susun storyboard dulu.");
+  if (isUnsaved(p.options)) await db.update(videoProjects).set({ options: savedOptions(p.options) }).where(eq(videoProjects.id, p.id));
   quick.__quick ??= new Set();
   const mainBusy = quick.__quick.has(id);
   if (!mainBusy) notRunning(p);
@@ -281,7 +377,7 @@ export async function setSceneLine(id: number, index: number, line: string) {
   const text = z.string().trim().max(300).parse(line).replace(/["“”]/g, "'");
   await editScenes(id, (scenes) => {
     const s = scenes[index];
-    if (!s) throw new Error("Adegan tidak ditemukan.");
+    if (!s) throw new Error("Scene tidak ditemukan.");
     const m = s.motionPrompt.match(/["“]([^"”]*)["”]/);
     s.motionPrompt = m ? s.motionPrompt.replace(m[0], `"${text}"`) : `${s.motionPrompt} Voice says: "${text}"`;
     s.clip = null;
@@ -293,6 +389,7 @@ const PHOTO_TYPES: Record<string, string> = { "image/png": ".png", "image/jpeg":
 
 export async function uploadPhotos(id: number, form: FormData) {
   const p = await get(id);
+  notLocked(p);
   const files = form.getAll("photos").filter((f): f is File => f instanceof File && f.size > 0);
   if (p.product.photos.length + files.length > 3) throw new Error("Maksimal 3 foto produk.");
   const photos = [...p.product.photos];
@@ -309,27 +406,83 @@ export async function uploadPhotos(id: number, form: FormData) {
 
 export async function removePhoto(id: number, rel: string) {
   const p = await get(id);
+  notLocked(p);
   if (!p.product.photos.includes(rel)) return;
   await removeMedia(rel);
   await db.update(videoProjects).set({ product: { ...p.product, photos: p.product.photos.filter((x) => x !== rel), look: null }, updatedAt: new Date() }).where(eq(videoProjects.id, p.id));
 }
 
+/** Any concept: the owner's own background photo (options.bgImage), used as an image reference; empty = the AI picks a set. */
+export async function uploadBackground(id: number, form: FormData) {
+  const p = await get(id);
+  notLocked(p);
+  notRunning(p);
+  const f = form.get("background");
+  if (!(f instanceof File) || !f.size) throw new Error("Pilih gambar background dulu.");
+  const ext = PHOTO_TYPES[f.type];
+  if (!ext) throw new Error("Format gambar harus PNG, JPG, atau WEBP.");
+  if (f.size > 8 * 1024 * 1024) throw new Error("Ukuran gambar maksimal 8 MB.");
+  const rel = await writeMedia(`${p.folder}/background/latar-${Date.now().toString(36)}${ext}`, Buffer.from(await f.arrayBuffer()));
+  if (p.options.bgImage?.startsWith(`${p.folder}/`)) await removeMedia(p.options.bgImage).catch(() => {});
+  await db.update(videoProjects).set({ options: { ...p.options, bgImage: rel }, updatedAt: new Date() }).where(eq(videoProjects.id, p.id));
+}
+export async function removeBackground(id: number) {
+  const p = await get(id);
+  notLocked(p);
+  notRunning(p);
+  if (!p.options.bgImage) return;
+  if (p.options.bgImage.startsWith(`${p.folder}/`)) await removeMedia(p.options.bgImage).catch(() => {});
+  const options = { ...p.options };
+  delete options.bgImage;
+  await db.update(videoProjects).set({ options, updatedAt: new Date() }).where(eq(videoProjects.id, p.id));
+}
+
+/** Character concepts (Sensasi, Daster): the owner's own face photo, used as the first image reference (options.face). */
+export async function uploadFace(id: number, form: FormData) {
+  const p = await get(id);
+  notLocked(p);
+  notRunning(p);
+  const f = form.get("face");
+  if (!(f instanceof File) || !f.size) throw new Error("Pilih foto wajah dulu.");
+  const ext = PHOTO_TYPES[f.type];
+  if (!ext) throw new Error("Format foto harus PNG, JPG, atau WEBP.");
+  if (f.size > 8 * 1024 * 1024) throw new Error("Ukuran foto maksimal 8 MB.");
+  const rel = await writeMedia(`${p.folder}/karakter/wajah-${Date.now().toString(36)}${ext}`, Buffer.from(await f.arrayBuffer()));
+  if (p.options.face?.startsWith(`${p.folder}/`)) await removeMedia(p.options.face).catch(() => {}); // a version shares the main's file
+  const options: Record<string, string> = { ...p.options, face: rel };
+  delete options.faceAi;
+  await db.update(videoProjects).set({ options, updatedAt: new Date() }).where(eq(videoProjects.id, p.id));
+}
+export async function removeFace(id: number) {
+  const p = await get(id);
+  notLocked(p);
+  notRunning(p);
+  if (!p.options.face) return;
+  if (p.options.face.startsWith(`${p.folder}/`)) await removeMedia(p.options.face).catch(() => {});
+  const options = { ...p.options };
+  delete options.face;
+  delete options.faceAi;
+  await db.update(videoProjects).set({ options, updatedAt: new Date() }).where(eq(videoProjects.id, p.id));
+}
+
 export async function generateImages(id: number, only?: number) {
   const p = await get(id);
+  notLocked(p);
   if (p.status === "running") throw new Error("Proyek sedang diproses.");
   if (!p.product.photos.length && !presetById(p.presetId)?.custom) throw new Error("Unggah minimal 1 foto produk.");
   if (!p.scenes.length) throw new Error("Storyboard masih kosong.");
   const targets = only != null ? [p.scenes[only]] : p.scenes.filter((s) => !(s.own && s.image));
-  if (targets.some((s) => !s?.imagePrompt.trim())) throw new Error("Isi prompt gambar dulu untuk adegan yang mau dibuat AI.");
+  if (targets.some((s) => !s?.imagePrompt.trim())) throw new Error("Isi prompt gambar dulu untuk scene yang mau dibuat AI.");
   await requireGoogle();
   await queueImages(p.id, only);
 }
 
 export async function renderProject(id: number) {
   const p = await get(id);
+  notLocked(p);
   if (p.status === "running") throw new Error("Proyek sedang diproses.");
-  if (p.scenes.some((s) => !s.image)) throw new Error("Semua adegan perlu gambar dulu.");
-  if (p.scenes.some((s) => !s.motionPrompt.trim())) throw new Error("Isi prompt gerak untuk semua adegan dulu.");
+  if (p.scenes.some((s) => !s.image)) throw new Error("Semua scene perlu gambar dulu.");
+  if (p.scenes.some((s) => !s.motionPrompt.trim())) throw new Error("Isi prompt gerak untuk semua scene dulu.");
   await requireGoogle();
   await db.update(videoProjects).set({ step: 5 }).where(eq(videoProjects.id, p.id));
   await queueRender(p.id);
@@ -383,6 +536,10 @@ export async function listProjects() {
 const notRunning = (p: { status: string }) => {
   if (p.status === "running") throw new Error("Proyek sedang diproses, tunggu selesai dulu.");
 };
+// a finished, exported video is final: only viewing, renaming, scheduling and duplicating stay possible
+const notLocked = (p: Parameters<typeof isLocked>[0]) => {
+  if (isLocked(p)) throw new Error("Video ini sudah jadi dan dikunci. Duplikat proyeknya untuk membuat versi baru.");
+};
 
 export async function renameProject(id: number, name: string) {
   const p = await get(id);
@@ -422,9 +579,10 @@ export async function duplicateProject(id: number) {
 
 async function editScenes(id: number, fn: (scenes: ProjectScene[]) => ProjectScene[]) {
   const p = await get(id);
+  notLocked(p);
   notRunning(p);
   const scenes = fn(p.scenes.map((s) => ({ ...s })));
-  if (scenes.length > MAX_SCENES) throw new Error(`Maksimal ${MAX_SCENES} adegan.`);
+  if (scenes.length > MAX_SCENES) throw new Error(`Maksimal ${MAX_SCENES} scene.`);
   await db.update(videoProjects).set({ scenes, updatedAt: new Date() }).where(eq(videoProjects.id, p.id));
   return p;
 }
@@ -432,14 +590,14 @@ async function editScenes(id: number, fn: (scenes: ProjectScene[]) => ProjectSce
 export async function addScene(id: number, after?: number) {
   await editScenes(id, (scenes) => {
     const at = after == null ? scenes.length : after + 1;
-    scenes.splice(at, 0, { label: `Adegan ${scenes.length + 1}`, imagePrompt: "", motionPrompt: "", image: null, clip: null });
+    scenes.splice(at, 0, { label: `Scene ${scenes.length + 1}`, imagePrompt: "", motionPrompt: "", image: null, clip: null });
     return scenes;
   });
 }
 
 export async function removeScene(id: number, index: number) {
   await editScenes(id, (scenes) => {
-    if (scenes.length <= 1) throw new Error("Minimal 1 adegan.");
+    if (scenes.length <= 1) throw new Error("Minimal 1 scene.");
     return scenes.filter((_, i) => i !== index);
   });
 }
@@ -456,13 +614,14 @@ export async function moveScene(id: number, index: number, dir: -1 | 1) {
 /** Use the user's own picture for a scene (its clip is made from this picture). */
 export async function uploadSceneImage(id: number, index: number, form: FormData) {
   const p = await get(id);
+  notLocked(p);
   notRunning(p);
   const f = form.get("image");
   if (!(f instanceof File) || !f.size) throw new Error("Pilih gambar dulu.");
   const ext = PHOTO_TYPES[f.type];
   if (!ext) throw new Error("Format gambar harus PNG, JPG, atau WEBP.");
   if (f.size > 12 * 1024 * 1024) throw new Error("Ukuran gambar maksimal 12 MB.");
-  if (!p.scenes[index]) throw new Error("Adegan tidak ditemukan.");
+  if (!p.scenes[index]) throw new Error("Scene tidak ditemukan.");
   const data = Buffer.from(await f.arrayBuffer());
   const image = await writeMedia(`${p.folder}/gambar/sendiri-${index + 1}-${Date.now().toString(36)}${ext}`, data);
   await addToLibrary(data, ext, f.name);
@@ -476,6 +635,7 @@ export async function uploadSceneImage(id: number, index: number, form: FormData
 /** QC said the AI got the product wrong: use the real product photo as this scene's picture (the clip animates it). */
 export async function applyProductPhoto(id: number, index: number, photo = 0) {
   const p = await get(id);
+  notLocked(p);
   notRunning(p);
   const src = p.product.photos[z.number().int().min(0).max(9).parse(photo)];
   if (!src || !p.scenes[index]) throw new Error("Foto produk tidak ada. Tambahkan foto di langkah Produk.");
@@ -497,6 +657,7 @@ export async function getLibrary() {
 /** Use a library picture as a product photo, or as a scene's own image. */
 export async function pickFromLibrary(id: number, rel: string, target: { kind: "photo" } | { kind: "scene"; index: number }) {
   const p = await get(id);
+  notLocked(p);
   notRunning(p);
   const stamp = Date.now().toString(36);
   if (target.kind === "photo") {
@@ -505,7 +666,7 @@ export async function pickFromLibrary(id: number, rel: string, target: { kind: "
     await db.update(videoProjects).set({ product: { ...p.product, photos: [...p.product.photos, photo] }, updatedAt: new Date() }).where(eq(videoProjects.id, p.id));
     return;
   }
-  if (!p.scenes[target.index]) throw new Error("Adegan tidak ditemukan.");
+  if (!p.scenes[target.index]) throw new Error("Scene tidak ditemukan.");
   const image = await copyIntoProject(rel, `${p.folder}/gambar/pustaka-${target.index + 1}-${stamp}`);
   await editScenes(id, (scenes) => {
     scenes[target.index] = { ...scenes[target.index], image, own: true, clip: null, error: null };
@@ -516,9 +677,10 @@ export async function pickFromLibrary(id: number, rel: string, target: { kind: "
 /** Let Gemini (via the Google account) rewrite the storyboard prompts: all scenes, or one when `index` is given. */
 export async function aiWriteScenes(id: number, index?: number) {
   const p = await get(id);
+  notLocked(p);
   notRunning(p);
   if (!p.scenes.length) throw new Error("Storyboard masih kosong.");
-  if (index != null && !p.scenes[index]) throw new Error("Adegan tidak ditemukan.");
+  if (index != null && !p.scenes[index]) throw new Error("Scene tidak ditemukan.");
   if (!p.product.name.trim()) throw new Error("Isi nama produk dulu supaya AI tahu apa yang dipromosikan.");
   // the storyboard writer must know what the product really looks like: let Gemini look at the photos once
   if (!p.product.look && p.product.photos.length) {
@@ -558,6 +720,7 @@ const VoiceInput = z.object({
 /** Store the project's voice choice. Changing who speaks makes rendered clips stale (they carry the old audio). */
 export async function setProjectVoice(id: number, input: z.input<typeof VoiceInput>) {
   const p = await get(id);
+  notLocked(p);
   notRunning(p);
   const d = VoiceInput.parse(input);
   if (d.voice === "cartesia" && !getSettings().voice?.cartesiaKey) throw new Error("Masukkan API key Cartesia di Pengaturan dulu.");
@@ -687,6 +850,7 @@ export async function openEditor(id: number) {
 
 export async function saveEdit(id: number, patch: EditPatch) {
   const p = await get(id);
+  notLocked(p);
   await db.update(videoProjects).set({ edit: mergeEdit(p, patch) }).where(eq(videoProjects.id, p.id));
 }
 
@@ -694,6 +858,7 @@ const AUDIO_TYPES: Record<string, string> = { "audio/mpeg": ".mp3", "audio/mp3":
 
 export async function uploadMusic(id: number, form: FormData) {
   const p = await get(id);
+  notLocked(p);
   const f = form.get("music");
   if (!(f instanceof File) || !f.size) throw new Error("Pilih file musik.");
   const ext = AUDIO_TYPES[f.type] ?? (/\.(mp3|wav|m4a|aac|ogg)$/i.exec(f.name)?.[0].toLowerCase() || null);
@@ -714,6 +879,7 @@ export async function audioLibrary() {
 
 export async function pickLibraryMusic(id: number, src: string) {
   const p = await get(id);
+  notLocked(p);
   const m = await copyMusicToProject(z.string().max(300).parse(src), p.folder);
   return { src: m.src, name: m.name, dur: m.dur, volume: 0.2, offset: 0, fade: true, bpm: m.bpm, beat: m.beat };
 }
@@ -732,6 +898,7 @@ export async function draftFullScript(id: number, patch: EditPatch, wish = "") {
 
 export async function makeFullVoice(id: number, patch: EditPatch, script: string, words = 2) {
   const p = await get(id);
+  notLocked(p);
   const text = z.string().trim().min(10, "Naskah terlalu pendek.").max(2000).parse(script);
   const r = await fullVoiceOver(p, mergeEdit(p, patch), text, z.number().int().min(1).max(6).parse(words));
   await db.update(videoProjects).set({ edit: r.edit }).where(eq(videoProjects.id, p.id));
@@ -740,6 +907,7 @@ export async function makeFullVoice(id: number, patch: EditPatch, script: string
 
 export async function fitToVoice(id: number, patch: EditPatch) {
   const p = await get(id);
+  notLocked(p);
   const edit = await fitClipsToVoice(p, mergeEdit(p, patch));
   await db.update(videoProjects).set({ edit }).where(eq(videoProjects.id, p.id));
   return edit;
@@ -747,6 +915,7 @@ export async function fitToVoice(id: number, patch: EditPatch) {
 
 export async function undoFit(id: number) {
   const p = await get(id);
+  notLocked(p);
   const before = p.edit?.beforeFit;
   if (!before) throw new Error("Tidak ada potongan untuk dibatalkan.");
   const edit = { ...before, beforeFit: null };
@@ -756,6 +925,7 @@ export async function undoFit(id: number) {
 
 export async function aiEditTimeline(id: number, patch: EditPatch, instruction: string) {
   const p = await get(id);
+  notLocked(p);
   if (!instruction.trim()) throw new Error("Tulis dulu apa yang mau diubah.");
   const current = mergeEdit(p, patch);
   const { edit, note } = await aiAdjustEdit(p, current, instruction);
@@ -766,6 +936,7 @@ export async function aiEditTimeline(id: number, patch: EditPatch, instruction: 
 /** AI Director: three complete versions with different angles. Nothing is saved until the user picks one. */
 export async function aiDirector(id: number, patch: EditPatch, wish: string) {
   const p = await get(id);
+  notLocked(p);
   const current = mergeEdit(p, patch);
   // one after another: all calls share the same Gemini browser profile (parallel calls break each other)
   const ok: Awaited<ReturnType<typeof aiAdjustEdit>>[] = [];
@@ -806,6 +977,7 @@ const Overlay = z.array(z.object({ start: Num, end: Num, x: Num, y: Num, w: Num.
 /** Export one hook variant to final-<A|B|C>.mp4 next to final.mp4 (the project's own edit is left as it is). */
 export async function exportVariant(id: number, patch: EditPatch, overlays: z.input<typeof Overlay>, label: string, hook = "") {
   const p = await get(id);
+  notLocked(p);
   if (p.status === "running") throw new Error("Proyek sedang diproses.");
   const name = `final-${z.enum(["A", "B", "C", "D"]).parse(label)}`;
   const out = await exportEdit(p, mergeEdit(p, patch), Overlay.parse(overlays), name);
@@ -823,6 +995,7 @@ export async function aiHookVariants(id: number, patch: EditPatch) {
 
 export async function exportTimeline(id: number, patch: EditPatch, overlays: z.input<typeof Overlay>) {
   const p = await get(id);
+  notLocked(p);
   if (p.status === "running") throw new Error("Proyek sedang diproses.");
   const edit = mergeEdit(p, patch);
   const finalPath = await exportEdit(p, edit, Overlay.parse(overlays));

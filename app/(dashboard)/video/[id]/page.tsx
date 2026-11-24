@@ -7,7 +7,7 @@ import { getSettings } from "@/lib/settings";
 import { listVoices, type CartesiaVoice } from "@/lib/cartesia";
 import { getKv } from "@/lib/kalo";
 import { projectVoice } from "@/lib/voice";
-import { Wizard, type FamilyItem } from "./wizard";
+import { Wizard, type FamilyItem, type Sibling } from "./wizard";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +25,7 @@ export default async function ProjectPage({ params }: PageProps<"/video/[id]">) 
     const alive = (await db.select({ id: videoProjects.id }).from(videoProjects).where(inArray(videoProjects.id, vids))).map((r) => r.id);
     project.options = { ...project.options, versions: vids.filter((v) => alive.includes(v)).join(",") };
   }
-  // the main video and its versions B–E, for the progress list in the Adegan tab
+  // the main video and its versions B–E, for the progress list in the Proses render tab
   const mainId = Number(project.options.versionOf) || project.id;
   const main = mainId === project.id ? project : await db.select().from(videoProjects).where(eq(videoProjects.id, mainId)).get();
   const famIds = [mainId, ...(main?.options.versions ?? "").split(",").map(Number).filter(Boolean)];
@@ -44,6 +44,15 @@ export default async function ProjectPage({ params }: PageProps<"/video/[id]">) 
   const { updatedAt, ...rest } = project;
   const defaults = getSettings().voice ?? { provider: "flow" };
   const voice = projectVoice(project.options, defaults);
+  // every version A–E in full, so the Proses render tab shows all their images and clips on one page
+  const siblings: Sibling[] = famIds
+    .map((fid, i) => {
+      const r = famRows.find((x) => x.id === fid);
+      if (!r) return null;
+      const { updatedAt: u, ...row } = r;
+      return { key: String.fromCharCode(65 + i), project: { ...row, updatedAt: u.getTime() }, voice: projectVoice(r.options, defaults) };
+    })
+    .filter((x): x is Sibling => !!x);
   let voices: CartesiaVoice[] = (await getKv<CartesiaVoice[]>("cartesia:voices:id"))?.data ?? [];
   if (defaults.cartesiaKey && !voices.length) voices = await listVoices(defaults.cartesiaKey, "id").catch(() => []);
   return (
@@ -54,6 +63,7 @@ export default async function ProjectPage({ params }: PageProps<"/video/[id]">) 
       voices={voices.map(({ id, name, description, gender }) => ({ id, name, description, gender }))}
       hasCartesia={!!defaults.cartesiaKey}
       family={family}
+      siblings={siblings}
     />
   );
 }

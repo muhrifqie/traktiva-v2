@@ -1,6 +1,6 @@
 import { and, asc, count, eq, inArray } from "drizzle-orm";
-import { CalendarClock, Clock, ExternalLink, Layers, ShieldCheck, Users } from "lucide-react";
-import { AccountOverviewCard, OverviewEmpty, OverviewTiles } from "@/components/platform-overview";
+import { CalendarClock, ExternalLink, ShieldCheck, Users } from "lucide-react";
+import { AccountOverviewCard, OverviewEmpty } from "@/components/platform-overview";
 import { PageHeader } from "@/components/page-header";
 import { PlatformIcon } from "@/components/platform-icon";
 import { db } from "@/lib/db";
@@ -38,18 +38,9 @@ export async function MetaOverview({ platform }: { platform: "instagram" | "face
         </OverviewEmpty>
       ) : (
         <div className="space-y-6">
-          <OverviewTiles
-            color={P.color}
-            tiles={[
-              { icon: Layers, label: "Akun", value: list.length, sub: `${list.filter((a) => a.status === "active").length} login` },
-              { icon: ShieldCheck, label: "Perlu login", value: list.filter((a) => a.status !== "active").length },
-              { icon: CalendarClock, label: "Antre upload", value: queued.reduce((t, r) => t + r.n, 0) },
-              { icon: Clock, label: "Upload Reels", value: "Segera", sub: "fitur berikutnya" },
-            ]}
-          />
           <section className="space-y-2">
             <h2 className="text-[13px] font-semibold text-muted-foreground">Akun ({list.length})</h2>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
               {list.map((a, i) => (
                 <AccountOverviewCard
                   key={a.id}

@@ -3,6 +3,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { Store } from "lucide-react";
 import { AccountTabs } from "@/components/account-avatar";
 import { PageHeader } from "@/components/page-header";
+import { TikTokTabs } from "@/components/platform-tabs";
 import { pickActive } from "@/lib/settings";
 import { db } from "@/lib/db";
 import { accounts, showcaseProducts, uploadJobs } from "@/lib/db/schema";
@@ -41,6 +42,7 @@ export default async function ShowcasePage({ searchParams }: PageProps<"/showcas
           </>
         )}
       </PageHeader>
+      {current && <TikTokTabs accountId={current.id} current="showcase" />}
 
       {tiktok.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-10 text-center">

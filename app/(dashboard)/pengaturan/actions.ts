@@ -46,7 +46,7 @@ export async function pollGoogleConnect(loginId: string): Promise<ConnectPoll> {
     (await db.select().from(googleAccounts).where(eq(googleAccounts.sessionKey, s.sessionKey)).get()) ??
     (await db.select().from(googleAccounts).where(eq(googleAccounts.email, email)).get());
   try {
-    const reg = await upsertFlowSession({ tokenId: existing?.flowTokenId, st: s.result.st, cookies: s.result.cookies, remark: `Traktiva ${email}` });
+    const reg = await upsertFlowSession({ tokenId: existing?.flowTokenId, email, st: s.result.st, cookies: s.result.cookies, remark: `Traktiva ${email}` });
     if (reg.email && reg.email.toLowerCase() !== email) {
       throw new Error(`Akun tidak cocok: Google ${email}, Flow ${reg.email}. Coba login ulang.`);
     }
@@ -80,7 +80,7 @@ export async function syncGoogleAccount(id: number) {
       refresh();
       return { ok: false as const, error: "Sesi Google habis, login ulang." };
     }
-    const reg = await upsertFlowSession({ tokenId: a.flowTokenId, st: s.st, cookies: s.cookies, remark: `Traktiva ${a.email}` });
+    const reg = await upsertFlowSession({ tokenId: a.flowTokenId, email: a.email, st: s.st, cookies: s.cookies, remark: `Traktiva ${a.email}` });
     const credits = reg.credits ?? (reg.id ? await refreshFlowCredits(reg.id).catch(() => null) : null);
     await db.update(googleAccounts).set({ flowTokenId: reg.id, credits, status: "active", lastError: null, lastSyncAt: new Date() }).where(eq(googleAccounts.id, a.id));
     refresh();
@@ -95,7 +95,10 @@ export async function syncGoogleAccount(id: number) {
 export async function deleteGoogleAccount(id: number) {
   const a = await db.select().from(googleAccounts).where(eq(googleAccounts.id, Id.parse(id))).get();
   if (!a) return;
-  if (a.flowTokenId) await deleteFlowSession(a.flowTokenId).catch(() => {});
+  // must not be skipped silently: a session left in flow2api keeps being used for generations
+  if (a.flowTokenId) await deleteFlowSession(a.flowTokenId).catch((e) => {
+    if (!/flow2api 404/.test(String(e))) throw new Error(`Gagal melepas akun dari mesin video: ${errMsg(e)}`);
+  });
   await db.delete(googleAccounts).where(eq(googleAccounts.id, a.id));
   void refreshFlowLimit().catch(() => {});
   if (isProfileKey(a.sessionKey)) await deleteProfile(a.sessionKey).catch(() => {});
