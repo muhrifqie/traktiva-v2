@@ -1,5 +1,6 @@
 "use client";
 
+import { AccountAvatar } from "@/components/account-avatar";
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -473,10 +474,11 @@ function FamilyPanel({ family, current, busy, act }: { family: FamilyItem[]; cur
 
 type EtalaseItem = Awaited<ReturnType<typeof listEtalase>>[number];
 
-/** Pick a product from the TikTok showcase (every account); its full page fills the project's product. */
+/** Pick a product from the TikTok showcase: first the account (each has its own etalase; skipped with one account), then the product; its full page fills the project's product. */
 function EtalasePicker({ open, onClose, onPick }: { open: boolean; onClose: () => void; onPick: (showcaseId: number, photos: string[]) => void }) {
   const [items, setItems] = useState<EtalaseItem[] | null>(null);
   const [q, setQ] = useState("");
+  const [acct, setAcct] = useState<number | null>(null); // step 1: whose etalase
   // step 2: the chosen product's photos (max 3 selected)
   const [chosen, setChosen] = useState<{ id: number; title: string; photos: string[] | null; error?: string } | null>(null);
   const [sel, setSel] = useState<string[]>([]);
@@ -504,8 +506,11 @@ function EtalasePicker({ open, onClose, onPick }: { open: boolean; onClose: () =
       live = false;
     };
   }, [open]);
+  const accts = [...new Map((items ?? []).map((x) => [x.accountId, { id: x.accountId, username: x.username, displayName: x.displayName, avatarUrl: x.avatarUrl, status: x.status, platform: "tiktok" as const }])).values()];
+  const count = (id: number) => (items ?? []).filter((x) => x.accountId === id).length;
+  const current = accts.length === 1 ? accts[0] : accts.find((a) => a.id === acct);
   const k = q.trim().toLowerCase();
-  const shown = (items ?? []).filter((x) => !k || x.title.toLowerCase().includes(k));
+  const shown = (items ?? []).filter((x) => x.accountId === current?.id && (!k || x.title.toLowerCase().includes(k)));
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
       <DialogContent className="sm:max-w-2xl">
@@ -538,12 +543,38 @@ function EtalasePicker({ open, onClose, onPick }: { open: boolean; onClose: () =
               </button>
             </div>
           </>
+        ) : items && !current && accts.length > 1 ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Ambil dari Etalase</DialogTitle>
+              <DialogDescription>Pilih akun dulu. Setiap akun punya isi etalase sendiri.</DialogDescription>
+            </DialogHeader>
+            <div className="grid max-h-[55vh] gap-2 overflow-y-auto sm:grid-cols-2">
+              {accts.map((a) => (
+                <button key={a.id} type="button" onClick={() => { setAcct(a.id); setQ(""); }} className="flex items-center gap-3 rounded-lg border bg-background p-3 text-left transition-colors hover:border-ring/50">
+                  <AccountAvatar a={a} size="size-10" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-semibold">{a.displayName || `@${a.username}`}</span>
+                    <span className="block truncate text-[11px] text-muted-foreground">@{a.username}</span>
+                  </span>
+                  <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] tabular-nums text-muted-foreground">{count(a.id)} produk</span>
+                </button>
+              ))}
+            </div>
+          </>
         ) : (
           <>
         <DialogHeader>
           <DialogTitle>Ambil dari Etalase</DialogTitle>
           <DialogDescription>Pilih produk, lalu pilih fotonya (maks. 3). Nama, harga, dan keunggulan ikut terisi.</DialogDescription>
         </DialogHeader>
+        {current && (
+          <div className="flex items-center gap-2">
+            {accts.length > 1 && <button type="button" onClick={() => setAcct(null)} className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border bg-background px-3 text-[13px] font-medium hover:bg-accent"><ArrowLeft className="size-4" /> Ganti akun</button>}
+            <span className="text-[12px] text-muted-foreground">Etalase</span>
+            <span className="flex min-w-0 items-center gap-2 text-[13px]"><AccountAvatar a={current} size="size-6" /><span className="truncate font-medium">@{current.username}</span></span>
+          </div>
+        )}
         <label className="flex h-9 items-center gap-2 rounded-lg border bg-background px-3 text-[13px] focus-within:border-ring">
           <Search className="size-4 text-muted-foreground" />
           <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari produk..." className="min-w-0 flex-1 bg-transparent outline-none" />
@@ -561,7 +592,6 @@ function EtalasePicker({ open, onClose, onPick }: { open: boolean; onClose: () =
               <div className="space-y-0.5 p-2">
                 <p className="line-clamp-2 text-[11px] leading-snug font-medium">{x.title}</p>
                 <p className="text-xs font-semibold">{x.price}</p>
-                <p className="truncate text-[10px] text-muted-foreground">@{x.username}</p>
               </div>
             </button>
           ))}

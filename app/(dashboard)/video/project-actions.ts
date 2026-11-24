@@ -160,10 +160,10 @@ async function spawnVersion(p: Awaited<ReturnType<typeof get>>, v: (typeof VERSI
 
 // ---------- product from the TikTok showcase ----------
 
-/** Showcase products of every TikTok account, for the "Ambil dari Etalase" picker in the Studio. */
+/** Showcase products of every TikTok account, for the "Ambil dari Etalase" picker in the Studio (it asks for the account first). */
 export async function listEtalase() {
   const rows = await db
-    .select({ id: showcaseProducts.id, title: showcaseProducts.title, price: showcaseProducts.price, cover: showcaseProducts.cover, inStock: showcaseProducts.inStock, detailAt: showcaseProducts.detailAt, username: accounts.username })
+    .select({ id: showcaseProducts.id, title: showcaseProducts.title, price: showcaseProducts.price, cover: showcaseProducts.cover, inStock: showcaseProducts.inStock, detailAt: showcaseProducts.detailAt, accountId: accounts.id, username: accounts.username, displayName: accounts.displayName, avatarUrl: accounts.avatarUrl, status: accounts.status })
     .from(showcaseProducts)
     .innerJoin(accounts, eq(accounts.id, showcaseProducts.accountId))
     .orderBy(asc(showcaseProducts.position));
