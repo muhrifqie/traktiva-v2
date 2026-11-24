@@ -13,6 +13,7 @@ import { mediaUrl } from "@/lib/media-url";
 import type { AccountTips } from "@/lib/schedule-tips";
 import type { YouTubeUploadDefaults } from "@/lib/settings";
 import { cancelUpload, createUploadJobs, deleteUploads, retryUpload, runUploadNow, type Uploadable } from "./actions";
+import { VideoPicker } from "./video-picker";
 
 type EtalaseItem = { accountId: number; productId: string; title: string; price: string; stock: number | null; inStock: boolean; hidden: boolean; cover: string | null };
 /** A showcase product can be linked only when TikTok shows it as available (in stock, not hidden). */
@@ -196,7 +197,8 @@ export function JadwalBoard({
   // project changed: default to all of its videos, its caption and its product
   useEffect(() => {
     const t = setTimeout(() => {
-      setPicked(own.map((v) => v.video));
+      // keep what was picked in the gallery when it belongs to this project, else all of the project's videos
+      setPicked((cur) => (cur.length && cur.every((x) => own.some((v) => v.video === x)) ? cur : own.map((v) => v.video)));
       const fill = (tpl: string) => tpl.replaceAll("{judul}", projects.find((p) => p[0] === projectId)?.[1] ?? "").replaceAll("{produk}", own[0] ? shortName(own[0]) : "").trim();
       setYtTitle(fill(ytDefaults.title).slice(0, 100));
       setYtTags(ytDefaults.tags);
@@ -380,12 +382,19 @@ export function JadwalBoard({
             </div>
             {/* three aligned rows: project | start · caption (spans 2 rows) | product · caption | title on the video */}
             <div className="grid gap-x-4 gap-y-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:grid-rows-[auto_auto_auto_auto]">
-              <label className="block">
-                <span className={fieldLabel}>Proyek</span>
-                <select className={field} value={projectId ?? ""} onChange={(e) => setProjectId(Number(e.target.value))}>
-                  {projects.map(([id, title]) => <option key={id} value={id}>{title}</option>)}
-                </select>
-              </label>
+              <div>
+                <span className={fieldLabel}>Video</span>
+                <VideoPicker
+                  videos={videos}
+                  projectId={projectId}
+                  picked={picked}
+                  scheduled={(v) => jobs.some((j) => j.projectId === v.projectId && (j.label ?? "Video utama") === v.label && j.status !== "cancelled" && j.status !== "failed")}
+                  onChange={(id, list) => {
+                    setPicked(list);
+                    setProjectId(id);
+                  }}
+                />
+              </div>
               <div>
                 <span className={fieldLabel}>Mulai</span>
                 <DateTime24 value={at} onChange={setAt} />
