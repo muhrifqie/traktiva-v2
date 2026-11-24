@@ -24,7 +24,7 @@ const GROUP_HREF: Partial<Record<Group, string>> = { "TikTok Shop": "/tiktok-sho
 const SECTIONS: { label: string | null; groups: Group[]; tree?: Group[] }[] = [
   { label: null, groups: ["Utama"] },
   { label: "Konten", groups: ["Buat Konten", "Pustaka"] },
-  { label: "Platform", tree: ["TikTok Shop"], groups: ["Segera hadir"] },
+  { label: "Platform", tree: ["TikTok Shop"], groups: ["YouTube", "Segera hadir"] },
   { label: null, groups: ["Akun", "Pengaturan"] },
 ];
 

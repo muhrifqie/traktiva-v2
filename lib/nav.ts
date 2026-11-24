@@ -22,12 +22,12 @@ export const NAV = [
   { slug: "shopee", title: "Shopee", icon: Store, group: "Segera hadir", platform: "shopee", status: "Segera", color: "#ee4d2d", desc: "Akun Shopee Video, etalase, dan jadwal upload dari video yang sama. Sedang dikerjakan." },
   { slug: "instagram", title: "Instagram", icon: Store, group: "Segera hadir", platform: "instagram", status: "Rencana", color: "#ff2d7a", desc: "Upload Reels ke akun Instagram Business/Creator dari video yang sama. Direncanakan." },
   { slug: "facebook", title: "Facebook", icon: Store, group: "Segera hadir", platform: "facebook", status: "Rencana", color: "#3b82f6", desc: "Upload Reels ke Facebook Page dari video yang sama. Direncanakan." },
-  { slug: "youtube", title: "YouTube Shorts", icon: Store, group: "Segera hadir", platform: "youtube", status: "Rencana", color: "#ff3333", desc: "Upload Shorts dari video yang sama. Direncanakan." },
+  { slug: "youtube", title: "YouTube Shorts", icon: Store, group: "YouTube", platform: "youtube", color: "#ff3333", desc: "Unduh semua Shorts dari satu channel YouTube ke folder video kamu." }, // live: Shorts downloader; upload comes later
   { slug: "akun", title: "Akun Sosial", icon: Users, group: "Akun", color: "#26b5ce", desc: "Kelola akun TikTok, Instagram, Facebook, YouTube, dan Shopee." },
   { slug: "pengaturan", title: "Pengaturan", icon: Settings, group: "Pengaturan", color: "#8b7cf6", desc: "Lisensi, akun Google, aturan naskah, suara, dan mesin AI." },
 ] as const;
 
-export const NAV_GROUPS = ["Utama", "Buat Konten", "Pustaka", "TikTok Shop", "Segera hadir", "Akun", "Pengaturan"] as const;
+export const NAV_GROUPS = ["Utama", "Buat Konten", "Pustaka", "TikTok Shop", "YouTube", "Segera hadir", "Akun", "Pengaturan"] as const;
 
 export type NavItem = (typeof NAV)[number];
 export type NavCounts = Partial<Record<string, number>>;
