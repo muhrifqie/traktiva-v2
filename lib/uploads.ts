@@ -5,6 +5,9 @@ import { accounts, uploadJobs } from "@/lib/db/schema";
 import { resolveMedia } from "@/lib/media";
 import { uploadToTikTok } from "@/lib/platforms/tiktok-upload";
 import { UploadLimitError, uploadToYouTube } from "@/lib/platforms/youtube-upload";
+import { uploadToFacebook, uploadToInstagram } from "@/lib/platforms/meta-upload";
+import { FB_IDENTITIES, type FacebookIdentities } from "@/lib/platforms/meta";
+import { getShopCache } from "@/lib/showcase";
 import { markUploadLimit, uploadLimitUntil } from "@/lib/youtube-limit";
 
 // Jadwal Upload runner. YouTube jobs go through YouTube Studio at their own time (Studio's schedule pickers are not
@@ -43,9 +46,12 @@ export async function tickUploads() {
     for (const job of waiting) {
       const acc = await db.select().from(accounts).where(eq(accounts.id, job.accountId)).get();
       const yt = acc?.platform === "youtube";
-      if (yt ? job.scheduledAt.getTime() > Date.now() : job.scheduledAt.getTime() - Date.now() > SCHEDULE_MAX_DAYS * 86_400_000) continue; // not its time yet
+      // YouTube, Instagram and Facebook can't be scheduled on their web apps: they are posted at their own time
+      const atTime = yt || acc?.platform === "instagram" || acc?.platform === "facebook";
+      if (atTime ? job.scheduledAt.getTime() > Date.now() : job.scheduledAt.getTime() - Date.now() > SCHEDULE_MAX_DAYS * 86_400_000) continue; // not its time yet
       if (!acc?.sessionKey || acc.status !== "active") {
-        await setJob(job.id, { status: "failed", error: `Akun ${yt ? "YouTube" : "TikTok"} tidak aktif atau perlu login ulang (${yt ? "menu YouTube" : "Akun Sosial"}).` });
+        const name = ({ youtube: "YouTube", instagram: "Instagram", facebook: "Facebook" } as Record<string, string>)[acc?.platform ?? ""] ?? "TikTok";
+        await setJob(job.id, { status: "failed", error: `Akun ${name} tidak aktif atau perlu login ulang (${yt ? "menu YouTube" : "Akun Sosial"}).` });
         continue;
       }
       if (yt) {
@@ -56,7 +62,7 @@ export async function tickUploads() {
           continue;
         }
       }
-      if (yt || !scheduleFor(job.scheduledAt)) {
+      if (atTime || !scheduleFor(job.scheduledAt)) {
         // posting now: keep a gap after this account's last post that already went live; the job waits for a later tick
         const last = await db
           .select()
@@ -95,6 +101,7 @@ async function runJob(id: number, acc: Acc, dryRun = false, postNow = false) {
     void setJob(id, { progress: stage });
   };
   if (acc.platform === "youtube") return runYouTubeJob(job, acc, dryRun, onProgress);
+  if (acc.platform === "instagram" || acc.platform === "facebook") return runMetaJob(job, acc, dryRun, onProgress);
   try {
     const scheduleAt = postNow ? null : scheduleFor(job.scheduledAt);
     const r = await uploadToTikTok(
@@ -147,6 +154,22 @@ async function runYouTubeJob(job: typeof uploadJobs.$inferSelect, acc: Acc, dryR
       await setJob(job.id, { status: "queued", progress: null, error: e.message }); // retried by itself after 24 h
       return;
     }
+    await setJob(job.id, { status: "failed", progress: null, error: e instanceof Error ? e.message.slice(0, 300) : String(e) });
+  }
+}
+
+/** One Instagram / Facebook job: a Reel posted now through the site (the runner calls it at its time). */
+async function runMetaJob(job: typeof uploadJobs.$inferSelect, acc: Acc, dryRun: boolean, onProgress: (s: string) => void) {
+  try {
+    const base = { sessionKey: acc.sessionKey!, file: resolveMedia(job.video), caption: job.caption, dryRun, visible: process.env.TRAKTIVA_UPLOAD_HEADLESS !== "1" };
+    let postAs: { kind: "user" | "page"; id: string; name: string } | null = null;
+    if (acc.platform === "facebook") {
+      const ids = (await getShopCache<FacebookIdentities>(acc.id, FB_IDENTITIES))?.data;
+      postAs = ids?.list.find((x) => x.id === ids.target) ?? null;
+    }
+    const r = acc.platform === "instagram" ? await uploadToInstagram(base, onProgress) : await uploadToFacebook({ ...base, postAs }, onProgress);
+    await setJob(job.id, !r.posted ? { status: "queued", progress: "Uji coba berhasil: siap diunggah." } : { status: "done", progress: null, postedAt: new Date() });
+  } catch (e) {
     await setJob(job.id, { status: "failed", progress: null, error: e instanceof Error ? e.message.slice(0, 300) : String(e) });
   }
 }

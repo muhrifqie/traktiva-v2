@@ -38,7 +38,7 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
       .leftJoin(accountPosts, and(eq(accountPosts.accountId, uploadJobs.accountId), eq(accountPosts.externalId, uploadJobs.postId)))
       .orderBy(desc(uploadJobs.scheduledAt))
       .limit(150),
-    db.select({ id: accounts.id, username: accounts.username, status: accounts.status, platform: accounts.platform, displayName: accounts.displayName }).from(accounts).where(inArray(accounts.platform, ["tiktok", "youtube"])),
+    db.select({ id: accounts.id, username: accounts.username, status: accounts.status, platform: accounts.platform, displayName: accounts.displayName }).from(accounts).where(inArray(accounts.platform, ["tiktok", "youtube", "instagram", "facebook"])),
     listUploadable(),
     // each account's affiliate showcase (synced in TikTok Shop): the product picker's options
     db

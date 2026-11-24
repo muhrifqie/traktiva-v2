@@ -71,7 +71,8 @@ const fill = (t: string, judul?: string | null) => (judul ? t.replaceAll("{judul
 export async function createUploadJobs(input: z.input<typeof NewJobs>) {
   const d = NewJobs.parse(input);
   const acc = await db.select().from(accounts).where(eq(accounts.id, d.accountId)).get();
-  if (!acc || (acc.platform !== "tiktok" && acc.platform !== "youtube")) throw new Error("Pilih akun TikTok atau channel YouTube.");
+  if (!acc || !["tiktok", "youtube", "instagram", "facebook"].includes(acc.platform)) throw new Error("Pilih akun TikTok, YouTube, Instagram, atau Facebook.");
+  const tt = acc.platform === "tiktok";
   const yt = acc.platform === "youtube";
   if (yt && !d.videoTitle?.trim()) throw new Error("Judul video YouTube wajib diisi.");
   for (const it of d.items) await fs.access(resolveMedia(it.video)).catch(() => Promise.reject(new Error(`Video tidak ditemukan: ${it.video}`)));
@@ -84,9 +85,9 @@ export async function createUploadJobs(input: z.input<typeof NewJobs>) {
       label: it.label,
       hook: it.hook ?? null,
       caption: fill(d.caption, it.judul).trim(),
-      productId: yt ? null : d.productId || null,
-      productTitle: yt ? null : d.productTitle || null,
-      music: yt ? false : d.music,
+      productId: tt ? d.productId || null : null,
+      productTitle: tt ? d.productTitle || null : null,
+      music: tt ? d.music : false,
       musicVolume: d.musicVolume,
       videoTitle: yt ? fill(d.videoTitle!, it.judul).trim().slice(0, 100) : null,
       meta: yt ? d.meta ?? null : null,

@@ -174,6 +174,7 @@ export function JadwalBoard({
   const targets = active.filter((a) => targetIds.includes(a.id));
   const ttTargets = targets.filter((a) => a.platform === "tiktok");
   const ytTargets = targets.filter((a) => a.platform === "youtube");
+  const metaTargets = targets.filter((a) => a.platform === "instagram" || a.platform === "facebook"); // Reels, posted at their time
   // helpers that read one account (best hours, showcase, clashes) follow the first TikTok account, else the first channel
   const target = ttTargets[0] ?? ytTargets[0];
   const accountId = target?.id ?? null;
@@ -196,6 +197,7 @@ export function JadwalBoard({
   // YouTube channel picked: title + tags/visibility/audience/AI label from the templates; the caption is its description
   const hasTt = ttTargets.length > 0;
   const hasYt = ytTargets.length > 0;
+  const hasMeta = metaTargets.length > 0;
   const [ytTitle, setYtTitle] = useState("");
   const [ytTags, setYtTags] = useState("");
   const [ytVis, setYtVis] = useState<YouTubeUploadDefaults["visibility"]>("public");
@@ -214,7 +216,7 @@ export function JadwalBoard({
       setYtVis(ytDefaults.visibility);
       setYtKids(ytDefaults.madeForKids);
       setYtAi(ytDefaults.aiContent);
-      if (!hasTt) {
+      if (!hasTt && !hasMeta) {
         setCaption(fill(ytDefaults.description));
         setProductId("");
         setAt((x) => x || nextSlot());
@@ -230,7 +232,7 @@ export function JadwalBoard({
     }, 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset when the project, the account or the platforms change
-  }, [projectId, accountId, hasTt]);
+  }, [projectId, accountId, hasTt, hasMeta]);
 
   // live progress while something uploads
   const running = jobs.some((j) => j.status === "uploading");
@@ -322,6 +324,12 @@ export function JadwalBoard({
       ...(!ytTitle.trim() ? [{ text: "Judul video YouTube masih kosong." }] : []),
       { text: "YouTube diunggah tepat di jam tayang, jadi aplikasi harus terbuka saat itu (jendela Chrome akan muncul sebentar)." },
     ] : []),
+    ...(hasMeta ? [
+      ...(!hasTt && !caption.trim() ? [{ text: "Caption masih kosong." }] : []),
+      ...(metaTargets.some((a) => a.platform === "instagram") && caption.length > 2200 ? [{ text: "Caption Instagram maksimal 2.200 karakter." }] : []),
+      ...(metaTargets.some((a) => a.platform === "instagram") && (caption.match(/#/g) ?? []).length > 30 ? [{ text: "Instagram maksimal 30 hashtag." }] : []),
+      { text: "Instagram/Facebook diunggah sebagai Reel tepat di jam tayang, jadi aplikasi harus terbuka saat itu. Facebook memposting sebagai pilihan “Posting sebagai” di menu Facebook." },
+    ] : []),
   ];
   const atTikTok = (j: Job) => j.status === "done" && !!j.postedAt && j.postedAt > now; // uploaded, TikTok publishes it later
   const posted7 = jobs.filter((j) => j.status === "done" && j.postedAt && j.postedAt <= now && j.postedAt > now - 7 * 86_400_000).length;
@@ -376,11 +384,11 @@ export function JadwalBoard({
                     >
                       <span className={`grid size-4 place-items-center rounded border ${on ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40"}`}>{on && <Check className="size-3" />}</span>
                       <PlatformIcon platform={a.platform as Parameters<typeof PlatformIcon>[0]["platform"]} className="size-4" />
-                      {a.platform === "youtube" ? a.displayName || a.username : `@${a.username}`}
+                      {a.platform === "youtube" || a.platform === "facebook" ? a.displayName || a.username : `@${a.username}`}
                     </button>
                   );
                 })}
-                {(["shopee", "instagram", "facebook"] as const).map((p) => (
+                {(["shopee"] as const).map((p) => (
                   <span key={p} className="flex h-9 items-center gap-2 rounded-lg border border-dashed px-3 text-[13px] text-muted-foreground/70" title="Sedang dikerjakan">
                     <PlatformIcon platform={p} className="size-4 opacity-60" />
                     {p === "shopee" ? "Shopee Video" : p === "instagram" ? "Instagram Reels" : "Facebook Reels"}
@@ -420,14 +428,14 @@ export function JadwalBoard({
               )}
               <label className="flex flex-col lg:row-span-3">
                 <span className={fieldLabel}>
-                  {hasTt ? (hasYt ? "Caption & hashtag (juga deskripsi YouTube)" : "Caption & hashtag") : hasYt ? "Deskripsi YouTube" : "Caption"}
+                  {hasTt || hasMeta ? (hasYt ? "Caption & hashtag (juga deskripsi YouTube)" : "Caption & hashtag") : hasYt ? "Deskripsi YouTube" : "Caption"}
                   {hasTt && (
                     <span className={`ml-auto truncate font-normal ${hashtagsOf(caption).length > MAX_TAGS ? "text-status-progress" : "text-muted-foreground"}`}>
                       {hashtagsOf(caption).length}/{MAX_TAGS} hashtag · terbukti ramai di akunmu
                     </span>
                   )}
                 </span>
-                <textarea className={`${field} h-auto min-h-[84px] flex-1 resize-none py-2 leading-relaxed`} rows={3} maxLength={hasTt ? 2200 : 5000} value={caption} onChange={(e) => setCaption(e.target.value)} />
+                <textarea className={`${field} h-auto min-h-[84px] flex-1 resize-none py-2 leading-relaxed`} rows={3} maxLength={hasTt || metaTargets.some((a) => a.platform === "instagram") ? 2200 : 5000} value={caption} onChange={(e) => setCaption(e.target.value)} />
               </label>
               {hasYt && (
                 <>
