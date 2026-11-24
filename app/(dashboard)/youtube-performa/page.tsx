@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { asc, desc, eq, inArray } from "drizzle-orm";
-import { ChevronRight, ExternalLink, Loader2 } from "lucide-react";
+import { BadgeDollarSign, ChevronRight, Clock, Compass, ExternalLink, Eye, Film, Flame, Heart, Layers, Loader2, Repeat, UserPlus, Users, UsersRound, Zap, type LucideIcon } from "lucide-react";
 import { AccountAvatar } from "@/components/account-avatar";
 import { PageHeader } from "@/components/page-header";
 import { PlatformIcon } from "@/components/platform-icon";
@@ -54,12 +54,29 @@ function stats(c: Channel) {
 
 // ---------- small pieces ----------
 
-function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Tile({ icon: Icon, label, value, sub }: { icon: LucideIcon; label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-xl border bg-card px-4 py-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-xl font-semibold tabular-nums">{value}{sub && <span className="ml-1.5 text-xs font-normal text-muted-foreground">{sub}</span>}</p>
+    <div className="flex items-center gap-3 rounded-xl border bg-card px-3.5 py-3">
+      <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#ff3333]/10 text-[#ff3333]"><Icon className="size-[18px]" /></span>
+      <div className="min-w-0">
+        <p className="truncate text-xs text-muted-foreground">{label}</p>
+        <p className="truncate text-lg leading-tight font-semibold tabular-nums">{value}{sub && <span className="ml-1.5 text-xs font-normal text-muted-foreground">{sub}</span>}</p>
+      </div>
     </div>
+  );
+}
+
+/** Bento cell: icon + title on top, any content below. */
+function Box({ icon: Icon, title, hint, className = "", children }: { icon: LucideIcon; title: string; hint?: string; className?: string; children: React.ReactNode }) {
+  return (
+    <section className={`flex min-w-0 flex-col gap-3 rounded-xl border bg-card p-4 ${className}`}>
+      <header className="flex items-center gap-2">
+        <Icon className="size-4 shrink-0 text-muted-foreground" />
+        <h3 className="truncate text-[13px] font-semibold">{title}</h3>
+        {hint && <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{hint}</span>}
+      </header>
+      {children}
+    </section>
   );
 }
 
@@ -191,11 +208,11 @@ function AllChannels({ list }: { list: Channel[] }) {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Tile label="Channel" value={`${list.length}`} sub={`${list.filter((c) => c.a.status === "active").length} login`} />
-        <Tile label="Subscriber" value={num.format(sum((s) => s.subscribers))} />
-        <Tile label="Video" value={num.format(sum((s) => s.videos))} sub={`${num.format(sum((s) => s.shorts))} Shorts`} />
-        <Tile label="Penayangan 28 hari" value={num.format(sum((s) => s.views28))} />
-        <Tile label="Jam tonton 28 hari" value={num.format(Math.round(sum((s) => s.hours28) * 10) / 10)} />
+        <Tile icon={Layers} label="Channel" value={`${list.length}`} sub={`${list.filter((c) => c.a.status === "active").length} login`} />
+        <Tile icon={Users} label="Subscriber" value={num.format(sum((s) => s.subscribers))} />
+        <Tile icon={Film} label="Video" value={num.format(sum((s) => s.videos))} sub={`${num.format(sum((s) => s.shorts))} Shorts`} />
+        <Tile icon={Eye} label="Penayangan 28 hari" value={num.format(sum((s) => s.views28))} />
+        <Tile icon={Clock} label="Jam tonton 28 hari" value={num.format(Math.round(sum((s) => s.hours28) * 10) / 10)} />
       </div>
 
       {days.length > 0 && (
@@ -287,32 +304,116 @@ function OneChannel({ c }: { c: Channel }) {
   const name = c.a.displayName || c.a.username;
   if (!d) return c.a.status === "active" ? <Waiting name={name} /> : <p className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">Sesi {name} habis. Login ulang di menu YouTube.</p>;
   const s = stats(c)!;
-  const uniq = (list: InsightCard[]) => list.filter((x, i) => list.findIndex((y) => y.title === x.title) === i);
-  const overview = uniq(d.insight.overview);
-  const shorts = uniq(d.insight.shorts).filter((x) => !overview.some((o) => o.title === x.title && o.series && x.series));
   const m = d.monetization;
+  // Studio's cards, picked by title into a fixed bento; cards not recognised still show (generic) at the end
+  const all = cards(d);
+  const used = new Set<InsightCard>();
+  const take = (re: RegExp) => {
+    const x = all.find((y) => !used.has(y) && re.test(y.title));
+    if (x) all.filter((y) => y.title === x.title).forEach((y) => used.add(y)); // the same card can come twice
+    return x;
+  };
+  const views = take(/^Penayangan$/i);
+  const kpis = [
+    { icon: Clock, label: "Jam tonton", card: take(/waktu tonton/i) },
+    { icon: UserPlus, label: "Subscriber baru", card: take(/^Subscriber$/i) },
+    { icon: Zap, label: "Penayangan 48 jam", card: take(/48 jam/i) },
+    { icon: UsersRound, label: "Audiens bulanan", card: take(/audiens/i) },
+  ];
+  const stay = take(/berinteraksi/i);
+  const traffic = take(/menemukan/i);
+  const popular = [take(/konten populer/i), take(/terpopuler/i), take(/ditonton sekarang/i)].flatMap((x) => x?.rows ?? []);
+  const top = popular.filter((r, i) => popular.findIndex((y) => y.label === r.label) === i).slice(0, 5);
+  take(/total subscriber/i); // same number as the Subscriber tile
+  take(/performa video terbaru/i); // Studio's per-video teaser: the table below has every video
+  const rest = all.filter((x, i) => !used.has(x) && all.findIndex((y) => y.title === x.title) === i);
+  const metric = (x?: InsightCard) => x?.metrics[0]?.value ?? "—";
+  const [stayPct, skipPct] = [stay?.metrics[0], stay?.metrics[1]];
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile label="Subscriber" value={num.format(s.subscribers)} />
-        <Tile label="Video" value={`${s.videos}`} sub={`${s.shorts} Shorts`} />
-        <Tile label="Penayangan (semua video)" value={num.format(c.posts.reduce((t, p) => t + p.views, 0))} />
-        <Tile label="Suka & komentar" value={num.format(c.posts.reduce((t, p) => t + p.likes + p.comments, 0))} />
+        <Tile icon={Users} label="Subscriber" value={num.format(s.subscribers)} />
+        <Tile icon={Film} label="Video" value={`${s.videos}`} sub={`${s.shorts} Shorts`} />
+        <Tile icon={Eye} label="Penayangan total" value={num.format(c.posts.reduce((t, p) => t + p.views, 0))} />
+        <Tile icon={Heart} label="Suka & komentar" value={num.format(c.posts.reduce((t, p) => t + p.likes + p.comments, 0))} />
       </div>
+
       <section className="space-y-2">
         <h2 className="text-[13px] font-semibold text-muted-foreground">Insight 28 hari</h2>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {[...overview, ...shorts].map((x, i) => <Card key={i} c={x} />)}
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {/* views: the big cell with its chart, the 4 small numbers beside it */}
+          <Box icon={Eye} title="Penayangan" hint="28 hari" className="md:col-span-2">
+            <p className="text-3xl font-semibold tabular-nums">{metric(views)}</p>
+            {views?.series && <DailyBars data={views.series.points.map(([day, n]) => ({ day, n }))} color={RED} unit="views" label="Per hari" period="28 hari" />}
+          </Box>
+          <div className="grid grid-cols-2 gap-3 md:col-span-2">
+            {kpis.map((k) => (
+              <div key={k.label} className="flex flex-col justify-between gap-2 rounded-xl border bg-card p-4">
+                <span className="flex items-center gap-2 text-xs text-muted-foreground"><k.icon className="size-4" /> {k.label}</span>
+                <span className="text-2xl font-semibold tabular-nums">{metric(k.card)}</span>
+              </div>
+            ))}
+          </div>
+
+          <Box icon={Repeat} title="Ditonton sampai habis?" hint="Shorts">
+            {stayPct ? (
+              <>
+                <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
+                  <span style={{ width: `${idNum(stayPct.value) ?? 0}%`, background: RED }} />
+                </div>
+                <div className="flex justify-between gap-2 text-xs">
+                  <span><b className="text-base tabular-nums">{stayPct.value}</b> <span className="text-muted-foreground">{stayPct.label}</span></span>
+                  {skipPct && <span className="text-right"><b className="text-base tabular-nums">{skipPct.value}</b> <span className="text-muted-foreground">{skipPct.label}</span></span>}
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">Belum ada data.</p>
+            )}
+          </Box>
+
+          <Box icon={Compass} title="Sumber penonton" hint="Shorts">
+            {traffic?.rows.length ? (
+              <ul className="space-y-2 text-xs">
+                {traffic.rows.map((r) => (
+                  <li key={r.label} className="space-y-1">
+                    <div className="flex justify-between gap-2"><span className="truncate text-muted-foreground">{r.label}</span><span className="font-medium tabular-nums">{r.value}</span></div>
+                    <div className="h-1 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full" style={{ width: `${idNum(r.value) ?? 0}%`, background: RED }} /></div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground">Belum ada data.</p>
+            )}
+          </Box>
+
+          <Box icon={Flame} title="Konten populer" hint="48 jam">
+            {top.length ? (
+              <ol className="space-y-2 text-xs">
+                {top.map((r, i) => (
+                  <li key={r.label} className="flex items-center gap-2">
+                    <span className="grid size-5 shrink-0 place-items-center rounded bg-muted text-[10px] font-semibold">{i + 1}</span>
+                    <span className="min-w-0 flex-1 truncate" title={r.label}>{r.label}</span>
+                    <span className="flex shrink-0 items-center gap-1 font-medium tabular-nums"><Eye className="size-3 text-muted-foreground" />{r.value || "—"}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-xs text-muted-foreground">Belum ada penayangan.</p>
+            )}
+          </Box>
+
           {m && (
-            <section className="flex flex-col gap-3 rounded-xl border bg-card p-4">
-              <h3 className="text-[13px] font-semibold">{m.monetized ? "Monetisasi aktif" : "Menuju monetisasi"}</h3>
+            <Box icon={BadgeDollarSign} title={m.monetized ? "Monetisasi aktif" : "Menuju monetisasi"}>
               <Progress label="Subscriber" value={m.subscribers} need={m.subscribersNeeded} />
-              <Progress label="Penayangan Shorts (90 hari)" value={m.shortsViews} need={m.shortsViewsNeeded} />
-              <Progress label="atau jam tonton (12 bulan)" value={m.watchHours} need={m.watchHoursNeeded} unit=" jam" />
-            </section>
+              <Progress label="Views Shorts (90 hari)" value={m.shortsViews} need={m.shortsViewsNeeded} />
+              <Progress label="atau jam tonton (12 bln)" value={m.watchHours} need={m.watchHoursNeeded} unit=" jam" />
+            </Box>
           )}
+
+          {rest.map((x, i) => <Card key={i} c={x} />)}
         </div>
       </section>
+
       <section className="space-y-2">
         <h2 className="text-[13px] font-semibold text-muted-foreground">Konten ({c.posts.length})</h2>
         <VideoTable rows={c.posts.map((p) => ({ p, type: d.types[p.externalId] ?? "video" }))} />

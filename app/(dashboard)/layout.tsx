@@ -56,7 +56,7 @@ export default async function DashboardLayout({ children }: LayoutProps<"/">) {
         {/* Frameless: the page shares the chrome's surface (no panel border); only cards float on it.
             The page body scrolls inside; every page gets the same safe area (gutters, max width, rhythm). */}
         <SidebarInset className="overflow-hidden bg-sidebar md:h-[calc(100svh-var(--titlebar-height)-var(--header-height)-var(--statusbar-height))] md:peer-data-[variant=inset]:m-0 md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:shadow-none md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-0">
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <div className="no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto">
             <div className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
               <ServerBanner announcements={info?.announcements ?? []} update={view.update} licenseWarning={view.warning} />
               {children}
