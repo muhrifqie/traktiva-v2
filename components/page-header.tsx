@@ -1,3 +1,4 @@
+import { PlatformIcon } from "@/components/platform-icon";
 import { navBySlug } from "@/lib/nav";
 
 // Frameless page title (no bar, no divider): icon, title, one-line description, page actions on the right.
@@ -8,7 +9,7 @@ export function PageHeader({ slug, children }: { slug: string; children?: React.
   return (
     <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-3">
       <span className="grid size-10 shrink-0 place-items-center rounded-xl border bg-muted/50">
-        <item.icon className="size-5 text-black dark:text-white" />
+        {"platform" in item ? <PlatformIcon platform={item.platform} className="size-5" /> : <item.icon className="size-5 text-black dark:text-white" />}
       </span>
       <div className="min-w-0 flex-1">
         <h1 className="text-xl font-semibold leading-tight tracking-tight">{item.title}</h1>

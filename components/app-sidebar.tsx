@@ -2,13 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
+import { PlatformIcon } from "@/components/platform-icon";
 import { UserCard, type UserInfo } from "@/components/user-card";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, useSidebar,
 } from "@/components/ui/sidebar";
 import { NAV, NAV_GROUPS, type NavCounts, type NavItem } from "@/lib/nav";
+
+type Group = (typeof NAV_GROUPS)[number];
+/** Groups that belong to one platform get its mark next to the label. */
+const GROUP_PLATFORM: Partial<Record<Group, "tiktok">> = { "TikTok Shop": "tiktok" };
 
 function NavItems({ items, counts, rail }: { items: readonly NavItem[]; counts: NavCounts; rail: boolean }) {
   const pathname = usePathname();
@@ -18,17 +23,22 @@ function NavItems({ items, counts, rail }: { items: readonly NavItem[]; counts: 
         // the Studio (/video/<id>) belongs to Proyek Video, not to the concept gallery
         const path = /^\/video\/\d+/.test(pathname) ? "/proyek" : pathname;
         const active = path === `/${item.slug}` || path.startsWith(`/${item.slug}/`);
+        const label = "short" in item ? item.short : item.title;
+        const platform = "platform" in item ? item.platform : null;
         return (
           <SidebarMenuItem key={item.slug}>
             <SidebarMenuButton
               isActive={active}
-              className={`h-8 gap-2.5 text-[13px] text-sidebar-foreground/85 data-active:font-medium data-active:text-sidebar-foreground ${rail ? "justify-center px-0" : ""}`}
+              className={`h-8 gap-2.5 text-[13px] text-sidebar-foreground/85 data-active:font-medium data-active:text-sidebar-foreground ${rail ? "justify-center px-0" : ""} ${platform ? "text-sidebar-foreground/60" : ""}`}
               render={<Link href={`/${item.slug}`} title={rail ? item.title : undefined} aria-label={item.title} />}
             >
-              <item.icon className="size-4 shrink-0 text-black dark:text-white" />
-              {!rail && <span className="truncate">{item.title}</span>}
+              {platform ? <PlatformIcon platform={platform} className="size-4 shrink-0" /> : <item.icon className="size-4 shrink-0 text-black dark:text-white" />}
+              {!rail && <span className="truncate">{label}</span>}
             </SidebarMenuButton>
-            {!rail && !!counts[item.slug] && (
+            {!rail && "status" in item && (
+              <SidebarMenuBadge className={`rounded px-1.5 text-[10px] ${item.status === "Segera" ? "bg-amber-500/12 text-amber-600 dark:text-amber-300" : "bg-sidebar-accent text-muted-foreground"}`}>{item.status}</SidebarMenuBadge>
+            )}
+            {!rail && !("status" in item) && !!counts[item.slug] && (
               <SidebarMenuBadge className="rounded bg-sidebar-accent px-1.5 text-[11px] text-muted-foreground">{counts[item.slug]}</SidebarMenuBadge>
             )}
           </SidebarMenuItem>
@@ -38,12 +48,19 @@ function NavItems({ items, counts, rail }: { items: readonly NavItem[]; counts: 
   );
 }
 
-function Group({ name, counts, rail, className = "" }: { name: (typeof NAV_GROUPS)[number]; counts: NavCounts; rail: boolean; className?: string }) {
-  const items = NAV.filter((n) => n.group === name);
+function Group({ name, counts, rail, className = "" }: { name: Group; counts: NavCounts; rail: boolean; className?: string }) {
+  const items = NAV.filter((n) => n.group === name && !("sidebar" in n && n.sidebar === false));
+  if (!items.length) return null;
+  const platform = GROUP_PLATFORM[name];
   return (
     <SidebarGroup className={`px-2 py-1.5 ${className}`}>
-      {/* "Utama" holds only Beranda; a label would just add noise */}
-      {name !== "Utama" && !rail && <SidebarGroupLabel className="h-6 px-2 text-[11px] font-medium tracking-wide text-muted-foreground/80 uppercase">{name}</SidebarGroupLabel>}
+      {/* the first group (Beranda, Riset, Kalender) needs no label */}
+      {name !== "Utama" && !rail && (
+        <SidebarGroupLabel className="h-6 gap-1.5 px-2 text-[11px] font-medium tracking-wide text-muted-foreground/80 uppercase">
+          {platform && <PlatformIcon platform={platform} className="size-3" />}
+          {name}
+        </SidebarGroupLabel>
+      )}
       <SidebarGroupContent>
         <NavItems items={items} counts={counts} rail={rail} />
       </SidebarGroupContent>
@@ -51,7 +68,7 @@ function Group({ name, counts, rail, className = "" }: { name: (typeof NAV_GROUP
   );
 }
 
-// Open sidebar with every menu grouped by workflow; settings at the bottom next to the user card.
+// Open sidebar: "Buat video" on top, then the groups of lib/nav.ts; settings at the bottom next to the user card.
 // Closed (the video editor folds it for room) = a narrow icon rail with the same links.
 export function AppSidebar({ counts = {}, user, className }: { counts?: NavCounts; user: UserInfo; className?: string }) {
   const { open, setOpen } = useSidebar();
@@ -59,6 +76,17 @@ export function AppSidebar({ counts = {}, user, className }: { counts?: NavCount
   return (
     <Sidebar collapsible="none" className={`shrink-0 border-r border-sidebar-border transition-[width] duration-200 ${rail ? "w-[52px]" : ""} ${className ?? ""}`}>
       <SidebarContent className="gap-0 py-1">
+        <div className={rail ? "px-2 pt-1.5" : "px-3 pt-2 pb-1"}>
+          <Link
+            href="/video"
+            title={rail ? "Buat video" : undefined}
+            aria-label="Buat video"
+            className={`flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary text-[13px] font-semibold text-primary-foreground hover:bg-primary/90 ${rail ? "w-9" : "w-full"}`}
+          >
+            <Plus className="size-4" />
+            {!rail && "Buat video"}
+          </Link>
+        </div>
         {NAV_GROUPS.filter((g) => g !== "Pengaturan").map((g) => (
           <Group key={g} name={g} counts={counts} rail={rail} />
         ))}
