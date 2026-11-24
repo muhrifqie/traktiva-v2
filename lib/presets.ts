@@ -3,6 +3,8 @@
 // Flow models follow English best; users can edit every scene before rendering. Gemini-written
 // storyboards replace these templates later; the shapes stay the same.
 
+import { applyRules } from "./writing";
+
 export type Product = { name: string; details: string; price: string; photos: string[] /* MEDIA_DIR-relative */ };
 export type Field =
   | { key: string; label: string; type: "select"; options: { value: string; label: string }[]; default: string }
@@ -20,6 +22,9 @@ export type Preset = {
   available: boolean;
   silent?: boolean; // strip audio from clips (e.g. JJ is synced to music later in CapCut)
   custom?: boolean; // user writes every scene; product photos optional
+  character?: boolean; // a person is the star: the owner can upload the character's face (options.face)
+  direction?: string; // English director's note for the AI writer, overrides its generic rules where they differ
+  characterLook?: string; // English look of the AI-made character when the owner uploads no face
   fields: Field[];
   scenes: (p: Product, o: Options) => SceneDraft[];
 };
@@ -45,7 +50,7 @@ export const BACKDROPS: { value: string; label: string }[] = [
 ];
 /** The set an image prompt uses ("auto" in templates = the classic white tabletop; the AI writer picks its own). */
 export const backdropOf = (v?: string) => (!v || v === "auto" ? BACKDROPS[1].value : v);
-const BACKGROUND: Field = { key: "background", label: "Latar produk", type: "select", default: "auto", options: BACKDROPS };
+const BACKGROUND: Field = { key: "background", label: "Background", type: "select", default: "auto", options: BACKDROPS };
 const MODEL: Field = {
   key: "model",
   label: "Model",
@@ -103,6 +108,23 @@ export const VERSIONS = [
 /** Clip lengths Flow's Omni 1.2 model renders (3–15 s); above 10 s needs a Google AI Plus/Pro/Ultra plan. */
 export const CLIP_SECS = Array.from({ length: 13 }, (_, i) => i + 3);
 export const PRO_CLIP_SEC = 11;
+
+/** Flow video models, saved as options.videoModel. Veo 3.1 Lite (image-to-video) is fixed at 8 s / 720p. */
+export const VIDEO_MODELS = [
+  { id: "omni", label: "Omni 1.2 Flash", hint: "Durasi 3–15 dtk, 360p/720p" },
+  { id: "veo", label: "Veo 3.1 - Lite", hint: "Klip 8 dtk, 720p" },
+] as const;
+export const VEO_CLIP_SEC = 8;
+export const isVeo = (options: Record<string, string>) => options.videoModel === "veo";
+/** A project whose final video is rendered and exported is locked: view, rename, schedule or duplicate only. */
+export const isLocked = (p: { status: string; finalPath: string | null; edit?: { exportedAt?: number | null } | null }) =>
+  p.status === "done" && !!p.finalPath && !!p.edit?.exportedAt;
+/** flow2api model id for one clip of the project. */
+export const flowVideoModel = (options: Record<string, string>, clipSec: number) =>
+  isVeo(options)
+    ? "veo_3_1_i2v_lite_portrait"
+    // "-360p": alias from our flow2api patch (sidecar/flow2api/patches): Flow's 360p Omni, half the credits of 720p
+    : `omni-1.2-flash-${clipSec}s-portrait${options.resolution === "360p" ? "-360p" : ""}`;
 
 /**
  * Resize a template storyboard to `n` clips: fewer = keep the opening ones and the closing (CTA) scene; more = add
@@ -188,8 +210,8 @@ export const PRESETS: Preset[] = [
     id: "pov2",
     title: "POV Tangan V2",
     badge: "Baru",
-    summary: "Tangan memegang produk di latar pilihanmu: AI membuat frame awal + prompt sekaligus. Lebih cepat, adegan lebih sedikit.",
-    bestFor: "Produk kecil apa saja. Paling cepat jadi, cukup 2 adegan.",
+    summary: "Tangan memegang produk di latar pilihanmu: AI membuat frame awal + prompt sekaligus. Lebih cepat, scene lebih sedikit.",
+    bestFor: "Produk kecil apa saja. Paling cepat jadi, cukup 2 scene.",
     pipeline: ["Produk + latar", "Gambar + prompt", "Flow"],
     available: true,
     fields: [BACKGROUND, VOICE],
@@ -205,6 +227,9 @@ export const PRESETS: Preset[] = [
     bestFor: "Daster, piyama, baju rumahan, hijab santai.",
     pipeline: ["Detail motif", "Kasual indoor", "Motion halus"],
     available: true,
+    character: true,
+    characterLook: "a natural, friendly Indonesian woman around 28 with a warm smile, light natural makeup, shoulder-length black hair",
+    direction: "One Indonesian woman wears the product in every scene, face clearly visible and the same person throughout (same face, hair and makeup). Full-body or knee-up shots so the fabric, motif and drape read clearly; relaxed, graceful at-home poses.",
     fields: [
       {
         key: "room",
@@ -226,25 +251,29 @@ export const PRESETS: Preset[] = [
   },
   {
     id: "sensasi",
-    title: "Sensasi POV Creator",
-    summary: "Storyboard kreator: foto model + produk, pose kreator, lalu gerakan video halus dengan voice-over.",
-    bestFor: "Produk yang perlu dicontohkan: alat dapur, beauty tools.",
-    pipeline: ["Model + produk", "Pose", "Flow"],
+    title: "Sensasi Model Cantik",
+    summary: "Model cewek cantik dengan pose memikat sambil memegang produk. Wajah karakter bisa pakai fotomu sendiri, lengkap dengan voice-over.",
+    bestFor: "Skincare, parfum, kosmetik, fashion, minuman. Konten yang jual lewat visual model.",
+    pipeline: ["Wajah karakter", "Pose memikat", "Flow"],
     available: true,
-    fields: [MODEL, BACKGROUND, VOICE],
+    character: true,
+    characterLook: "a beautiful, glamorous Indonesian woman in her mid-20s with glowing skin, polished natural makeup, long dark wavy hair and a confident look",
+    direction:
+      "The star is one beautiful, glamorous Indonesian woman in her mid-20s, face clearly visible and the same person in every scene. She strikes confident, alluring fashion-model poses that stop the scroll: a slow over-the-shoulder glance, hand on hip, leaning toward the lens, chin down with eyes up, a playful smile or wink, a soft hair flip. Stylish fitted outfit, polished natural makeup, glowing skin, flattering soft light, a clean aesthetic set. She holds the product near her face or at chest height with the label facing the camera. Keep it platform-safe for TikTok Shop: fully clothed, no lingerie or swimwear, no nudity, no focus on cleavage, nothing sexual.",
+    fields: [BACKGROUND, VOICE],
     scenes: (p, o) => [
-      { label: "Hook", imagePrompt: `${o.model} content creator holding ${product(p)} close to the face, excited expression, ${o.background}, ${vertical}`, motionPrompt: `Leans toward the camera with an excited reaction. ${voiceLine(o, `Kalian harus tahu ${p.name} ini!`)}` },
-      { label: "Demo", imagePrompt: `${o.model} demonstrating ${product(p)} to the camera, ${o.background}, ${vertical}`, motionPrompt: `Shows how the product works with natural hand movements. ${voiceLine(o, "Pakainya gampang banget, hasilnya langsung kelihatan.")}` },
-      { label: "Ajakan", imagePrompt: `${o.model} pointing down toward the bottom of the frame while holding ${product(p)}, ${o.background}, ${vertical}`, motionPrompt: `Points down and winks. ${voiceLine(o, `Cuma ${p.price || "harga terjangkau"}, cek keranjang di bawah!`)}` },
+      { label: "Hook", imagePrompt: `Beautiful glamorous Indonesian woman in her mid-20s, confident alluring over-the-shoulder pose, holding ${product(p)} beside her face with the label to the camera, stylish fitted outfit, ${o.background}, ${vertical}`, motionPrompt: `She turns her head slowly to the lens with a confident smile and lifts the product a little. ${voiceLine(o, `Rahasia aku tampil pede ya ${p.name} ini!`)}` },
+      { label: "Pose", imagePrompt: `The same woman leaning slightly toward the camera, hand on hip, holding ${product(p)} at chest height, playful look, ${o.background}, ${vertical}`, motionPrompt: `She shifts her weight to the other hip and tilts the product toward the light. ${voiceLine(o, "Hasilnya bikin makin pede seharian.")}` },
+      { label: "Ajakan", imagePrompt: `The same woman with a soft hair flip, smiling at the lens, holding ${product(p)} up near her chin, ${o.background}, ${vertical}`, motionPrompt: `A small wink, then she points the product down toward the bottom of the frame. ${voiceLine(o, `Cuma ${p.price || "harga terjangkau"}, cek keranjang di bawah!`)}` },
     ],
   },
   {
     id: "custom",
     title: "Racikan Sendiri",
     badge: "Bebas",
-    summary: "Tulis prompt sendiri untuk tiap adegan, pakai gambarmu sendiri atau buatan AI. Atur jumlah dan urutan adegan sesukamu.",
+    summary: "Tulis prompt sendiri untuk tiap scene, pakai gambarmu sendiri atau buatan AI. Atur jumlah dan urutan scene sesukamu.",
     bestFor: "Yang sudah punya ide, gambar, atau gaya sendiri.",
-    pipeline: ["Adegan bebas", "Prompt sendiri", "Gambar sendiri / AI"],
+    pipeline: ["Scene bebas", "Prompt sendiri", "Gambar sendiri / AI"],
     available: true,
     custom: true,
     fields: [
@@ -261,8 +290,8 @@ export const PRESETS: Preset[] = [
       },
     ],
     scenes: () => [
-      { label: "Adegan 1", imagePrompt: "", motionPrompt: "" },
-      { label: "Adegan 2", imagePrompt: "", motionPrompt: "" },
+      { label: "Scene 1", imagePrompt: "", motionPrompt: "" },
+      { label: "Scene 2", imagePrompt: "", motionPrompt: "" },
     ],
   },
   {
@@ -280,6 +309,73 @@ export const PRESETS: Preset[] = [
 
 export const presetById = (id: string) => PRESETS.find((p) => p.id === id);
 
+// The owner's own concepts ("Buat konsep sendiri") choose what the built-in concepts fix in code: who is on screen
+// (free text, e.g. "cewek setengah badan pakai celana" or "tangan saja"; a face slot appears when the text describes a
+// person whose face shows), the mood, the voice and an opening hook. Saved as options.cast / mood / voice / hook.
+/** Older concepts saved a fixed choice instead of free text. */
+const OLD_CASTS: Record<string, string> = {
+  hands: "Only hands are visible, first-person POV; no face in any scene.",
+  woman: "One Indonesian woman is the star, her face clearly visible.",
+  man: "One Indonesian man is the star, his face clearly visible.",
+  none: "No people at all: product-only shots on the set; motion comes from the camera, light or the product itself.",
+};
+export const MOODS = [
+  { value: "natural", label: "Santai & natural", en: "relaxed and natural, like a real buyer filming at home" },
+  { value: "energetic", label: "Energik & cepat", en: "high energy and punchy: dynamic poses, bold angles, quick simple actions, upbeat delivery" },
+  { value: "elegant", label: "Mewah & elegan", en: "premium and elegant: calm graceful movement, tidy styled set, soft flattering light, confident delivery" },
+  { value: "funny", label: "Lucu & menghibur", en: "playful and funny: a light everyday joke or an exaggerated reaction, while the product stays clearly visible" },
+] as const;
+export const CONCEPT_VOICES = [
+  { value: "female", label: "Suara cewek" },
+  { value: "male", label: "Suara cowok" },
+  { value: "none", label: "Tanpa suara (tambah musik sendiri)" },
+] as const;
+
+type ProjectLike = { presetId: string; options: Options };
+
+// Read from the owner's "Siapa yang tampil?" text: is a face on screen (then the project gets a face slot)?
+const NO_FACE = /tanpa (orang|wajah|muka|model)|(wajah|muka)(nya)? (tidak|tak|gak|ga|nggak|engga|enggak) (kelihatan|terlihat|tampak|tampil)|tidak (ada|pakai) (wajah|muka|orang)|tangan( saja| aja| doang)?\b|\bpov\b|(pinggang|leher|dada|perut) ke bawah|badan bagian bawah|produk (saja|aja|doang)/i;
+const MAN = /\b(cowok|cowo|pria|laki|bapak|om|mas)\b/i;
+const WOMAN = /\b(cewek|cewe|wanita|perempuan|ibu|mbak|hijab|hijaber|gadis)\b/i;
+const PERSON = /\b(orang|model|kreator|creator|influencer|selebgram|host|anak|remaja)\b/i;
+
+/**
+ * The on-screen character whose face stays the same in every scene (face reference, AI-made face), as the noun the
+ * prompts use ("woman" / "man" / "person"); null when no face is shown.
+ */
+export function castOf(p: ProjectLike): string | null {
+  if (presetById(p.presetId)?.character) return "woman";
+  const c = p.options.cast ?? "";
+  if (c === "woman" || c === "man") return c; // older concepts
+  if (!c || NO_FACE.test(c)) return null;
+  return MAN.test(c) ? "man" : WOMAN.test(c) ? "woman" : PERSON.test(c) ? "person" : null;
+}
+
+/** Director's note for the AI writer: the built-in concept's own, or one made from the owner's concept choices. */
+export function directionOf(p: ProjectLike): string | undefined {
+  const own = presetById(p.presetId)?.direction;
+  if (own) return own;
+  const cast = p.options.cast ? OLD_CASTS[p.options.cast] ?? `Who is on screen and how they are framed (the owner's own words, in Indonesian; follow them exactly in every scene): ${p.options.cast}` : "";
+  const mood = MOODS.find((m) => m.value === p.options.mood);
+  const parts = [
+    cast,
+    castOf(p) && !OLD_CASTS[p.options.cast ?? ""] ? "The person's face is visible and it is the same person in every scene (same face, hair and outfit)." : "",
+    mood && `Mood: ${mood.en}.`,
+    p.options.voice === "female" || p.options.voice === "male" ? `The voice-over is a ${p.options.voice} Indonesian voice.` : "",
+    p.options.hook ? `Open the first scene with this hook idea from the owner (keep its meaning, polish the wording): "${p.options.hook}".` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join(" ") : undefined;
+}
+
+/** How the AI-made character looks when the owner uploads no face. */
+export function characterLookOf(p: ProjectLike) {
+  const own = presetById(p.presetId)?.characterLook;
+  if (own) return own;
+  if (p.options.cast === "man") return "a friendly Indonesian man in his late 20s with neat short black hair and a natural look";
+  if (p.options.cast && !OLD_CASTS[p.options.cast]) return `an Indonesian person who fits this description (the owner's words, in Indonesian): "${p.options.cast}"`;
+  return "a friendly Indonesian woman in her mid-20s with natural makeup and black hair";
+}
+
 /** Display name: a custom project name, else the product name, else the concept title. */
 export const projectName = (p: { title: string; presetId: string; product: { name: string } }) =>
   (p.title && p.title !== presetById(p.presetId)?.title ? p.title : "") || p.product.name || presetById(p.presetId)?.title || "Proyek";
@@ -290,6 +386,8 @@ export const defaultOptions = (p: Preset): Options => Object.fromEntries(p.field
 
 /** Caption template until Gemini writes captions. */
 export function draftCaption(p: Product) {
-  const tag = p.name.toLowerCase().replace(/[^a-z0-9]+/g, "");
-  return `${p.name} lagi rame banget! ${p.details ? `${p.details}. ` : ""}${p.price ? `Cuma ${p.price}. ` : ""}Cek keranjang di bawah ya 🛒\n\n#${tag || "racuntiktok"} #racuntiktok #tiktokshop #fyp`;
+  // words the platforms ban (stamina → performa, …) never reach the post, even from the product's own title
+  const name = applyRules(p.name);
+  const tag = applyRules(p.name.toLowerCase()).replace(/[^a-z0-9]+/g, "");
+  return `${name} lagi rame banget! ${p.details ? `${applyRules(p.details)}. ` : ""}${p.price ? `Cuma ${p.price}. ` : ""}Cek keranjang di bawah ya 🛒\n\n#${tag || "racuntiktok"} #racuntiktok #tiktokshop #fyp`;
 }

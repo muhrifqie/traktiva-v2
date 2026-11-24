@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { accounts, kaloSessions, videoProjects } from "@/lib/db/schema";
+import { pruneUnsaved, UNSAVED } from "@/lib/unsaved";
 import { isCountry, SHOPEE_MARKETS, type CountryCode } from "@/lib/countries";
 import { getKv, kalo, kaloRange, setKv } from "@/lib/kalo";
 import { createProjectFolder, extractFrames, saveResult } from "@/lib/media";
@@ -138,7 +139,8 @@ export async function kaloToShowcase(productId: string) {
   const acc = await db.select().from(accounts).where(and(eq(accounts.platform, "tiktok"), eq(accounts.status, "active"))).get();
   if (!acc?.sessionKey) throw new Error("Belum ada akun TikTok yang login. Tambahkan di Akun Sosial.");
   const { results, showcase } = await addToShowcase(acc.sessionKey, [productId]);
-  await mirrorShowcase(acc.id, showcase.products);
+  // answer as soon as TikTok accepted it; copying the showcase (and downloading every cover, ~15 s) runs in the background
+  void mirrorShowcase(acc.id, showcase.products).catch((e) => console.error("[etalase] sinkron gagal:", e));
   revalidatePath("/showcase");
   return { ...results[0], account: acc.username };
 }
@@ -233,9 +235,10 @@ export async function createProjectFromKalo(productId: string, country: string =
 
   const preset = presetById("custom")!;
   const product = { name, details: facts, price, photos: [] as string[] };
+  await pruneUnsaved();
   const [{ id: projectId }] = await db
     .insert(videoProjects)
-    .values({ presetId: preset.id, title: "", step: 4, product, options: { ...defaultOptions(preset) }, scenes: [], folder: "" })
+    .values({ presetId: preset.id, title: "", step: 4, product, options: { ...defaultOptions(preset), [UNSAVED]: "1" }, scenes: [], folder: "" })
     .returning({ id: videoProjects.id });
   const folder = await createProjectFolder(projectId, `kalo-${id}`);
 
@@ -284,6 +287,7 @@ export async function createProjectFromKalo(productId: string, country: string =
       caption,
       options: {
         ...defaultOptions(preset),
+        [UNSAVED]: "1",
         refVideo: refVideo ?? "",
         refCaption: top?.description?.slice(0, 300) ?? "",
         // median length of the product's 3 best-selling videos: the Gaya step suggests a format from it

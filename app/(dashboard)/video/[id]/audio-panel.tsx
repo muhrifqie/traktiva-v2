@@ -175,7 +175,7 @@ export function AudioTools({
           <p className="flex flex-1 items-center gap-1.5 text-xs font-medium"><Sparkles className="size-3.5" /> Efek suara (SFX) <span className="font-normal text-muted-foreground">· {edit.sfx.length}</span></p>
           {edit.sfx.length > 0 && <button type="button" className={icon} title="Hapus semua SFX" onClick={() => apply({ ...edit, sfx: [] }, "set")}><Trash2 className="size-3.5" /></button>}
         </div>
-        <button type="button" className={secondary} onClick={() => apply({ ...edit, sfx: autoSfx(edit) }, "set")} title="Whoosh di tiap pergantian adegan, pop saat stiker muncul, ding di harga">
+        <button type="button" className={secondary} onClick={() => apply({ ...edit, sfx: autoSfx(edit) }, "set")} title="Whoosh di tiap pergantian scene, pop saat stiker muncul, ding di harga">
           <Wand2 className="size-3.5" /> SFX otomatis
         </button>
         <div className="flex flex-wrap items-center gap-1">

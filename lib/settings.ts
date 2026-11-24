@@ -19,7 +19,11 @@ type VoiceSettings = {
   speed?: number; // 0.6–1.5
 };
 /** A concept the owner made with "+ Buat konsep sendiri" (Buat Video Reels); runs on the free-form preset. */
-export type MyConcept = { id: string; name: string; idea: string; scenes: number; background: string; audio: "on" | "off"; createdAt: number };
+export type MyConcept = {
+  id: string; name: string; idea: string; scenes: number; background: string; audio: "on" | "off"; createdAt: number;
+  // added later (older concepts don't have them): who is on screen, mood, voice, opening hook
+  cast?: string; mood?: string; voice?: string; hook?: string;
+};
 /** ChatGPT web account (its own Chrome profile) used as the writer; null = Gemini writes. */
 export type ChatgptSettings = { profileKey: string; email: string | null; connectedAt: number };
 /**

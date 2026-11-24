@@ -82,7 +82,7 @@ export function LibraryGrid({ tab, uploads, generated }: { tab: "uploads" | "ai"
       <p className="text-xs text-muted-foreground">
         {tab === "uploads"
           ? "Foto produk & gambar yang kamu unggah tersimpan di sini. Di Studio, pilih \"Dari Pustaka\" supaya tidak perlu unggah ulang."
-          : "Gambar adegan buatan AI dari semua proyek. Bisa dipakai lagi sebagai gambar adegan di proyek lain."}
+          : "Gambar scene buatan AI dari semua proyek. Bisa dipakai lagi sebagai gambar scene di proyek lain."}
       </p>
 
       {items.length === 0 ? (
@@ -90,7 +90,7 @@ export function LibraryGrid({ tab, uploads, generated }: { tab: "uploads" | "ai"
           <ImageIcon className="size-7 text-muted-foreground" />
           <p className="text-sm font-medium">{k ? "Tidak ada yang cocok" : tab === "uploads" ? "Pustaka masih kosong" : "Belum ada gambar AI"}</p>
           <p className="max-w-sm text-xs text-muted-foreground">
-            {tab === "uploads" ? "Tarik & lepas gambar ke sini, atau klik Unggah gambar. Foto yang kamu unggah di proyek juga otomatis masuk." : "Buat gambar adegan di Studio, hasilnya otomatis muncul di sini."}
+            {tab === "uploads" ? "Tarik & lepas gambar ke sini, atau klik Unggah gambar. Foto yang kamu unggah di proyek juga otomatis masuk." : "Buat gambar scene di Studio, hasilnya otomatis muncul di sini."}
           </p>
         </div>
       ) : (

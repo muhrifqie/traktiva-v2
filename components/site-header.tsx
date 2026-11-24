@@ -7,7 +7,7 @@ import { OPEN_COMMAND } from "@/components/command-menu";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Kbd } from "@/components/ui/kbd";
-import { navBySlug } from "@/lib/nav";
+import { PLATFORM_HOME, navBySlug } from "@/lib/nav";
 
 // Global app bar: lives on the chrome above sidebar + page panel, never scrolls with the page.
 // In the desktop app the window title bar is a separate strip above it (components/title-bar.tsx).
@@ -15,6 +15,7 @@ export function SiteHeader() {
   const pathname = usePathname();
   const slug = /^\/video\/\d+/.test(pathname) ? "proyek" : (pathname.split("/")[1] ?? ""); // Studio lives under Proyek
   const item = navBySlug(slug);
+  const home = item && "platform" in item ? PLATFORM_HOME[item.platform] : undefined;
   const openSearch = () => window.dispatchEvent(new Event(OPEN_COMMAND));
 
   return (
@@ -29,12 +30,13 @@ export function SiteHeader() {
 
       {item && (
         <nav aria-label="Breadcrumb" className="hidden shrink-0 items-center gap-1.5 text-[13px] sm:flex">
-          {item.group !== "Utama" && (
+          {home && home.slug !== item.slug ? (
+            // a platform's tab: the platform links back to its home
             <>
-              <span className="text-muted-foreground">{item.group}</span>
+              <Link href={`/${home.slug}`} className="text-muted-foreground hover:text-foreground">{home.label}</Link>
               <ChevronRight className="size-3.5 text-muted-foreground/60" />
             </>
-          )}
+          ) : null}
           <item.icon className="size-4 text-black dark:text-white" />
           <span className="font-medium">{item.title}</span>
         </nav>

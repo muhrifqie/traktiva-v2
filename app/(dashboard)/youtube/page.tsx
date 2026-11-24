@@ -1,28 +1,23 @@
-import Link from "next/link";
 import { and, asc, count, eq, inArray } from "drizzle-orm";
-import { CalendarClock, ChartNoAxesColumn, ChevronRight, Clock, Download, Eye, Film, Layers, MonitorPlay, Repeat, Users } from "lucide-react";
-import { AccountOverviewCard, OverviewEmpty, OverviewTiles } from "@/components/platform-overview";
+import { CalendarClock, ChartNoAxesColumn, Clock, Eye, Film, Repeat, UserCircle, Users } from "lucide-react";
+import { AccountOverviewCard, OverviewEmpty } from "@/components/platform-overview";
 import { PageHeader } from "@/components/page-header";
 import { PlatformIcon } from "@/components/platform-icon";
 import { db } from "@/lib/db";
 import { accounts, uploadJobs } from "@/lib/db/schema";
-import { PLATFORM } from "@/lib/platforms";
 import { YT_CACHE, ytSummary, type YouTubeCache } from "@/lib/platforms/youtube-studio";
 import { VERIFY_URL } from "@/lib/platforms/youtube-upload";
-import { youtubeUploadDefaults } from "@/lib/settings";
 import { getShopCache } from "@/lib/showcase";
 import { uploadLimitUntil } from "@/lib/youtube-limit";
-import { UploadSettings } from "./upload-settings";
 import { YouTubeConnectButton } from "../akun/tiktok-connect";
 
 export const dynamic = "force-dynamic";
 
 const num = new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 1 });
 const timeFmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
-const COLOR = PLATFORM.youtube.color;
 
-// YouTube → Ringkasan (also the group button): every channel side by side, same layout as TikTok Shop → Ringkasan
-// (components/platform-overview.tsx); then the upload templates and the YouTube tools.
+// YouTube (sidebar → Platform): every channel as a card, same layout as TikTok (components/platform-overview.tsx);
+// a channel opens its own pages, 1 Channel · 2 Performa · 3 Unduh Shorts (?akun=<id>, components/platform-tabs.tsx).
 export default async function YouTubePage() {
   const list = await db.select().from(accounts).where(eq(accounts.platform, "youtube")).orderBy(asc(accounts.username));
   const ids = list.map((a) => a.id);
@@ -34,7 +29,6 @@ export default async function YouTubePage() {
       : Promise.resolve([] as { id: number; n: number }[]),
   ]);
   const sums = caches.map((c) => (c ? ytSummary(c.data) : null));
-  const total = (f: (s: NonNullable<(typeof sums)[number]>) => number) => sums.reduce((t, s) => t + (s ? f(s) : 0), 0);
   const q = (id: number) => queued.find((r) => r.id === id)?.n ?? 0;
 
   return (
@@ -47,18 +41,9 @@ export default async function YouTubePage() {
         </OverviewEmpty>
       ) : (
         <div className="space-y-6">
-          <OverviewTiles
-            color={COLOR}
-            tiles={[
-              { icon: Layers, label: "Channel", value: list.length, sub: `${list.filter((a) => a.status === "active").length} login` },
-              { icon: Users, label: "Subscriber", value: num.format(total((s) => s.subscribers)) },
-              { icon: Eye, label: "Penayangan 28 hari", value: num.format(total((s) => s.views28)) },
-              { icon: CalendarClock, label: "Antre upload", value: queued.reduce((t, r) => t + r.n, 0) },
-            ]}
-          />
           <section className="space-y-2">
             <h2 className="text-[13px] font-semibold text-muted-foreground">Channel ({list.length})</h2>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
               {list.map((a, i) => {
                 const s = sums[i];
                 const limit = limits[i];
@@ -67,6 +52,7 @@ export default async function YouTubePage() {
                     key={a.id}
                     a={a}
                     loginHref="/akun?platform=youtube"
+                    href={`/youtube-channel?akun=${a.id}`}
                     stats={[
                       { icon: Users, label: "Subscriber", value: s ? num.format(s.subscribers) : "—" },
                       { icon: Film, label: "Video", value: s ? `${s.videos}` : "—" },
@@ -85,28 +71,14 @@ export default async function YouTubePage() {
                       ) : undefined
                     }
                     actions={[
+                      { href: `/youtube-channel?akun=${a.id}`, label: "Channel", icon: UserCircle },
                       { href: `/youtube-performa?akun=${a.id}`, label: "Performa", icon: ChartNoAxesColumn },
-                      ...(a.externalId?.startsWith("UC") ? [{ href: `https://studio.youtube.com/channel/${a.externalId}`, label: "Studio", icon: MonitorPlay, external: true }] : []),
                       { href: `/jadwal?tampilan=daftar&akun=${a.id}`, label: "Jadwalkan", icon: CalendarClock, primary: true },
                     ]}
                   />
                 );
               })}
             </div>
-          </section>
-
-          <UploadSettings initial={youtubeUploadDefaults()} />
-
-          <section className="space-y-2">
-            <h2 className="text-[13px] font-semibold text-muted-foreground">Alat</h2>
-            <Link href="/youtube-shorts" className="flex max-w-md items-center gap-3 rounded-xl border bg-card p-4 hover:border-ring/30 hover:bg-accent/40">
-              <span className="grid size-10 place-items-center rounded-lg" style={{ background: `${COLOR}1a`, color: COLOR }}><Download className="size-5" /></span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold">Shorts Downloader</p>
-                <p className="text-xs text-muted-foreground">Unduh semua Shorts dari satu channel.</p>
-              </div>
-              <ChevronRight className="size-4 text-muted-foreground" />
-            </Link>
           </section>
         </div>
       )}

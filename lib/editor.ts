@@ -405,6 +405,7 @@ Output ONLY JSON with the same shape: {"captions":[...],"captionStyle":{...},"ov
 
 /** The spoken script for the whole video: Gemini writes it once, sized to the video at ~2.6 words per second. */
 export async function writeFullScript(p: VideoProject, e: ProjectEdit, wish = "") {
+  if (p.options.vo?.trim() && !wish) return applyRules(p.options.vo.replace(/\s+/g, " ").trim(), writingRules()); // the owner wrote it
   const { extractJson } = await import("@/lib/platforms/gemini");
   const { askWriter } = await import("@/lib/writer");
   const { geminiAccount } = await import("@/lib/prompt-writer");

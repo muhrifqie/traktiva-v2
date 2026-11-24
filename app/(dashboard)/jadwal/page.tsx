@@ -23,14 +23,15 @@ function inQueue(j: { status: string; postedAt: Date | null }) {
   return j.status === "queued" || j.status === "uploading" || (j.status === "done" && !!j.postedAt && j.postedAt.getTime() > Date.now());
 }
 
-export default async function JadwalPage({ searchParams }: { searchParams: Promise<{ project?: string; tampilan?: string; akun?: string }> }) {
-  const { project, tampilan, akun } = await searchParams;
+export default async function JadwalPage({ searchParams }: { searchParams: Promise<{ project?: string; tampilan?: string; akun?: string; tanggal?: string }> }) {
+  const { project, tampilan, akun, tanggal } = await searchParams;
+  const date = tanggal && /^\d{4}-\d{2}-\d{2}$/.test(tanggal) ? tanggal : null; // a day clicked in the calendar
   // Kalender by default; the list (with the scheduling form) when asked, or when coming from a project to schedule it
-  const view = tampilan === "daftar" || project || akun ? "daftar" : "kalender";
+  const view = tampilan === "daftar" || project || akun || date ? "daftar" : "kalender";
   await hookInsights().catch(() => null); // links finished jobs to the TikTok post the profile sync found (postId)
   const [jobs, social, videos, etalase] = await Promise.all([
     db
-      .select({ job: uploadJobs, username: accounts.username, project: { title: videoProjects.title, presetId: videoProjects.presetId, product: videoProjects.product }, views: accountPosts.views })
+      .select({ job: uploadJobs, username: accounts.username, platform: accounts.platform, project: { title: videoProjects.title, presetId: videoProjects.presetId, product: videoProjects.product }, views: accountPosts.views })
       .from(uploadJobs)
       .innerJoin(accounts, eq(accounts.id, uploadJobs.accountId))
       .leftJoin(videoProjects, eq(videoProjects.id, uploadJobs.projectId))
@@ -55,7 +56,7 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
   const ytLimited = Object.fromEntries(limits.filter(([, u]) => u)) as Record<number, number>;
   const queued = jobs.filter((j) => inQueue(j.job)).length;
 
-  const mapped = jobs.map((j) => ({ ...j.job, scheduledAt: j.job.scheduledAt.getTime(), postedAt: j.job.postedAt?.getTime() ?? null, createdAt: j.job.createdAt.getTime(), username: j.username, title: j.project?.presetId ? projectName(j.project as Parameters<typeof projectName>[0]) : null, views: j.views ?? null }));
+  const mapped = jobs.map((j) => ({ ...j.job, scheduledAt: j.job.scheduledAt.getTime(), postedAt: j.job.postedAt?.getTime() ?? null, createdAt: j.job.createdAt.getTime(), username: j.username, platform: j.platform, title: j.project?.presetId ? projectName(j.project as Parameters<typeof projectName>[0]) : null, views: j.views ?? null }));
 
   return (
     <>
@@ -73,7 +74,7 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
       </PageHeader>
       {view === "kalender" ? (
         <JadwalCalendar
-          jobs={mapped.map(({ id, scheduledAt, status, accountId, username, title }) => ({ id, scheduledAt, status, accountId, username, title }))}
+          jobs={mapped.map(({ id, scheduledAt, status, accountId, username, platform, title }) => ({ id, scheduledAt, status, accountId, username, platform, title }))}
           today={new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date())}
         />
       ) : (
@@ -89,6 +90,7 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
         banned={writingRules().replace}
         maxPerDay={MAX_PER_DAY}
         initialProject={project ? Number(project) : null}
+        initialDate={date}
         selectedAccountId={pickActive(social.filter((a) => a.status === "active"), akun)?.id ?? null}
         provenTags={provenTags}
       />
