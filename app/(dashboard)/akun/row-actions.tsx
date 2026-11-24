@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { CloudDownload, Loader2, LogIn, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { confirmDialog } from "@/components/confirm-dialog";
-import { checkTikTokSession, deleteAccount, syncTikTokAccount } from "./actions";
-import { connectTikTok } from "./tiktok-connect";
+import { checkTikTokSession, checkYouTubeSession, deleteAccount, syncTikTokAccount } from "./actions";
+import { connectTikTok, connectYouTube } from "./tiktok-connect";
 
 type Props = { id: number; platform: string; username: string; hasSession: boolean; needsLogin: boolean };
 
@@ -18,6 +18,9 @@ export function AccountActions({ id, platform, username, hasSession, needsLogin 
   const router = useRouter();
   const [busy, setBusy] = useState<null | "check" | "login" | "sync" | "delete">(null);
   const isTikTok = platform === "tiktok";
+  const isYouTube = platform === "youtube";
+  const canLogin = isTikTok || isYouTube;
+  const at = isTikTok ? `@${username}` : username;
 
   async function run(kind: NonNullable<typeof busy>, fn: () => Promise<void>) {
     setBusy(kind);
@@ -33,10 +36,15 @@ export function AccountActions({ id, platform, username, hasSession, needsLogin 
 
   const relogin = () =>
     run("login", async () => {
-      const t = toast.loading(`Membuka login @${username}...`);
+      const t = toast.loading(`Membuka login ${at}...`);
       try {
+        if (isYouTube) {
+          const s = await connectYouTube(id, (msg) => toast.loading(msg, { id: t }));
+          toast.success(`Sesi ${s.username} diperbarui`, { id: t });
+          return;
+        }
         const s = await connectTikTok(id, (msg) => toast.loading(msg, { id: t }));
-        toast.success(`Sesi @${s.username} diperbarui`, { id: t });
+        toast.success(`Sesi @${s.username} diperbarui${s.showcaseCount != null ? ` · ${s.showcaseCount} produk etalase` : ""}`, { id: t });
       } catch (e) {
         toast.dismiss(t);
         throw e;
@@ -57,9 +65,9 @@ export function AccountActions({ id, platform, username, hasSession, needsLogin 
 
   const check = () =>
     run("check", async () => {
-      const r = await checkTikTokSession(id);
-      if (r.valid) toast.success(`Sesi @${username} masih aktif`);
-      else toast.warning(`Sesi @${username} habis, perlu login ulang`);
+      const r = await (isYouTube ? checkYouTubeSession : checkTikTokSession)(id);
+      if (r.valid) toast.success(`Sesi ${at} masih aktif`);
+      else toast.warning(`Sesi ${at} habis, perlu login ulang`);
     });
 
   const remove = () =>
@@ -73,18 +81,18 @@ export function AccountActions({ id, platform, username, hasSession, needsLogin 
 
   return (
     <div className="flex items-center gap-1.5">
-      {isTikTok && (needsLogin || !hasSession) && (
+      {canLogin && (needsLogin || !hasSession) && (
         <button type="button" onClick={relogin} disabled={!!busy} className={`${base} flex-1 bg-primary text-primary-foreground hover:bg-primary/90`}>
           {busy === "login" ? spin : <LogIn className="size-3.5" />}
           Login
         </button>
       )}
-      {isTikTok && hasSession && !needsLogin && (
+      {canLogin && hasSession && !needsLogin && (
         <>
-          <button type="button" onClick={sync} disabled={!!busy} className={`${outline} flex-1`}>
+          {isTikTok && <button type="button" onClick={sync} disabled={!!busy} className={`${outline} flex-1`}>
             {busy === "sync" ? spin : <CloudDownload className="size-3.5" />}
             Sinkron
-          </button>
+          </button>}
           <button type="button" onClick={check} disabled={!!busy} className={`${outline} flex-1`}>
             {busy === "check" ? spin : <RefreshCw className="size-3.5" />}
             Cek sesi

@@ -103,7 +103,7 @@ export function GoogleAccounts({ accounts, ready }: { accounts: Account[]; ready
                 </p>
               </div>
               <span className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium" title="Sisa kredit Flow">
-                <Coins className="size-3 text-[#f2c94c]" />
+                <Coins className="size-3 text-black dark:text-white" />
                 {a.credits ?? "—"}
               </span>
               {a.status === "active" ? (

@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Bookmark, Clapperboard, ExternalLink, ImageIcon, Loader2, Search, Store, Trash2 } from "lucide-react";
+import { Bookmark, Clapperboard, ExternalLink, ImageIcon, Loader2, Store, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { CountryBadge } from "@/components/country-select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { usePersistentState } from "@/lib/use-persistent-state";
 import { kaloToShowcase } from "../kalodata/actions";
 import { createProjectFromSaved, unsaveProduct } from "./actions";
 
@@ -24,7 +23,7 @@ type Saved = {
 };
 type Concept = { id: string; title: string; bestFor: string };
 
-const SOURCE: Record<string, string> = { tiktok: "Ranking TikTok", kalodata: "KaloData", manual: "Manual" };
+const SOURCE: Record<string, string> = { tiktok: "TikTok", kalodata: "TikTok · KaloData", shopee: "Shopee · KaloData", manual: "Manual" };
 const LABEL: Record<string, string> = { gmv30: "Omzet 30h", revenue: "Omzet", creators: "Kreator", rating: "Rating", commission: "Komisi", index: "Indeks", sale: "Terjual" };
 
 function Img({ src }: { src: string | null }) {
@@ -36,10 +35,20 @@ function Img({ src }: { src: string | null }) {
   );
 }
 
+const SAVED_FILTER = "riset:saved-filter";
+/** Toolbar search → saved list filter (the list is rendered by the server page, so it listens for this event). */
+export const savedFilter = (q: string) => window.dispatchEvent(new CustomEvent(SAVED_FILTER, { detail: q }));
+
 /** "Produk tersimpan": the shortlist from research, ready to turn into videos or showcase items. */
 export function SavedList({ items, concepts }: { items: Saved[]; concepts: Concept[] }) {
   const router = useRouter();
-  const [q, setQ] = usePersistentState("riset:saved-q", "");
+  // the filter text comes from the Riset toolbar (search box on the right), see savedFilter()
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    const on = (e: Event) => setQ((e as CustomEvent<string>).detail);
+    window.addEventListener(SAVED_FILTER, on);
+    return () => window.removeEventListener(SAVED_FILTER, on);
+  }, []);
   const [making, setMaking] = useState<Saved | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -64,7 +73,7 @@ export function SavedList({ items, concepts }: { items: Saved[]; concepts: Conce
       <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed p-12 text-center">
         <Bookmark className="size-7 text-muted-foreground" />
         <p className="text-sm font-medium">Belum ada produk tersimpan</p>
-        <p className="max-w-sm text-xs text-muted-foreground">Klik Simpan di hasil Ranking TikTok atau KaloData. Produk yang tersimpan bisa langsung dibuatkan video atau dimasukkan ke etalase.</p>
+        <p className="max-w-sm text-xs text-muted-foreground">Klik tombol simpan (ikon penanda) di daftar Top produk atau hasil cari. Produk yang tersimpan bisa langsung dibuatkan video atau dimasukkan ke etalase.</p>
       </div>
     );
   }
@@ -74,10 +83,6 @@ export function SavedList({ items, concepts }: { items: Saved[]; concepts: Conce
 
   return (
     <div className="space-y-3">
-      <label className="flex h-9 max-w-sm items-center gap-2 rounded-lg border bg-card px-3 text-xs focus-within:border-ring">
-        <Search className="size-4 text-muted-foreground" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari produk tersimpan..." className="min-w-0 flex-1 bg-transparent outline-none" />
-      </label>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
         {shown.map((p) => (
           <article key={p.id} className="flex flex-col overflow-hidden rounded-xl border bg-card">

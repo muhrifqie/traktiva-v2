@@ -3,18 +3,19 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { Check, ChevronDown, Loader2, Mic, MicOff, Pause, Play, Volume2 } from "lucide-react";
+import { CartesiaIcon, VeoIcon } from "@/components/brand-icons";
 import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { VoiceChoice } from "@/lib/voice";
 import { previewVoiceLine, setProjectVoice } from "../project-actions";
+import { isAbortError } from "@/lib/play-media";
 
 export type VoiceOption = { id: string; name: string; description: string; gender: string | null };
 export type ProjectVoiceState = { choice: VoiceChoice; voiceId: string | null; voiceName: string | null; speed: number };
 
-const CHOICES: { id: VoiceChoice | "elevenlabs"; label: string; icon: typeof Mic; ready: boolean; hint: string }[] = [
-  { id: "flow", label: "Bawaan Flow", icon: Mic, ready: true, hint: "Suara langsung dari video AI" },
-  { id: "cartesia", label: "Cartesia", icon: Volume2, ready: true, hint: "Suara manusiawi, dibuat terpisah lalu digabung" },
-  { id: "elevenlabs", label: "ElevenLabs", icon: Volume2, ready: false, hint: "Segera hadir" },
+const CHOICES: { id: VoiceChoice; label: string; icon: (p: { className?: string }) => React.ReactNode; ready: boolean; hint: string }[] = [
+  { id: "flow", label: "Bawaan Flow", icon: VeoIcon, ready: true, hint: "Suara langsung dari video AI" },
+  { id: "cartesia", label: "Cartesia", icon: CartesiaIcon, ready: true, hint: "Suara manusiawi, dibuat terpisah lalu digabung" },
   { id: "off", label: "Tanpa suara", icon: MicOff, ready: true, hint: "Senyap, tambah musik sendiri" },
 ];
 const SPEEDS = [0.9, 1, 1.1, 1.2];
@@ -40,7 +41,7 @@ function usePlayer() {
       await audio.current.play();
       setPlaying(key);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Gagal memutar");
+      if (!isAbortError(e)) toast.error(e instanceof Error ? e.message : "Gagal memutar");
     } finally {
       setLoading(null);
     }
@@ -79,7 +80,7 @@ export function VoicePanel({
   return (
     <div className="space-y-2.5 rounded-lg border bg-background p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="flex items-center gap-1.5 text-xs font-semibold"><Mic className="size-3.5 text-[#ff3b6b]" /> Suara voice-over</span>
+        <span className="flex items-center gap-1.5 text-xs font-semibold"><Mic className="size-3.5 text-black dark:text-white" /> Suara voice-over</span>
         {saving && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
         <span className="text-[11px] text-muted-foreground">dipilih per proyek sebelum render · mengganti suara membuat klip perlu dirender ulang</span>
       </div>
@@ -94,8 +95,8 @@ export function VoicePanel({
               role="radio"
               aria-checked={on}
               disabled={disabled || saving || !c.ready || on}
-              title={blocked ? "Masukkan API key Cartesia di Pengaturan AI dulu" : c.hint}
-              onClick={() => (blocked ? toast.error("Masukkan API key Cartesia di Pengaturan AI dulu.") : save({ voice: c.id as VoiceChoice }))}
+              title={blocked ? "Masukkan API key Cartesia di Pengaturan dulu" : c.hint}
+              onClick={() => (blocked ? toast.error("Masukkan API key Cartesia di Pengaturan dulu.") : save({ voice: c.id as VoiceChoice }))}
               className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed ${on ? "border-primary/50 bg-primary/10 text-foreground" : c.ready ? "bg-card text-muted-foreground hover:text-foreground" : "bg-card text-muted-foreground opacity-50"}`}
             >
               {on ? <Check className="size-3.5 text-brand-light" /> : <c.icon className="size-3.5" />}
@@ -130,7 +131,7 @@ export function VoicePanel({
             {state.voiceId && (
               <button
                 type="button"
-                onClick={() => play("sample", () => previewVoiceLine("Halo! Ini suaraku buat video kamu. Cek keranjang kuning ya!", state.voiceId!, state.speed))}
+                onClick={() => play("sample", () => previewVoiceLine("Halo! Ini suaraku buat video kamu. Cek keranjang di bawah ya!", state.voiceId!, state.speed))}
                 className="flex h-8 items-center gap-1 rounded-lg border bg-card px-2.5 text-xs font-medium hover:bg-accent"
               >
                 {loading === "sample" ? <Loader2 className="size-3.5 animate-spin" /> : playing === "sample" ? <Pause className="size-3.5" /> : <Play className="size-3.5" />} Contoh
@@ -145,7 +146,7 @@ export function VoicePanel({
             </div>
           </div>
         ) : (
-          <p className="text-[11px] text-muted-foreground">Cartesia belum tersambung. <Link href="/pengaturan" className="font-medium text-brand-light underline">Masukkan API key di Pengaturan AI</Link>.</p>
+          <p className="text-[11px] text-muted-foreground">Cartesia belum tersambung. <Link href="/pengaturan" className="font-medium text-brand-light underline">Masukkan API key di Pengaturan</Link>.</p>
         )
       )}
     </div>

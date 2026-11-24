@@ -8,7 +8,7 @@ import { saveProduct, unsaveProduct } from "@/app/(dashboard)/riset/actions";
 export type SaveableProduct = {
   productId: string;
   country: string;
-  source: "tiktok" | "kalodata";
+  source: "tiktok" | "kalodata" | "shopee";
   title: string;
   image?: string | null;
   price?: string | null;

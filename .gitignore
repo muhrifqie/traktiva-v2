@@ -46,4 +46,11 @@ next-env.d.ts
 
 # local-only
 /reports
-/.claude
+/.claude/*
+!/.claude/skills/
+
+# flow2api sidecar build output (sidecar/flow2api/build.ps1)
+/dist-sidecar
+# license server secrets + DB when run locally (server/license)
+/server/license/data
+.yt-probe/

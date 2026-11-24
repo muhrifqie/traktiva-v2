@@ -156,7 +156,7 @@ export function StatusBar() {
         <Item title={sound ? "Suara notifikasi aktif (klik untuk bisukan)" : "Suara notifikasi mati (klik untuk aktifkan)"} onClick={toggleSound}>
           {sound ? <Volume2 className="size-3" /> : <VolumeX className="size-3" />}
         </Item>
-        <Item title="Proses yang boleh jalan bersamaan (atur di Pengaturan AI → Kecepatan)" href="/pengaturan">
+        <Item title="Proses yang jalan bersamaan (batas otomatis sesuai spek PC dan jumlah akun Google)" href="/pengaturan">
           <Layers className="size-3" />
           {s ? `${s.slots.active}/${s.slots.max}` : "–"}
           {s && s.slots.waiting > 0 && <span className="opacity-80">+{s.slots.waiting}</span>}

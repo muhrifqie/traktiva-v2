@@ -1,9 +1,9 @@
 import "server-only";
 import type { Page } from "playwright-core";
-import { withProfile } from "@/lib/browser/camoufox";
+import { withProfile } from "@/lib/browser/chrome";
 
 // TikTok Shop "Streamer Desktop" (shop.tiktok.com/streamer) read & write through the account's own logged-in
-// Camoufox profile. All endpoints below were found by capturing the real page (2026-11-18):
+// Chrome profile. All endpoints below were found by capturing the real page (2026-11-18):
 //   GET  /api/v1/streamer_desktop/search_product/list    showcase list (size, offset)
 //   POST /api/v1/streamer_desktop/product_link/check     {origin:2, urls:[...]} → product preview
 //   POST /api/v1/streamer_desktop/showcase_product/add   {product_info:[{product_id, source_from:2, main_plan_id:"", isv_id:""}]}
@@ -340,5 +340,51 @@ export function fetchMarketRanking(sessionKey: string, categoryId?: string, page
     }));
     const pg = seg?.list_control?.next_pagination ?? {};
     return { categories, categoryId: cat, products, hasMore: !!pg.has_more, total: Number(pg.total ?? products.length) };
+  });
+}
+
+// ---------------------------------------------------------------- product detail (public product page)
+
+export type RawProductDetail = Omit<import("@/lib/db/schema").ProductDetail, "images"> & { imageUrls: string[] };
+
+/**
+ * Read a product's full page (shop.tiktok.com/view/product/<id>) with the account's profile: photos, description,
+ * price, sold count, rating, variants, shop, shipping. The page embeds everything in __MODERN_ROUTER_DATA__.
+ */
+export function fetchProductDetail(sessionKey: string, productId: string): Promise<RawProductDetail> {
+  // opened from the showcase page like a person would: a cold visit straight to the product page gets TikTok's
+  // "Security Check" captcha, which we never try to solve
+  return withShopPage(sessionKey, async ({ page }) => {
+    await page.goto(`https://shop.tiktok.com/view/product/${productId}?region=ID&locale=id-ID`, { waitUntil: "domcontentloaded", timeout: 45_000, referer: SHOWCASE_URL });
+    if (/security check/i.test(await page.title().catch(() => ""))) throw new Error("TikTok meminta verifikasi keamanan untuk halaman produk. Coba lagi nanti, atau buka produknya sekali di TikTok.");
+    // the data script is server-rendered; read it through a locator (waitForFunction's rAF polling stalls headless)
+    const raw = await page.locator("script#__MODERN_ROUTER_DATA__").textContent({ timeout: 20_000 }).catch(() => null);
+    if (!raw) throw new Error("Halaman produk TikTok tidak terbuka. Coba lagi sebentar lagi.");
+    const data = JSON.parse(raw);
+    const pageData: any = Object.values(data?.loaderData ?? {}).find((v: any) => v?.page_config) ?? null;
+    const comps: any[] = pageData?.page_config?.components_map ?? [];
+    const info = comps.find((c) => c.component_type === "product_info")?.component_data;
+    const p = info?.product_info;
+    if (!p?.product_id) throw new Error("Detail produk tidak tersedia (produk dihapus atau tidak dijual di Indonesia).");
+    const num = (v: unknown) => (v == null || v === "" ? null : Number(String(v).replace(/[^\d.]/g, "")) || null);
+    const description = (p.desc_blocks ?? []).filter((b: any) => b.type === "text" && b.text).map((b: any) => String(b.text).trim()).join("\n").slice(0, 4000);
+    const stock = (p.skus ?? []).reduce((a: number, s: any) => a + (typeof s.stock === "number" ? s.stock : 0), 0);
+    const lg = p.logistic;
+    return {
+      title: String(p.title ?? ""),
+      imageUrls: (p.images ?? []).map((i: any) => i.url_list?.[0]).filter(Boolean).slice(0, 8),
+      description,
+      price: String(p.price?.real_price ?? ""),
+      originalPrice: p.price?.original_price && p.price.original_price !== p.price.real_price ? String(p.price.original_price) : null,
+      discount: p.price?.discount ?? null,
+      sold: num(p.sold_count),
+      rating: p.review?.product_rating ?? null,
+      reviews: num(p.review?.review_count),
+      shop: p.seller ? { name: String(p.seller.name ?? ""), rating: num(p.seller.rating), products: num(p.seller.product_count) } : null,
+      variants: (p.sale_props ?? []).map((sp: any) => ({ name: String(sp.prop_name ?? ""), values: (sp.sale_prop_values ?? []).map((v: any) => String(v.prop_value ?? "")).filter(Boolean) })),
+      stock: p.skus?.length ? stock : null,
+      shipping: lg ? [lg.free_shipping ? "Gratis ongkir" : null, lg.delivery_name ?? null].filter(Boolean).join(" · ") || null : null,
+      category: info?.category_info?.recommended_categories?.[0]?.category_name ?? null,
+    };
   });
 }

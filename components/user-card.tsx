@@ -1,22 +1,35 @@
 "use client";
 
 import Link from "next/link";
-import { BadgeCheck, ChevronsUpDown, Clapperboard, Clock, HardDrive, Info, Monitor, Settings, Users } from "lucide-react";
+import { BadgeCheck, ChevronsUpDown, Clapperboard, HardDrive, Info, KeyRound, Monitor, Settings, ShieldCheck, Users } from "lucide-react";
+import { confirmDialog } from "@/components/confirm-dialog";
 import { GoogleIcon } from "@/components/brand-icons";
 import { Logo } from "@/components/logo";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { PLATFORM } from "@/lib/platforms";
+
+export type SocialAccount = {
+  id: number;
+  platform: keyof typeof PLATFORM;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  status: "active" | "disabled" | "need_login";
+};
 
 export type UserInfo = {
   email: string | null; // primary Google account (the app has no separate user login yet)
   googleAccounts: number;
   socialAccounts: number;
+  social: { selected: SocialAccount | null; list: SocialAccount[] }; // the account the user works with (sidebar)
   videos: number;
   appVersion: string;
   platform: string;
-  // ponytail: license is a placeholder until the license server (docs/license-design.md) exists
-  license: { status: "dev" | "active" | "expired"; plan: string; expiresAt: string | null; daysLeft: number | null };
+  // from the license server heartbeat (lib/server-info.ts); "dev" when running without a license (npm run dev)
+  license: { status: "dev" | "active" | "expired"; plan: string; expiresAt: string | null; daysLeft: number | null; role: "admin" | "member"; owner: { name: string; email: string } | null };
+  adminPanelUrl: string;
 };
 
 const LICENSE = {
@@ -27,53 +40,65 @@ const LICENSE = {
 
 const OS: Record<string, string> = { win32: "Windows", darwin: "macOS", linux: "Linux" };
 
-function Avatar({ email, size = "size-8" }: { email: string | null; size?: string }) {
-  return email ? (
+function Avatar({ name, size = "size-8" }: { name: string | null; size?: string }) {
+  return name ? (
     <span className={`grid ${size} shrink-0 place-items-center rounded-lg bg-primary text-[13px] font-semibold uppercase text-primary-foreground`}>
-      {email[0]}
+      {name.trim()[0]}
     </span>
   ) : (
     <Logo className={`${size} shrink-0`} />
   );
 }
 
-/** Bottom-left of the sidebar: who is using the app + license; opens a detail panel. */
+async function changeLicense() {
+  if (!window.desktop?.changeLicense) return;
+  const ok = await confirmDialog({
+    title: "Ganti lisensi?",
+    description: "PC ini dilepas dari key sekarang (slotnya kosong lagi), lalu kamu masukkan key lain. Proyek dan akun di PC ini tetap aman.",
+    confirmLabel: "Ganti lisensi",
+  });
+  if (ok) await window.desktop.changeLicense();
+}
+
+/**
+ * Bottom-left of the sidebar: who uses this app = the owner of the license in use (the website account the key is
+ * linked to), with the license details. Social accounts are managed on Akun Sosial (they can be many).
+ */
 export function UserCard({ info }: { info: UserInfo }) {
   const lic = LICENSE[info.license.status];
-  const name = info.email ? info.email.split("@")[0] : "Pengguna Traktiva";
-  const licLine = info.license.daysLeft != null ? `${info.license.daysLeft} hari lagi` : lic.label;
+  const owner = info.license.owner;
+  const name = owner?.name || (info.email ? info.email.split("@")[0] : "Pengguna Traktiva");
+  const sub = info.license.status === "dev" ? lic.label : `Lisensi ${info.license.plan} · ${lic.label}`;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         className="flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[popup-open]:bg-sidebar-accent group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0"
-        aria-label="Info pengguna dan lisensi"
+        aria-label="Profil dan lisensi"
       >
-        <Avatar email={info.email} />
+        <Avatar name={name} />
         <span className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
           <span className="block truncate text-[13px] font-medium">{name}</span>
-          <span className="flex items-center gap-1 truncate text-[11px] text-muted-foreground">
-            <Clock className="size-3" /> {licLine}
-          </span>
+          <span className={`block truncate text-[11px] ${info.license.status === "expired" ? "text-amber-500" : "text-muted-foreground"}`}>{sub}</span>
         </span>
         <ChevronsUpDown className="size-3.5 text-muted-foreground group-data-[collapsible=icon]:hidden" />
       </DropdownMenuTrigger>
 
       <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-72 p-0">
         <div className="flex items-center gap-3 p-3">
-          <Avatar email={info.email} size="size-10" />
+          <Avatar name={name} size="size-10" />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">{name}</p>
-            <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-              {info.email ? <><GoogleIcon className="size-3" />{info.email}</> : "Belum ada akun Google"}
-            </p>
+            <p className="truncate text-xs text-muted-foreground">{owner?.email ?? (info.license.status === "dev" ? "Mode pengembangan" : "Key belum ditautkan ke akun website")}</p>
           </div>
         </div>
-
         <div className="mx-3 rounded-lg border bg-muted/40 p-3">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-xs font-medium"><BadgeCheck className="size-3.5 text-brand-light" /> Lisensi</span>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${lic.cls}`}>{lic.label}</span>
+            <span className="flex gap-1">
+              {info.license.role === "admin" && <span className="rounded-full bg-[#f2c94c1f] px-2 py-0.5 text-[10px] font-semibold text-[#f2c94c]">Admin</span>}
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${lic.cls}`}>{lic.label}</span>
+            </span>
           </div>
           <dl className="mt-2 grid grid-cols-2 gap-y-1 text-[11px]">
             <dt className="text-muted-foreground">Paket</dt>
@@ -91,8 +116,8 @@ export function UserCard({ info }: { info: UserInfo }) {
         <div className="grid grid-cols-3 gap-2 p-3">
           {[
             { icon: <GoogleIcon className="size-3.5" />, n: info.googleAccounts, label: "Google" },
-            { icon: <Users className="size-3.5 text-[#2fa868]" />, n: info.socialAccounts, label: "Sosial" },
-            { icon: <Clapperboard className="size-3.5 text-[#f2994a]" />, n: info.videos, label: "Video" },
+            { icon: <Users className="size-3.5 text-black dark:text-white" />, n: info.socialAccounts, label: "Sosial" },
+            { icon: <Clapperboard className="size-3.5 text-black dark:text-white" />, n: info.videos, label: "Video" },
           ].map((s) => (
             <div key={s.label} className="rounded-lg border p-2 text-center">
               <div className="flex items-center justify-center gap-1">{s.icon}<span className="text-sm font-semibold tabular-nums">{s.n}</span></div>
@@ -103,8 +128,12 @@ export function UserCard({ info }: { info: UserInfo }) {
 
         <DropdownMenuSeparator className="my-0" />
         <div className="p-1">
-          <DropdownMenuItem render={<Link href="/pengaturan" />}><Settings className="size-4" /> Pengaturan AI</DropdownMenuItem>
+          <DropdownMenuItem render={<Link href="/pengaturan" />}><Settings className="size-4" /> Pengaturan & lisensi</DropdownMenuItem>
           <DropdownMenuItem render={<Link href="/akun" />}><Users className="size-4" /> Kelola akun sosial</DropdownMenuItem>
+          {info.license.role === "admin" && (
+            <DropdownMenuItem render={<a href={info.adminPanelUrl} target="_blank" rel="noreferrer" />}><ShieldCheck className="size-4" /> Panel admin</DropdownMenuItem>
+          )}
+          {info.license.status !== "dev" && <DropdownMenuItem onClick={changeLicense}><KeyRound className="size-4" /> Ganti lisensi</DropdownMenuItem>}
         </div>
         <DropdownMenuSeparator className="my-0" />
         <div className="flex items-center gap-3 px-3 py-2 text-[11px] text-muted-foreground">

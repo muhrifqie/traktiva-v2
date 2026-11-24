@@ -9,8 +9,7 @@ import { db } from "@/lib/db";
 import { showcaseProducts, videoProjects } from "@/lib/db/schema";
 import { createProjectFolder, resolveMedia, writeMedia } from "@/lib/media";
 import { addToShowcase, fetchMarketRanking, removeFromShowcase } from "@/lib/platforms/tiktok-shop";
-import { SYNC_CHOICES, updateSettings } from "@/lib/settings";
-import { getTiktokAccount, mirrorShowcase, setShopCache, startShowcaseAutoSync, syncAccountShowcase } from "@/lib/showcase";
+import { detailFacts, getTiktokAccount, loadProductDetail, mirrorShowcase, setShopCache, syncAccountShowcase } from "@/lib/showcase";
 import { defaultOptions, presetById } from "@/lib/presets";
 
 const Id = z.number().int().positive();
@@ -49,16 +48,15 @@ export async function loadMarketRanking(accountId: number, categoryId?: string) 
   const r = await fetchMarketRanking(acc.sessionKey, categoryId);
   await setShopCache(acc.id, "categories", r.categories);
   await setShopCache(acc.id, `ranking:${r.categoryId}`, r);
-  revalidatePath("/riset");
+  revalidatePath("/riset", "layout");
   return r.categoryId;
 }
 
-export async function setShowcaseAutoSync(minutes: number) {
-  const m = z.number().int().parse(minutes);
-  if (!(SYNC_CHOICES as readonly number[]).includes(m)) throw new Error("Pilihan interval tidak dikenal.");
-  updateSettings({ showcaseSyncMinutes: m });
-  startShowcaseAutoSync();
+/** Full product detail for the showcase dialog (read from TikTok once, then from the database). */
+export async function getShowcaseDetail(showcaseId: number, refresh = false) {
+  const r = await loadProductDetail(Id.parse(showcaseId), refresh);
   revalidatePath("/showcase");
+  return { detail: r.detail, detailAt: r.detailAt?.getTime() ?? Date.now(), facts: detailFacts(r.detail), commission: r.commission };
 }
 
 /** Start a video project from a showcase product: name, price and cover photo are filled in. */
@@ -69,19 +67,21 @@ export async function createProjectFromProduct(showcaseId: number, presetId: str
   if (!preset?.available) throw new Error("Konsep ini belum tersedia.");
 
   const name = p.title.length > 120 ? `${p.title.slice(0, 117)}...` : p.title;
+  // the saved product page (if it was opened) gives the AI real facts and more photos
+  const details = p.detail ? detailFacts(p.detail) : p.labels.join(", ");
   const [{ id }] = await db
     .insert(videoProjects)
     .values({
-      presetId, title: "", step: 2, product: { name, details: p.labels.join(", "), price: p.price, photos: [] },
+      presetId, title: "", step: 2, product: { name, details, price: p.price, photos: [] },
       options: defaultOptions(preset), scenes: [], folder: "",
     })
     .returning({ id: videoProjects.id });
   const folder = await createProjectFolder(id, preset.id);
   const photos: string[] = [];
-  if (p.cover) {
-    const data = await fs.readFile(resolveMedia(p.cover)).catch(() => null);
-    if (data) photos.push(await writeMedia(`${folder}/produk/etalase-${p.productId}.jpg`, data));
+  for (const [i, src] of (p.detail?.images.length ? p.detail.images.slice(0, 3) : p.cover ? [p.cover] : []).entries()) {
+    const data = await fs.readFile(resolveMedia(src)).catch(() => null);
+    if (data) photos.push(await writeMedia(`${folder}/produk/etalase-${p.productId}-${i + 1}${src.slice(src.lastIndexOf("."))}`, data));
   }
-  await db.update(videoProjects).set({ folder, product: { name, details: p.labels.join(", "), price: p.price, photos } }).where(eq(videoProjects.id, id));
+  await db.update(videoProjects).set({ folder, product: { name, details, price: p.price, photos }, options: { ...defaultOptions(preset), showcaseId: String(p.id) } }).where(eq(videoProjects.id, id));
   redirect(`/video/${id}`);
 }

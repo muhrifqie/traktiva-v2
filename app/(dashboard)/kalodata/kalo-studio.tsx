@@ -3,18 +3,24 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  BarChart3, CircleAlert, Download, ImageIcon, Play, Copy, ExternalLink, KeyRound, Loader2, Plus, RefreshCw, Search, Sparkles, Store, Trash2, TrendingUp, UserPlus, Users, Video,
+  CircleAlert, Download, ImageIcon, Play, Copy, ExternalLink, KeyRound, Loader2, Plus, RefreshCw, Sparkles, Store, Trash2, TrendingUp, UserPlus, Users, Video,
 } from "lucide-react";
+import { KaloDataIcon } from "@/components/brand-icons";
 import { toast } from "sonner";
 import { CountryBadge, CountrySelect } from "@/components/country-select";
 import { SaveProductButton } from "@/components/save-product-button";
-import { usePersistentState } from "@/lib/use-persistent-state";
 import { countryOf } from "@/lib/countries";
+import { MarketTops } from "./market-tops";
+import { savedFilter } from "../riset/saved-list";
+import { getDetail, intentProps } from "./detail-cache";
+import { EmptyBox, iconBtn, ListBox, pillBtn, ProductRow, RefreshButton, RefreshSlot, RisetToolbar } from "./riset-ui";
 import type { KaloProductInfo } from "@/lib/kalodata";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  addKaloSession, checkKaloSessions, deleteKaloSession, createVideoFromKalo, kaloDetail, kaloToShowcase, kaloVideoUrl, searchKalo, signupKaloSession, type KaloDetail, type KaloHit,
+  addKaloSession, checkKaloSessions, deleteKaloSession, createVideoFromKalo, kaloToShowcase, kaloVideoUrl, searchKalo, signupKaloSession, type KaloDetail, type KaloHit,
 } from "./actions";
+
+export type TikTokTab = "produk" | "video" | "cari" | "tersimpan";
 
 const money = (code: string) => new Intl.NumberFormat("id-ID", { style: "currency", currency: countryOf(code)?.currency ?? "IDR", notation: "compact", maximumFractionDigits: 1 });
 const productUrl = (id: string) => `https://www.tiktok.com/view/product/${id}`;
@@ -26,9 +32,14 @@ const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Gagal");
 // ---------------------------------------------------------------- research
 
 export function KaloStudio({
-  hasSession, lastKeywords, lastCountry = "ID", autoSearch = false, initialResults = null, initialDetailId = null, savedKeys = [],
+  hasSession, connect, lastKeywords, lastCountry = "ID", autoSearch = false, initialResults = null, initialDetailId = null, savedKeys = [], initialTab = "produk", saved, savedCount = 0,
 }: {
+  initialTab?: TikTokTab;
+  saved?: React.ReactNode; // "Tersimpan" list, rendered by the page
+  savedCount?: number;
   hasSession: boolean;
+  /** "Tambah sesi" button shown in the middle while there is no usable session */
+  connect?: React.ReactNode;
   lastKeywords: string[];
   lastCountry?: string;
   autoSearch?: boolean;
@@ -42,7 +53,15 @@ export function KaloStudio({
   const [meta, setMeta] = useState<{ cached: boolean; keywords: string[]; country: string } | null>(
     initialResults ? { cached: true, keywords: lastKeywords, country: lastCountry } : null,
   );
-  const [filter, setFilter] = usePersistentState("riset:kalo-filter", "");
+  const [mode, setModeState] = useState<TikTokTab>(initialTab);
+  // the tab lives in the URL (?tab=), so a refresh or a shared link opens the same view
+  const setMode = (t: TikTokTab) => {
+    setModeState(t);
+    const u = new URL(window.location.href);
+    u.searchParams.set("tab", t);
+    window.history.replaceState(null, "", u);
+  };
+  const [refreshSlot, setRefreshSlot] = useState<HTMLDivElement | null>(null);
   const [detail, setDetailState] = useState<KaloHit | null>(() => (initialDetailId ? initialResults?.find((r) => r.id === initialDetailId) ?? null : null));
   // the open product lives in the URL (?produk=), so a refresh reopens it
   const setDetail = (h: KaloHit | null) => {
@@ -53,6 +72,7 @@ export function KaloStudio({
     window.history.replaceState(null, "", u);
   };
   const [pending, start] = useTransition();
+  const [savedQ, setSavedQ] = useState("");
   const [adding, setAdding] = useState<string | null>(null);
 
   const search = (text = q, cc = country) =>
@@ -90,86 +110,105 @@ export function KaloStudio({
   if (!hasSession) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-10 text-center">
-        <BarChart3 className="size-7 text-muted-foreground" />
+        <KaloDataIcon className="size-8" />
         <p className="text-sm font-medium">Hubungkan KaloData dulu</p>
-        <p className="max-w-md text-xs text-muted-foreground">KaloData memberi data penjualan produk TikTok Shop (GMV, tren harian, video & kreator terlaris). Tambahkan sesi lewat tombol Kelola sesi di kanan atas, bisa tempel cookie atau buat akun trial otomatis.</p>
+        <p className="max-w-md text-xs text-muted-foreground">KaloData memberi data penjualan produk TikTok Shop (GMV, tren harian, video & kreator terlaris). Tempel cookie akun KaloData kamu, atau buat akun trial otomatis.</p>
+        {connect}
       </div>
     );
   }
 
-  const k = filter.trim().toLowerCase();
-  const shown = (results ?? []).filter((r) => !k || r.name.toLowerCase().includes(k));
   const top = results?.[0]?.gmv30 ?? 1;
+  const cc = meta?.country ?? country;
+  const runSearch = () => {
+    if (!q.trim()) return;
+    setMode("cari");
+    search(q, country);
+  };
 
   return (
-    <div className="flex-1 space-y-4">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          search();
-        }}
-        className="flex flex-wrap gap-2"
+    <RefreshSlot.Provider value={refreshSlot}>
+    <div className="flex-1 space-y-3">
+      <RisetToolbar<TikTokTab>
+        refreshSlot={setRefreshSlot}
+        tabs={[
+          { id: "produk", label: "Top produk" },
+          { id: "video", label: "Video terlaris" },
+          ...(results || mode === "cari" ? [{ id: "cari" as const, label: "Hasil cari", badge: results?.length ?? null }] : []),
+          { id: "tersimpan", label: "Tersimpan", badge: savedCount || null },
+        ]}
+        active={mode}
+        onTab={setMode}
+        search={
+          mode === "tersimpan"
+            ? { value: savedQ, onChange: (v) => (setSavedQ(v), savedFilter(v)), placeholder: "Saring produk tersimpan" }
+            : { value: q, onChange: setQ, onSubmit: runSearch, placeholder: "Cari produk, pisahkan koma: kaos polos, kaos oversize", busy: pending && mode === "cari" }
+        }
       >
-        <CountrySelect value={country} onChange={(c) => { setCountry(c); if (q.trim()) search(q, c); }} disabled={pending} label="Pasar KaloData" />
-        <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border bg-card px-3 text-xs focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
-          <Search className="size-4 text-muted-foreground" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Kata kunci produk, pisahkan koma. Contoh: kaos polos, kaos oversize, singlet pria" className="min-w-0 flex-1 bg-transparent outline-none" />
-        </label>
-        <button type="submit" disabled={pending || !q.trim()} className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-          {pending && !adding ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Riset
-        </button>
-      </form>
-      <p className="text-xs text-muted-foreground">
-        Pencarian nama memakai jalur hemat kuota KaloData (estimasi GMV 30 hari). Klik <b>Detail</b> untuk tren harian, video & kreator terlaris (memakai kuota detail harian, hasil disimpan 24 jam).
-      </p>
+        {mode !== "tersimpan" && (
+          <CountrySelect
+            value={country}
+            onChange={(c) => {
+              setCountry(c);
+              if (mode === "cari" && q.trim()) search(q, c);
+            }}
+            label="Pasar TikTok Shop"
+          />
+        )}
+      </RisetToolbar>
 
-      {results && (
+      {mode === "tersimpan" ? (
+        saved
+      ) : mode !== "cari" ? (
+        <MarketTops mode={mode} country={country} savedKeys={savedKeys} onDetail={setDetail} />
+      ) : (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">{meta && <CountryBadge code={meta.country} />}<b className="text-foreground">{results.length}</b> produk dari {meta?.keywords.length} kata kunci{meta?.cached ? " · dari cache" : ""}</span>
-            <label className="ml-auto flex h-8 w-full items-center gap-2 rounded-lg border bg-card px-2.5 sm:w-60">
-              <Search className="size-3.5" />
-              <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Saring hasil..." className="min-w-0 flex-1 bg-transparent text-foreground outline-none" />
-            </label>
-          </div>
-          <div className="overflow-hidden rounded-xl border bg-card">
-            {shown.slice(0, 200).map((r, i) => (
-              <div key={r.id} className="flex items-center gap-3 border-b px-3 py-2 last:border-b-0">
-                <span className="w-6 shrink-0 text-center text-xs font-semibold text-muted-foreground tabular-nums">{i + 1}</span>
-                <button type="button" onClick={() => setDetail(r)} className="shrink-0" aria-label="Lihat detail">
-                  <KaloImg src={kaloProductImg(r.id)} className="size-11 rounded-lg border" />
-                </button>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium" title={r.name}>{r.name}</p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <div className="h-1 w-32 overflow-hidden rounded-full bg-muted">
-                      <div className="h-full rounded-full bg-[#f2994a]" style={{ width: `${Math.max(2, (r.gmv30 / top) * 100)}%` }} />
-                    </div>
-                    <span className="text-[11px] text-muted-foreground">GMV 30 hari <b className="text-foreground">{money(meta?.country ?? country).format(r.gmv30)}</b></span>
-                  </div>
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <button type="button" onClick={() => setDetail(r)} className="flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] font-medium hover:bg-accent"><TrendingUp className="size-3.5" /> Detail</button>
-                  <SaveProductButton
-                    compact
-                    saved={savedKeys.includes(`${r.id}:${meta?.country ?? country}`)}
-                    product={{ productId: r.id, country: meta?.country ?? country, source: "kalodata", title: r.name, image: kaloProductImg(r.id), metrics: { gmv30: money(meta?.country ?? country).format(r.gmv30) } }}
-                  />
-                  <button type="button" disabled={adding === r.id} onClick={() => toShowcase(r)} title="Tambah ke etalase TikTok" className="flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-                    {adding === r.id ? <Loader2 className="size-3.5 animate-spin" /> : <Store className="size-3.5" />} Etalase
-                  </button>
-                  <a href={productUrl(r.id)} target="_blank" rel="noreferrer" title="Buka di TikTok" className="grid size-7 place-items-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"><ExternalLink className="size-3.5" /></a>
-                  <button type="button" title="Salin ID produk" onClick={() => { void navigator.clipboard.writeText(r.id); toast.success("ID produk disalin"); }} className="grid size-7 place-items-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"><Copy className="size-3.5" /></button>
-                </div>
-              </div>
-            ))}
-            {shown.length === 0 && <p className="p-8 text-center text-xs text-muted-foreground">Tidak ada hasil.</p>}
-          </div>
+          <RefreshButton onRefresh={meta ? () => search(meta.keywords.join(", "), cc) : undefined} pending={pending} />
+          {!results ? (
+            <EmptyBox>{pending ? <><Loader2 className="size-4 animate-spin" /> Mencari di KaloData...</> : "Belum ada pencarian."}</EmptyBox>
+          ) : (
+            <ListBox dim={pending}>
+              {results.slice(0, 200).map((r, i) => (
+                <ProductRow
+                  key={r.id}
+                  rank={i + 1}
+                  image={kaloProductImg(r.id)}
+                  title={r.name}
+                  onOpen={() => setDetail(r)}
+                  intent={intentProps(r.id, cc)}
+                  actions={
+                    <>
+                      <button type="button" onClick={() => setDetail(r)} className={pillBtn}><TrendingUp className="size-3.5" /> Detail</button>
+                      <SaveProductButton
+                        compact
+                        saved={savedKeys.includes(`${r.id}:${cc}`)}
+                        product={{ productId: r.id, country: cc, source: "kalodata", title: r.name, image: kaloProductImg(r.id), metrics: { gmv30: money(cc).format(r.gmv30) } }}
+                      />
+                      <button type="button" disabled={adding === r.id} onClick={() => toShowcase(r)} title="Tambah ke etalase TikTok" className="flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                        {adding === r.id ? <Loader2 className="size-3.5 animate-spin" /> : <Store className="size-3.5" />} Etalase
+                      </button>
+                      <a href={productUrl(r.id)} target="_blank" rel="noreferrer" title="Buka di TikTok" className={iconBtn}><ExternalLink className="size-3.5" /></a>
+                      <button type="button" title="Salin ID produk" onClick={() => { void navigator.clipboard.writeText(r.id); toast.success("ID produk disalin"); }} className={iconBtn}><Copy className="size-3.5" /></button>
+                    </>
+                  }
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <span className="inline-block h-1 w-24 overflow-hidden rounded-full bg-muted align-middle">
+                      <span className="block h-full rounded-full bg-[#f2994a]" style={{ width: `${Math.max(2, (r.gmv30 / top) * 100)}%` }} />
+                    </span>
+                    GMV 30 hari <b className="text-foreground">{money(cc).format(r.gmv30)}</b>
+                  </span>
+                </ProductRow>
+              ))}
+              {results.length === 0 && <p className="p-8 text-center text-xs text-muted-foreground">Tidak ada hasil.</p>}
+            </ListBox>
+          )}
         </div>
       )}
 
       <DetailDialog hit={detail} country={meta?.country ?? country} savedKeys={savedKeys} onClose={() => setDetail(null)} />
     </div>
+    </RefreshSlot.Provider>
   );
 }
 
@@ -254,7 +293,7 @@ function DetailDialog({ hit, country, savedKeys, onClose }: { hit: KaloHit | nul
     if (!hit) return;
     let alive = true;
     setTimeout(() => alive && (setPhoto(0), setPlaying(null)), 0);
-    kaloDetail(hit.id, country).then(
+    getDetail(hit.id, country).then(
       (data) => alive && setState({ id: hit.id, data }),
       (e) => alive && setState({ id: hit.id, error: errMsg(e) }),
     );
@@ -447,7 +486,8 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   dead: { label: "Mati", cls: "bg-destructive/10 text-destructive" },
 };
 
-export function SessionsButton({ sessions, active }: { sessions: SessionView[]; active: number }) {
+/** "Kelola sesi" in the Riset header, or (variant "empty") the big "Tambah sesi" button in the middle of an empty page. */
+export function SessionsButton({ sessions, active, variant = "header" }: { sessions: SessionView[]; active: number; variant?: "header" | "empty" }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [cookie, setCookie] = useState("");
@@ -469,10 +509,16 @@ export function SessionsButton({ sessions, active }: { sessions: SessionView[]; 
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="flex h-9 items-center gap-1.5 rounded-lg border bg-card px-3.5 text-[13px] font-medium hover:bg-accent">
-        <KeyRound className="size-4" /> Kelola sesi
-        <span className={`rounded-full px-1.5 text-[10px] ${active ? "bg-status-ok/15 text-status-ok" : "bg-muted text-muted-foreground"}`}>{active} aktif</span>
-      </button>
+      {variant === "empty" ? (
+        <button type="button" onClick={() => setOpen(true)} className="mt-2 flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground hover:bg-primary/90">
+          <Plus className="size-4" /> Tambah sesi KaloData
+        </button>
+      ) : (
+        <button type="button" onClick={() => setOpen(true)} className="flex h-9 items-center gap-1.5 rounded-lg border bg-card px-3.5 text-[13px] font-medium hover:bg-accent">
+          <KeyRound className="size-4" /> Kelola sesi
+          <span className={`rounded-full px-1.5 text-[10px] ${active ? "bg-status-ok/15 text-status-ok" : "bg-muted text-muted-foreground"}`}>{active} aktif</span>
+        </button>
+      )}
       <Dialog open={open} onOpenChange={(o) => { if (!busy) { setOpen(o); setConfirm(null); } }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>

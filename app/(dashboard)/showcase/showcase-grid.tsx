@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CircleAlert, CircleCheck, Clapperboard, ExternalLink, Link2, Loader2, Package, Plus, RefreshCw, Search, Store, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -8,7 +8,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { mediaUrl } from "@/lib/media-url";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import { confirmDialog } from "@/components/confirm-dialog";
-import { addShowcaseProducts, createProjectFromProduct, removeShowcaseProducts, setShowcaseAutoSync, syncShowcase } from "./actions";
+import { addShowcaseProducts, createProjectFromProduct, removeShowcaseProducts, syncShowcase } from "./actions";
+import { ProductDetailDialog } from "./product-detail";
 
 type Product = {
   id: number;
@@ -23,6 +24,9 @@ type Product = {
   shopName: string | null;
   cover: string | null;
   labels: string[];
+  hasDetail: boolean;
+  posted: number; // videos with this product link already live on this account (Jadwal)
+  scheduled: number; // uploaded, TikTok publishes them later
 };
 type Concept = { id: string; title: string; bestFor: string };
 
@@ -54,11 +58,46 @@ export function SyncButton({ accountId }: { accountId: number }) {
   );
 }
 
+/**
+ * An account that was never synced (logged in before auto-sync existed, or its post-login sync failed):
+ * fetch its showcase on the first visit instead of waiting for a click. Retry stays one click away.
+ */
+function FirstSync({ accountId }: { accountId: number }) {
+  const router = useRouter();
+  const [state, setState] = useState<{ status: "loading" } | { status: "failed"; error: string }>({ status: "loading" });
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return; // dev StrictMode mounts twice: one TikTok visit only
+    started.current = true;
+    syncShowcase(accountId).then(
+      (r) => {
+        toast.success(`Etalase diambil · ${r.count} produk`);
+        router.refresh();
+      },
+      (e) => setState({ status: "failed", error: e instanceof Error ? e.message : "Gagal mengambil etalase" }),
+    );
+  }, [accountId, router]);
+
+  return (
+    <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed p-12 text-center">
+      {state.status === "loading" ? <Loader2 className="size-7 animate-spin text-muted-foreground" /> : <CircleAlert className="size-7 text-muted-foreground" />}
+      <p className="text-sm font-medium">{state.status === "loading" ? "Mengambil etalase dari TikTok Shop..." : "Etalase belum bisa diambil"}</p>
+      <p className="max-w-sm text-xs text-muted-foreground">
+        {state.status === "loading" ? "Sekali saja untuk akun ini, butuh ±15 detik. Setelah itu etalase diperbarui otomatis." : state.error}
+      </p>
+      {state.status === "failed" && <div className="mt-2"><SyncButton accountId={accountId} /></div>}
+    </div>
+  );
+}
+
 export function ShowcaseGrid({ accountId, products, concepts, neverSynced }: { accountId: number; products: Product[]; concepts: Concept[]; neverSynced: boolean }) {
   const [q, setQ] = usePersistentState("showcase:q", "");
   const [making, setMaking] = useState<Product | null>(null);
+  const [viewing, setViewing] = useState<Product | null>(null);
   const k = q.trim().toLowerCase();
   const shown = k ? products.filter((p) => `${p.title} ${p.shopName ?? ""} ${p.productId}`.toLowerCase().includes(k)) : products;
+
+  if (!products.length && neverSynced) return <FirstSync key={accountId} accountId={accountId} />;
 
   if (!products.length) {
     return (
@@ -85,7 +124,7 @@ export function ShowcaseGrid({ accountId, products, concepts, neverSynced }: { a
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
         {shown.map((p) => (
           <article key={p.id} className="group flex flex-col overflow-hidden rounded-xl border bg-card transition-colors hover:border-ring/40">
-            <div className="relative aspect-square overflow-hidden bg-muted">
+            <button type="button" onClick={() => setViewing(p)} aria-label={`Detail ${p.title}`} className="relative block aspect-square overflow-hidden bg-muted">
               {p.cover ? (
                 <img src={mediaUrl(p.cover)} alt="" loading="lazy" className="size-full object-cover transition-transform duration-500 group-hover:scale-105" />
               ) : (
@@ -101,9 +140,18 @@ export function ShowcaseGrid({ accountId, products, concepts, neverSynced }: { a
                 {p.hidden && <span className="rounded bg-black/70 px-1.5 py-px text-[10px] text-white">Disembunyikan</span>}
                 {!p.inStock && <span className="rounded bg-black/70 px-1.5 py-px text-[10px] text-white">Stok habis</span>}
               </div>
-            </div>
+              <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 pt-6 pb-1.5 text-left text-[11px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
+                {p.hasDetail ? "Lihat detail" : "Lihat detail lengkap"}
+              </span>
+              {(p.posted > 0 || p.scheduled > 0) && (
+                <span className="absolute right-2 bottom-2 flex flex-col items-end gap-1 group-hover:opacity-0">
+                  {p.posted > 0 && <span className="rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-semibold text-[#4ade80] backdrop-blur" title="Video dengan produk ini yang sudah tayang di akun ini">▶ {p.posted} video terposting</span>}
+                  {p.scheduled > 0 && <span className="rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-semibold text-[#4ade80] backdrop-blur" title="Sudah diunggah, tayang sesuai jadwal di TikTok">🕒 {p.scheduled} terjadwal</span>}
+                </span>
+              )}
+            </button>
             <div className="flex flex-1 flex-col gap-1 p-2.5">
-              <p className="line-clamp-2 text-xs leading-snug font-medium" title={p.title}>{p.title}</p>
+              <button type="button" onClick={() => setViewing(p)} className="line-clamp-2 text-left text-xs leading-snug font-medium hover:underline" title={p.title}>{p.title}</button>
               <p className="truncate text-[11px] text-muted-foreground">{p.shopName ?? "—"}</p>
               <p className="flex items-baseline gap-1.5">
                 <span className="text-[13px] font-semibold">{p.price}</span>
@@ -147,6 +195,7 @@ export function ShowcaseGrid({ accountId, products, concepts, neverSynced }: { a
         ))}
       </div>
 
+      <ProductDetailDialog product={viewing} onClose={() => setViewing(null)} onMakeVideo={() => { setMaking(viewing); setViewing(null); }} />
       <ConceptPicker product={making} concepts={concepts} onClose={() => setMaking(null)} />
     </div>
   );
@@ -313,33 +362,49 @@ export function AddProductsButton({ accountId }: { accountId: number }) {
   );
 }
 
-const SYNC_LABEL: Record<number, string> = { 0: "Mati", 15: "Tiap 15 menit", 30: "Tiap 30 menit", 60: "Tiap 1 jam", 180: "Tiap 3 jam", 360: "Tiap 6 jam" };
+const STALE_MS = 3 * 60_000; // older than this: re-read the showcase as soon as the page is looked at
+const LOOK_EVERY_MS = 5 * 60_000; // while the page stays open
+const syncFmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
 
-/** Auto-sync interval picker (applies to every TikTok account). */
-export function AutoSyncSelect({ value, choices }: { value: number; choices: number[] }) {
+/**
+ * Keeps the showcase live without a setting: when the page opens, when the window comes back into view and every
+ * few minutes while it is open, the showcase is re-read from TikTok Shop if the last sync is older than 3 minutes.
+ * Adding/removing products and opening a product refresh it right away too (actions.ts, product-detail.tsx).
+ */
+export function LiveSync({ accountId, lastSync, count }: { accountId: number; lastSync: number | null; count: number }) {
   const router = useRouter();
-  const [pending, start] = useTransition();
+  const [syncing, setSyncing] = useState(false);
+  const busy = useRef(false);
+  const last = useRef(lastSync);
+  useEffect(() => {
+    last.current = lastSync;
+  }, [lastSync]);
+  useEffect(() => {
+    const look = () => {
+      if (busy.current || document.visibilityState !== "visible") return;
+      if (last.current && Date.now() - last.current < STALE_MS) return;
+      busy.current = true;
+      setSyncing(true);
+      syncShowcase(accountId)
+        .then(() => router.refresh())
+        .catch(() => {}) // profile busy or TikTok slow: the next look retries
+        .finally(() => {
+          busy.current = false;
+          setSyncing(false);
+        });
+    };
+    look();
+    const id = setInterval(look, LOOK_EVERY_MS);
+    document.addEventListener("visibilitychange", look);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", look);
+    };
+  }, [accountId, router]);
   return (
-    <label className="flex h-8 items-center gap-1.5 rounded-lg border bg-card px-2.5 text-xs text-muted-foreground" title="Etalase semua akun TikTok disinkronkan otomatis di latar belakang selama aplikasi terbuka">
-      <RefreshCw className={`size-3.5 ${pending ? "animate-spin" : ""}`} /> Sinkron otomatis
-      <select
-        value={value}
-        disabled={pending}
-        onChange={(e) =>
-          start(async () => {
-            try {
-              await setShowcaseAutoSync(Number(e.target.value));
-              toast.success(Number(e.target.value) ? `Sinkron otomatis ${SYNC_LABEL[Number(e.target.value)].toLowerCase()}` : "Sinkron otomatis dimatikan");
-              router.refresh();
-            } catch (err) {
-              toast.error(err instanceof Error ? err.message : "Gagal");
-            }
-          })
-        }
-        className="bg-transparent font-medium text-foreground outline-none"
-      >
-        {choices.map((m) => <option key={m} value={m}>{SYNC_LABEL[m] ?? `${m} menit`}</option>)}
-      </select>
-    </label>
+    <span className="flex items-center gap-1.5 text-xs text-muted-foreground" title="Etalase disinkronkan otomatis saat halaman dibuka, saat produk ditambah/dihapus, dan saat produk diklik">
+      <RefreshCw className={`size-3.5 ${syncing ? "animate-spin text-brand-light" : ""}`} />
+      {count} produk di etalase · {syncing ? "menyinkronkan..." : lastSync ? `sinkron otomatis ${syncFmt.format(lastSync)}` : "sinkron otomatis"}
+    </span>
   );
 }

@@ -177,3 +177,11 @@ html.is-desktop .titlebar {
   display: flex;
 }
 
+
+/* page bodies still scroll (wheel, keys, touch); only the bar is hidden */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

@@ -54,7 +54,7 @@ function AccountCard({ a }: { a: Account }) {
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{a.displayName || a.username}</p>
-          <p className="truncate text-xs text-muted-foreground">@{a.username}</p>
+          <p className="truncate text-xs text-muted-foreground">{a.username.includes("@") ? a.username : `@${a.username}`}</p>
         </div>
         <span className={`flex h-6 shrink-0 items-center gap-1 rounded-full border px-2 text-[11px] font-medium ${s.cls}`}>
           <s.icon className="size-3" />
