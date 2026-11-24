@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { mediaUrl } from "@/lib/media-url";
 import type { EditorJob, SourceFile } from "@/lib/youtube-editor";
 import { ASPECTS, PIP_RANGE, pipBox, RATIO_RANGE, SIZES, type Aspect, type EditorSettings, type Fill, type Fit, type Flip, type Seam, type Shape, type Size } from "@/lib/youtube-editor-config";
-import { clipLengths, openMediaFolder, previewFrame, refreshLists, renderStatus, renderVideos, saveEditorSettings, stopRender } from "./actions";
+import { clipLengths, openMediaFolder, previewClip, previewFrame, refreshLists, renderStatus, renderVideos, saveEditorSettings, stopRender } from "./actions";
 
 // YouTube → Editor, full screen over the app (sidebar hidden): media on the left, the live monitor in the middle,
 // settings on the right. Click Shorts to pick them, drag the divider (or the reaction overlay) on the monitor, press Render.
@@ -21,6 +21,7 @@ type Sort = "new" | "old" | "az";
 type Show = "all" | "todo" | "done";
 type Saved = { channel: string; queue: string[]; games: string[]; random: boolean; q: string; sort: Sort; show: Show; tab: Tab };
 const PAGE = 24;
+const PREVIEW_SECS = 6; // length of the playable preview (lib renderPreviewClip default)
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const ON = "border-primary bg-primary/10 font-semibold text-primary dark:border-emerald-500/60 dark:bg-emerald-500/10 dark:text-emerald-400";
 
@@ -107,6 +108,7 @@ export function VideoEditor({
   const [random, setRandom] = useState(true);
   const [job, setJob] = useState(initialJob);
   const [preview, setPreview] = useState<{ url: string | null; busy: boolean; error: string | null }>({ url: null, busy: false, error: null });
+  const [vid, setVid] = useState<{ url: string | null; key: string; busy: boolean }>({ url: null, key: "", busy: false });
   const [drag, setDrag] = useState<number | null>(null);
   // reaction overlay being moved/resized on the monitor (committed on release)
   const [ov, setOv] = useState<{ x: number; y: number; size: number } | null>(null);
@@ -269,6 +271,19 @@ export function VideoEditor({
   };
   const line = drag ?? cfg.ratio;
   const [W, H] = cfg.size.split("x").map(Number);
+  // playable preview: shown only while it still matches what is on the monitor (any change falls back to the still)
+  const vidKey = JSON.stringify([clip, sampleGame, cfg, at]);
+  const showVid = !!vid.url && vid.key === vidKey;
+  const playPreview = async () => {
+    if (!clip || !sampleGame) return;
+    const key = vidKey;
+    setVid({ url: null, key, busy: true });
+    const r = await previewClip(clip, sampleGame, cfg, at);
+    if ("error" in r) {
+      setVid({ url: null, key: "", busy: false });
+      toast.error(r.error ?? "Preview video gagal dibuat");
+    } else setVid({ url: mediaUrl(r.ok!), key, busy: false });
+  };
   const pb = pipBox(ov ? { ...cfg, pipX: ov.x, pipY: ov.y, pipSize: ov.size } : cfg, W, H);
   const ovDown = (e: React.PointerEvent, mode: "move" | "size") => {
     if (running) return;
@@ -525,9 +540,19 @@ export function VideoEditor({
               )}
               {drag != null && <span className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded bg-black/70 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-white tabular-nums">Asli {drag}% · Overlay {100 - drag}%</span>}
               {preview.busy && drag == null && <span className="pointer-events-none absolute top-2 right-2 grid size-7 place-items-center rounded-full bg-black/60"><Loader2 className="size-4 animate-spin text-white" /></span>}
+              {showVid && (
+                <div className="absolute inset-0 z-10 bg-black" onPointerDown={(e) => e.stopPropagation()}>
+                  <video src={vid.url!} autoPlay controls playsInline className="h-full w-full object-contain" />
+                  <button type="button" onClick={() => setVid({ url: null, key: "", busy: false })} aria-label="Tutup preview video" title="Kembali ke gambar" className="absolute top-2 right-2 grid size-8 place-items-center rounded-full bg-black/70 text-white hover:bg-black"><X className="size-4" /></button>
+                </div>
+              )}
             </div>
           </div>
-          <div className="flex w-full max-w-lg items-center gap-2 text-[11px] text-white/70">
+          <div className="flex w-full max-w-xl items-center gap-2 text-[11px] text-white/70">
+            <button type="button" onClick={playPreview} disabled={!clip || !sampleGame || vid.busy} title={`Putar ${PREVIEW_SECS} detik hasil dengan suara, mulai dari waktu ini`} className="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+              {vid.busy ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5 fill-current" />}
+              {vid.busy ? "Menyiapkan…" : "Putar preview"}
+            </button>
             <Timer className="size-3.5 shrink-0" />
             <span className="w-9 tabular-nums">{fmt(at)}</span>
             <input type="range" aria-label="Waktu preview" min={0} max={Math.max(1, Math.floor(clipLen) - 1)} step={1} value={Math.min(at, Math.max(1, Math.floor(clipLen) - 1))} onChange={(e) => setAt(Number(e.target.value))} className="h-1 flex-1 cursor-pointer accent-primary" />

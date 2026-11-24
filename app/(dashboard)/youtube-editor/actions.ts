@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { z } from "zod";
 import { resolveMedia } from "@/lib/media";
 import { updateSettings } from "@/lib/settings";
-import { cancelRender, editorJob, GAMEPLAY_DIR, listGameplay, listRendered, listResults, probe, renderPreview, SIZES, startRender, type EditorSettings } from "@/lib/youtube-editor";
+import { cancelRender, editorJob, GAMEPLAY_DIR, listGameplay, listRendered, listResults, probe, renderPreview, renderPreviewClip, SIZES, startRender, type EditorSettings } from "@/lib/youtube-editor";
 
 // errors come back as { error } (thrown server-action errors are hidden in production)
 const safe = async <T,>(f: () => Promise<T>) => {
@@ -51,6 +51,13 @@ export const previewFrame = async (original: string, gameplay: string, settings:
   safe(async () => {
     const [o, g] = [Rel.parse(original), Rel.parse(gameplay)];
     return renderPreview(resolveMedia(o), resolveMedia(g), Settings.parse(settings), z.number().min(0).max(36_000).parse(at));
+  });
+
+/** A 6 s clip with sound of the result from `at`, to play on the monitor. */
+export const previewClip = async (original: string, gameplay: string, settings: EditorSettings, at = 0) =>
+  safe(async () => {
+    const [o, g] = [Rel.parse(original), Rel.parse(gameplay)];
+    return renderPreviewClip(resolveMedia(o), resolveMedia(g), Settings.parse(settings), z.number().min(0).max(36_000).parse(at));
   });
 
 /** Lengths (s) of the clips on the timeline. */

@@ -117,12 +117,22 @@ export function layoutFilter(o: EditorSettings) {
   const parts: [number, number][] = side ? [[a, H], [W - a, H]] : [[W, a], [W, H - a]];
   const join = `${fit(0, "a", ...parts[0], o.fitOriginal)};${fit(1, "b", ...parts[1], o.fitGame)};[a][b]${side ? "hstack" : "vstack"}=inputs=2:shortest=1`;
   if (!o.seam) return `${join}[v]`;
-  // soften the seam: blur a band across it and lay it back on top, so the two videos melt into each other
-  const band = even(o.seam);
+  // soften the seam: blur a band across it and lay it back on top with an alpha that fades out to both sides
+  // (full blur on the seam, sharp video at the band's edges), so the two videos melt into each other
+  const band = even(o.seam * 2.5);
   const at = Math.max(0, a - band / 2);
-  const crop = side ? `crop=${band}:${H}:${at}:0` : `crop=${W}:${band}:0:${at}`;
+  const [bw, bh] = side ? [band, H] : [W, band];
+  const crop = `crop=${bw}:${bh}:${side ? at : 0}:${side ? 0 : at}`;
   const pos = side ? `${at}:0` : `0:${at}`;
-  return `${join}[j];[j]split[j1][j2];[j2]${crop},boxblur=${Math.floor(band / 3)}:2:${Math.max(1, Math.floor(band / 4) - 1)}:2[sb];[j1][sb]overlay=${pos}[v]`;
+  const c = band / 2;
+  const fade =
+    `color=c=black:s=${bw}x${bh}:r=30:d=1,format=gray,` +
+    `geq=lum='255*(0.5+0.5*cos(PI*min(1,abs(${side ? "X" : "Y"}-${c})/${c})))',loop=loop=-1:size=1[fm]`;
+  return (
+    `${join}[j];[j]split[j1][j2];` +
+    `[j2]${crop},boxblur=${Math.floor(band / 3)}:2:${Math.max(1, Math.floor(band / 4) - 1)}:2,format=yuva420p[sb];${fade};[sb][fm]alphamerge[sf];` +
+    `[j1][sf]overlay=${pos}[v]`
+  );
 }
 
 /** ffmpeg audio filter → [aout] mixing both sounds at their volumes, or null when nothing is heard. */
@@ -145,6 +155,33 @@ export async function renderPreview(original: string, gameplay: string, o: Edito
     ffmpegPath,
     ["-y", "-hide_banner", "-loglevel", "error", "-ss", at.toFixed(2), "-i", original, "-ss", (o.gameStart >= 0 ? o.gameStart + at : at + 5).toFixed(2), "-i", gameplay, "-filter_complex", layoutFilter(o), "-map", "[v]", "-frames:v", "1", "-q:v", "4", out],
     { windowsHide: true },
+  );
+  return toRel(out);
+}
+
+/** A short playable clip (with sound) of the result from `at`: the Editor's "Putar preview". */
+export async function renderPreviewClip(original: string, gameplay: string, o: EditorSettings, at = 0, secs = 6) {
+  if (!ffmpegPath) throw new Error("ffmpeg tidak tersedia di perangkat ini.");
+  const [a, b] = await Promise.all([probe(original), probe(gameplay)]);
+  const dir = path.join(OUT(), ".preview");
+  fs.mkdirSync(dir, { recursive: true });
+  const out = path.join(dir, `preview-${Date.now()}.mp4`);
+  for (const f of fs.readdirSync(dir)) if (/^preview-\d+\.mp4$/.test(f)) fs.rmSync(path.join(dir, f), { force: true }); // keep only the newest
+  const sound = audioFilter(o, { original: a.audio, game: b.audio });
+  const start = Math.max(0, Math.min(at, a.len - 1));
+  const gameAt = o.gameStart >= 0 ? o.gameStart + start : start + 5;
+  await run(
+    ffmpegPath,
+    [
+      "-y", "-hide_banner", "-loglevel", "error",
+      "-ss", start.toFixed(2), "-i", original,
+      "-stream_loop", "-1", "-ss", (b.len ? gameAt % b.len : 0).toFixed(2), "-i", gameplay,
+      "-filter_complex", sound ? `${layoutFilter(o)};${sound}` : layoutFilter(o),
+      "-map", "[v]", ...(sound ? ["-map", "[aout]", "-c:a", "aac", "-b:a", "128k"] : ["-an"]),
+      "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26", "-pix_fmt", "yuv420p", "-t", String(secs), "-movflags", "+faststart",
+      out,
+    ],
+    { windowsHide: true, timeout: 120_000 },
   );
   return toRel(out);
 }
