@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { z } from "zod";
 import { resolveMedia } from "@/lib/media";
 import { updateSettings } from "@/lib/settings";
-import { cancelRender, editorJob, GAMEPLAY_DIR, listGameplay, listResults, renderPreview, SIZES, startRender, type EditorSettings } from "@/lib/youtube-editor";
+import { cancelRender, editorJob, GAMEPLAY_DIR, listGameplay, listRendered, listResults, renderPreview, SIZES, startRender, type EditorSettings } from "@/lib/youtube-editor";
 
 // errors come back as { error } (thrown server-action errors are hidden in production)
 const safe = async <T,>(f: () => Promise<T>) => {
@@ -17,12 +17,20 @@ const safe = async <T,>(f: () => Promise<T>) => {
 };
 const Rel = z.string().min(3).max(400);
 const Settings = z.object({
-  layout: z.enum(["side", "stack"]),
+  layout: z.enum(["side", "stack", "pip"]),
   size: z.enum(Object.keys(SIZES) as [keyof typeof SIZES, ...(keyof typeof SIZES)[]]),
-  ratio: z.union([z.literal(50), z.literal(60), z.literal(70)]),
+  ratio: z.number().int().min(20).max(80),
   fitOriginal: z.enum(["cover", "contain"]),
   fitGame: z.enum(["cover", "contain"]),
   fill: z.enum(["blur", "black", "white"]),
+  pipMain: z.enum(["original", "game"]),
+  pipCorner: z.enum(["tl", "tr", "bl", "br"]),
+  pipSize: z.number().int().min(20).max(50),
+  volOriginal: z.number().int().min(0).max(150),
+  volGame: z.number().int().min(0).max(100),
+  flipOriginal: z.enum(["none", "h", "v", "hv"]),
+  flipGame: z.enum(["none", "h", "v", "hv"]),
+  seam: z.union([z.literal(0), z.literal(24), z.literal(64)]),
 });
 
 /** Save the Editor configuration in settings.json (not only this browser). */
@@ -45,7 +53,7 @@ export const renderVideos = async (input: { originals: string[]; gameplay: strin
 
 export const renderStatus = async () => editorJob();
 export const stopRender = async () => cancelRender();
-export const refreshLists = async () => ({ gameplay: listGameplay(), results: listResults() });
+export const refreshLists = async () => ({ gameplay: listGameplay(), results: listResults(), rendered: listRendered() });
 
 /** Open a media folder in the OS file manager (the server runs on the user's own PC). */
 export async function openMediaFolder(which: "gameplay" | "results") {
