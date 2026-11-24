@@ -60,7 +60,7 @@ export default async function YouTubePage() {
           />
           <section className="space-y-2">
             <h2 className="text-[13px] font-semibold text-muted-foreground">Channel ({list.length})</h2>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
               {list.map((a, i) => {
                 const s = sums[i];
                 const limit = limits[i];
