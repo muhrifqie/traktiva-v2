@@ -17,6 +17,7 @@ export type ServerInfo = {
   announcements: Announcement[];
   latest: { version: string; url: string; notes: string; mandatory: number; created_at: number } | null;
   remote: Record<string, string | number | boolean>;
+  owner?: { name: string; email: string } | null; // website account the key is linked to (server ≥ 2026-11-24)
 };
 
 export function serverInfo(): ServerInfo | null {
@@ -35,7 +36,7 @@ export function remoteFlag<T extends string | number | boolean>(name: string, fa
 
 /** License card + banners for the dashboard layout (kept here so components stay free of Date.now). */
 export function licenseView(info: ServerInfo | null, appVersion: string) {
-  if (!info?.plan) return { license: { status: "dev" as const, plan: "Pengembangan", expiresAt: null, daysLeft: null, role: "member" as const }, warning: null, update: null };
+  if (!info?.plan) return { license: { status: "dev" as const, plan: "Pengembangan", expiresAt: null, daysLeft: null, role: "member" as const, owner: null }, warning: null, update: null };
   const daysLeft = info.licExp ? Math.max(0, Math.ceil((info.licExp * 1000 - Date.now()) / 86_400_000)) : null;
   const expiresAt = info.licExp
     ? new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Jakarta" }).format(info.licExp * 1000)
@@ -45,7 +46,7 @@ export function licenseView(info: ServerInfo | null, appVersion: string) {
       ? { version: info.latest.version, url: info.latest.url, notes: info.latest.notes, mandatory: !!info.latest.mandatory }
       : null;
   return {
-    license: { status: daysLeft === 0 ? ("expired" as const) : ("active" as const), plan: info.plan[0].toUpperCase() + info.plan.slice(1), expiresAt, daysLeft, role: info.role ?? "member" },
+    license: { status: daysLeft === 0 ? ("expired" as const) : ("active" as const), plan: info.plan[0].toUpperCase() + info.plan.slice(1), expiresAt, daysLeft, role: info.role ?? "member", owner: info.owner ?? null },
     warning: daysLeft != null && daysLeft <= 7 ? `Lisensi habis ${daysLeft ? `${daysLeft} hari lagi` : "hari ini"} (${expiresAt}). Hubungi penjual untuk perpanjang.` : null,
     update,
   };

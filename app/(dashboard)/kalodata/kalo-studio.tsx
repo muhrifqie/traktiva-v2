@@ -32,12 +32,14 @@ const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Gagal");
 // ---------------------------------------------------------------- research
 
 export function KaloStudio({
-  hasSession, lastKeywords, lastCountry = "ID", autoSearch = false, initialResults = null, initialDetailId = null, savedKeys = [], initialTab = "produk", saved, savedCount = 0,
+  hasSession, connect, lastKeywords, lastCountry = "ID", autoSearch = false, initialResults = null, initialDetailId = null, savedKeys = [], initialTab = "produk", saved, savedCount = 0,
 }: {
   initialTab?: TikTokTab;
   saved?: React.ReactNode; // "Tersimpan" list, rendered by the page
   savedCount?: number;
   hasSession: boolean;
+  /** "Tambah sesi" button shown in the middle while there is no usable session */
+  connect?: React.ReactNode;
   lastKeywords: string[];
   lastCountry?: string;
   autoSearch?: boolean;
@@ -110,7 +112,8 @@ export function KaloStudio({
       <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-10 text-center">
         <KaloDataIcon className="size-8" />
         <p className="text-sm font-medium">Hubungkan KaloData dulu</p>
-        <p className="max-w-md text-xs text-muted-foreground">KaloData memberi data penjualan produk TikTok Shop (GMV, tren harian, video & kreator terlaris). Tambahkan sesi lewat tombol Kelola sesi di kanan atas, bisa tempel cookie atau buat akun trial otomatis.</p>
+        <p className="max-w-md text-xs text-muted-foreground">KaloData memberi data penjualan produk TikTok Shop (GMV, tren harian, video & kreator terlaris). Tempel cookie akun KaloData kamu, atau buat akun trial otomatis.</p>
+        {connect}
       </div>
     );
   }
@@ -483,7 +486,8 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   dead: { label: "Mati", cls: "bg-destructive/10 text-destructive" },
 };
 
-export function SessionsButton({ sessions, active }: { sessions: SessionView[]; active: number }) {
+/** "Kelola sesi" in the Riset header, or (variant "empty") the big "Tambah sesi" button in the middle of an empty page. */
+export function SessionsButton({ sessions, active, variant = "header" }: { sessions: SessionView[]; active: number; variant?: "header" | "empty" }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [cookie, setCookie] = useState("");
@@ -505,10 +509,16 @@ export function SessionsButton({ sessions, active }: { sessions: SessionView[]; 
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="flex h-9 items-center gap-1.5 rounded-lg border bg-card px-3.5 text-[13px] font-medium hover:bg-accent">
-        <KeyRound className="size-4" /> Kelola sesi
-        <span className={`rounded-full px-1.5 text-[10px] ${active ? "bg-status-ok/15 text-status-ok" : "bg-muted text-muted-foreground"}`}>{active} aktif</span>
-      </button>
+      {variant === "empty" ? (
+        <button type="button" onClick={() => setOpen(true)} className="mt-2 flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground hover:bg-primary/90">
+          <Plus className="size-4" /> Tambah sesi KaloData
+        </button>
+      ) : (
+        <button type="button" onClick={() => setOpen(true)} className="flex h-9 items-center gap-1.5 rounded-lg border bg-card px-3.5 text-[13px] font-medium hover:bg-accent">
+          <KeyRound className="size-4" /> Kelola sesi
+          <span className={`rounded-full px-1.5 text-[10px] ${active ? "bg-status-ok/15 text-status-ok" : "bg-muted text-muted-foreground"}`}>{active} aktif</span>
+        </button>
+      )}
       <Dialog open={open} onOpenChange={(o) => { if (!busy) { setOpen(o); setConfirm(null); } }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>

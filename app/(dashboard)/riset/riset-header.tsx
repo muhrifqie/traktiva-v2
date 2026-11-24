@@ -21,6 +21,7 @@ export async function risetData(platform: "tiktok" | "shopee") {
   const sessions = (await db.select().from(kaloSessions).orderBy(desc(kaloSessions.id))).map((r) => ({
     id: r.id, label: r.label, masked: maskCookie(r.sessionCookie), email: r.email, source: r.source, status: r.status, lastError: r.lastError, created: fmt.format(r.createdAt),
   }));
+  const active = sessions.filter((s) => s.status === "active").length;
   const all = await db.select().from(savedProducts).orderBy(desc(savedProducts.createdAt));
   const mine = all.filter((s) => (platform === "shopee" ? s.source === "shopee" : s.source !== "shopee"));
   const concepts = PRESETS.filter((p) => p.available).map((p) => ({ id: p.id, title: p.title, bestFor: p.bestFor }));
@@ -32,7 +33,8 @@ export async function risetData(platform: "tiktok" | "shopee") {
   );
   const header = (
     <PageHeader slug="riset">
-      <SessionsButton sessions={sessions} active={sessions.filter((s) => s.status === "active").length} />
+      {/* no session yet: the page itself shows the big "Tambah sesi" button instead */}
+      {sessions.length > 0 && <SessionsButton sessions={sessions} active={active} />}
       <nav className="flex rounded-lg border bg-card p-0.5" aria-label="Platform">
         {RISET_PLATFORMS.map((p) => (
           <Link
@@ -52,5 +54,6 @@ export async function risetData(platform: "tiktok" | "shopee") {
     savedCount: mine.length,
     savedKeys: all.map((s) => `${s.productId}:${s.country}`),
     hasSession: sessions.some((s) => s.status !== "dead"),
+    connect: <SessionsButton sessions={sessions} active={active} variant="empty" />,
   };
 }

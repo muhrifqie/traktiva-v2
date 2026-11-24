@@ -3,6 +3,7 @@
 import { useState, useSyncExternalStore } from "react";
 import { Download, Info, Megaphone, TriangleAlert, X } from "lucide-react";
 import type { Announcement } from "@/lib/server-info";
+import { UpdateButton } from "@/components/update-button";
 
 type Update = { version: string; url: string; notes: string; mandatory: boolean } | null;
 
@@ -53,9 +54,19 @@ export function ServerBanner({ announcements, update, licenseWarning }: { announ
             <b className="font-semibold">Versi {update.version} tersedia.</b>{" "}
             {update.mandatory ? "Update ini wajib: pasang sebelum lanjut bekerja." : update.notes.split("\n")[0]}
           </span>
-          <a href={update.url} target="_blank" rel="noreferrer" className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90">
-            Download
-          </a>
+          <UpdateButton url={update.url} />
+        </div>
+      )}
+      {/* a mandatory update blocks the app until it is installed */}
+      {update?.mandatory && (
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-background/90 p-6 backdrop-blur-sm" role="alertdialog" aria-modal="true" aria-label="Update wajib">
+          <div className="w-full max-w-md rounded-2xl border bg-card p-6 text-center">
+            <Download className="mx-auto size-8 text-brand-light" />
+            <p className="mt-3 text-lg font-semibold">Update wajib: Traktiva v{update.version}</p>
+            <p className="mt-1.5 text-sm text-muted-foreground">Versi ini tidak didukung lagi. Pasang update dulu untuk lanjut; proyek, akun, dan login kamu tetap aman.</p>
+            {update.notes && <p className="mt-3 max-h-32 overflow-y-auto rounded-lg bg-muted/50 p-3 text-left text-xs whitespace-pre-line text-muted-foreground">{update.notes}</p>}
+            <div className="mt-5"><UpdateButton url={update.url} big className="w-full" /></div>
+          </div>
         </div>
       )}
       {shown.map((a) => {

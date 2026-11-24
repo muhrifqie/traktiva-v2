@@ -5,6 +5,7 @@ const net = require("node:net");
 const path = require("node:path");
 
 const license = require("./license");
+const updater = require("./updater");
 
 const ICON = path.join(__dirname, "..", "resources", "icon.png");
 const SCREENS = path.join(__dirname, "screens");
@@ -186,6 +187,11 @@ async function createWindow() {
     return { ok: r.ok, message: r.message };
   });
   ipcMain.handle("license:change", (e) => (e.sender === win.webContents && license.enabled() ? changeLicense() : { ok: false }));
+  // "Update sekarang": download + verify + install the new version without opening the browser
+  ipcMain.removeHandler("update:install");
+  ipcMain.handle("update:install", (e) =>
+    e.sender === win.webContents ? updater.install((p) => !win.isDestroyed() && win.webContents.send("update:progress", p)) : { ok: false },
+  );
 }
 
 // Zoom: Ctrl +/=/-/0 and Ctrl+scroll, clamped 50–200%, remembered across restarts.

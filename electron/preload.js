@@ -8,6 +8,16 @@ contextBridge.exposeInMainWorld("desktop", {
   changeLicense: () => ipcRenderer.invoke("license:change"),
   /** Renew the license session now (fresh plan, banners, settings). */
   refreshLicense: () => ipcRenderer.invoke("license:refresh"),
+  /** In-app update: download, verify and install the newest version (the app restarts). */
+  update: {
+    install: () => ipcRenderer.invoke("update:install"),
+    /** { stage: "check" | "download" | "verify" | "install", received?, total? }; returns an unsubscribe function. */
+    onProgress: (cb) => {
+      const listener = (_e, p) => cb(p);
+      ipcRenderer.on("update:progress", listener);
+      return () => ipcRenderer.removeListener("update:progress", listener);
+    },
+  },
   window: {
     state: () => ipcRenderer.invoke("window:state"),
     minimize: () => ipcRenderer.invoke("window:minimize"),

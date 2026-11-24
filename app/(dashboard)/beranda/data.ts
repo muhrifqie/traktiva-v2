@@ -101,7 +101,8 @@ export async function loadBeranda() {
   return {
     nowSec,
     profile: {
-      name: primary?.displayName || (primary ? `@${primary.username}` : mainGoogle?.email.split("@")[0] ?? "Pengguna Traktiva"),
+      // the license owner first (website account), then the social/Google account as before
+      name: view.license.owner?.name || primary?.displayName || (primary ? `@${primary.username}` : mainGoogle?.email.split("@")[0] ?? "Pengguna Traktiva"),
       username: primary ? `@${primary.username}` : null,
       avatarUrl: primary?.avatarUrl ?? null,
       email: mainGoogle?.email ?? null,

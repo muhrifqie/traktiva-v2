@@ -126,7 +126,10 @@ async function session(req, res, ip) {
   const now = Math.floor(Date.now() / 1000);
   const payload = { lic: lic.id, dev: dev.id, plan: lic.plan, role: lic.role ?? "member", features: JSON.parse(lic.features), licExp: lic.expires_at, iat: now, exp: now + TOKEN_TTL };
   // info = announcements / newest release / remote flags, refreshed on every heartbeat (not signed: TLS is pinned)
-  send(res, 200, { ok: true, token: signToken(secrets.signKey, payload), payload, info: appInfo() });
+  // owner = the website account the key is linked to (sidebar profile + greeting in the app); null = not linked
+  const u = lic.user_id ? db.prepare("SELECT name, email FROM users WHERE id = ?").get(lic.user_id) : null;
+  const owner = u ? { name: (u.name || u.email.split("@")[0]).slice(0, 80), email: u.email } : null;
+  send(res, 200, { ok: true, token: signToken(secrets.signKey, payload), payload, info: { ...appInfo(), owner } });
 }
 
 // ---------------------------------------------------------------- server

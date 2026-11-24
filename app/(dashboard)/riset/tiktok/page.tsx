@@ -10,7 +10,7 @@ const TABS: TikTokTab[] = ["produk", "video", "cari", "tersimpan"];
 // Riset → TikTok Shop: everything from KaloData (top products / top videos per market, keyword search) + saved products.
 export default async function RisetTiktokPage({ searchParams }: PageProps<"/riset/tiktok">) {
   const sp = await searchParams;
-  const { header, saved, savedCount, savedKeys, hasSession } = await risetData("tiktok");
+  const { header, saved, savedCount, savedKeys, hasSession, connect } = await risetData("tiktok");
   const q = typeof sp.q === "string" ? sp.q : null;
   const tab = q ? "cari" : (TABS.find((t) => t === sp.tab) ?? "produk");
   // the last keyword search and its results come back from the DB, so closing/refreshing loses nothing
@@ -22,6 +22,7 @@ export default async function RisetTiktokPage({ searchParams }: PageProps<"/rise
       {header}
       <KaloStudio
         hasSession={hasSession}
+        connect={connect}
         initialTab={tab}
         saved={saved}
         savedCount={savedCount}

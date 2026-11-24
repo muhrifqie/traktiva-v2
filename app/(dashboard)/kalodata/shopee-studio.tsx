@@ -21,8 +21,8 @@ const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Gagal");
  * are ignored server-side), so the search box filters the loaded rows; kaloShopeeTops already accepts the filters for paid plans.
  */
 export function ShopeeStudio({
-  hasSession, initialTab = "produk", saved, savedCount = 0, savedKeys,
-}: { hasSession: boolean; initialTab?: ShopeeTab; saved: React.ReactNode; savedCount?: number; savedKeys: string[] }) {
+  hasSession, connect, initialTab = "produk", saved, savedCount = 0, savedKeys,
+}: { hasSession: boolean; connect?: React.ReactNode; initialTab?: ShopeeTab; saved: React.ReactNode; savedCount?: number; savedKeys: string[] }) {
   const [tab, setTabState] = useState<ShopeeTab>(initialTab);
   const setTab = (t: ShopeeTab) => {
     setTabState(t);
@@ -76,7 +76,11 @@ export function ShopeeStudio({
       {tab === "tersimpan" ? (
         saved
       ) : !hasSession ? (
-        <EmptyBox>Hubungkan KaloData dulu lewat tombol Kelola sesi di kanan atas.</EmptyBox>
+        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-10 text-center">
+          <p className="text-sm font-medium">Hubungkan KaloData dulu</p>
+          <p className="max-w-md text-xs text-muted-foreground">Data produk Shopee terlaris juga diambil dari KaloData. Tempel cookie akun KaloData kamu, atau buat akun trial otomatis.</p>
+          {connect}
+        </div>
       ) : (
         <div className="space-y-3">
           <RefreshButton onRefresh={() => load(country, true)} pending={pending} />
