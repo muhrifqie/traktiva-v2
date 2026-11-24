@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CalendarDays, Plus } from "lucide-react";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { PageHeader } from "@/components/page-header";
@@ -46,17 +47,21 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
   const [tips, provenTags] = await Promise.all([scheduleTips(tiktok.map((a) => a.id), MIN_GAP_MIN), provenHashtagsFor(tiktok.map((a) => a.id))]);
   const queued = jobs.filter((j) => inQueue(j.job)).length;
 
-  const tab = (v: "kalender" | "daftar", label: string) => (
-    <Link href={`/jadwal?tampilan=${v}`} className={`h-7 rounded-md px-3 text-xs leading-7 font-medium ${view === v ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}>{label}</Link>
-  );
   const mapped = jobs.map((j) => ({ ...j.job, scheduledAt: j.job.scheduledAt.getTime(), postedAt: j.job.postedAt?.getTime() ?? null, createdAt: j.job.createdAt.getTime(), username: j.username, title: j.project?.presetId ? projectName(j.project as Parameters<typeof projectName>[0]) : null, views: j.views ?? null }));
 
   return (
     <>
       <AutoRefresh seconds={30} />
       <PageHeader slug="jadwal">
-        <span className="text-xs text-muted-foreground">{queued} dalam antrian</span>
-        <nav className="flex rounded-lg border bg-card p-0.5" aria-label="Tampilan">{tab("kalender", "Kalender")}{tab("daftar", "Daftar")}</nav>
+        {view === "kalender" ? (
+          <Link href="/jadwal?tampilan=daftar" className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-semibold text-primary-foreground hover:bg-primary/90">
+            <Plus className="size-4" /> Jadwalkan video{queued ? <span className="rounded-full bg-black/15 px-1.5 text-[11px] tabular-nums">{queued} antre</span> : null}
+          </Link>
+        ) : (
+          <Link href="/jadwal" className="flex h-9 items-center gap-1.5 rounded-lg border bg-card px-3.5 text-[13px] font-medium hover:bg-accent">
+            <CalendarDays className="size-4" /> Lihat kalender
+          </Link>
+        )}
       </PageHeader>
       {view === "kalender" ? (
         <JadwalCalendar
