@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { accountPosts, accounts, accountStats } from "@/lib/db/schema";
 import { deleteProfile, isProfileKey } from "@/lib/browser/chrome";
 import { removeMedia } from "@/lib/media";
+import { getShopCache, setShopCache } from "@/lib/showcase";
 import * as tiktok from "@/lib/platforms/tiktok";
 import * as meta from "@/lib/platforms/meta";
 import * as youtube from "@/lib/platforms/youtube";
@@ -274,4 +275,28 @@ export async function checkMetaSession(id: number) {
     .where(eq(accounts.id, a.id));
   metaPaths(platform);
   return { valid: same, checkpoint: !res.valid && res.checkpoint, other: res.valid && !same };
+}
+
+// ---------- Facebook: post as the personal profile or a Page ----------
+
+/** Read the personal profile + managed Pages again; keeps the chosen target when it still exists (else the first Page). */
+export async function syncFacebookPages(id: number) {
+  const a = await getAccount(id);
+  if (a.platform !== "facebook" || !isProfileKey(a.sessionKey)) throw new Error("Akun Facebook belum login di Traktiva.");
+  const list = await meta.listFacebookIdentities(a.sessionKey);
+  const prev = (await getShopCache<meta.FacebookIdentities>(a.id, meta.FB_IDENTITIES))?.data.target ?? null;
+  const target = list.some((x) => x.id === prev) ? prev : (list.find((x) => x.kind === "page") ?? list[0])?.id ?? null;
+  await setShopCache(a.id, meta.FB_IDENTITIES, { list, target } satisfies meta.FacebookIdentities);
+  const me = list.find((x) => x.kind === "user");
+  if (me && me.name !== a.displayName) await db.update(accounts).set({ displayName: me.name }).where(eq(accounts.id, a.id));
+  metaPaths("facebook");
+  return { list, target };
+}
+
+export async function setFacebookTarget(id: number, target: string) {
+  const a = await getAccount(id);
+  const cur = (await getShopCache<meta.FacebookIdentities>(a.id, meta.FB_IDENTITIES))?.data;
+  if (!cur?.list.some((x) => x.id === target)) throw new Error("Pilihan tidak ditemukan. Muat ulang daftar Page.");
+  await setShopCache(a.id, meta.FB_IDENTITIES, { ...cur, target });
+  metaPaths("facebook");
 }

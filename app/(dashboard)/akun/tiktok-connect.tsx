@@ -9,7 +9,7 @@ import { PLATFORMS } from "@/lib/db/schema";
 import { PLATFORM } from "@/lib/platforms";
 import { syncShowcase } from "../showcase/actions";
 import { syncYouTubeAccount } from "../youtube-performa/actions";
-import { pollMetaLogin, pollTikTokLogin, pollYouTubeLogin, startMetaLogin, startTikTokLogin, startYouTubeLogin, syncTikTokAccount } from "./actions";
+import { pollMetaLogin, pollTikTokLogin, syncFacebookPages, pollYouTubeLogin, startMetaLogin, startTikTokLogin, startYouTubeLogin, syncTikTokAccount } from "./actions";
 
 type Connectable = "tiktok" | "youtube" | "instagram" | "facebook";
 
@@ -64,7 +64,12 @@ export async function connectMeta(platform: "instagram" | "facebook", accountId?
     await sleep(1500);
     const s = await pollMetaLogin(loginId);
     if (s.status === "identifying") onStep?.("Login terdeteksi, mengenali akun...");
-    if (s.status === "done") return s;
+    if (s.status === "done") {
+      if (platform !== "facebook") return s;
+      onStep?.(`${s.username} tersambung, membaca Page yang kamu kelola...`);
+      const fb = await syncFacebookPages(s.accountId).catch(() => null); // Facebook busy: "Muat ulang" on the card retries
+      return { ...s, pages: fb ? fb.list.filter((x) => x.kind === "page").length : null };
+    }
     if (s.status === "failed" || s.status === "cancelled") throw new Error(s.error || "Login gagal");
   }
 }

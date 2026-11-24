@@ -6,7 +6,10 @@ import { PlatformIcon } from "@/components/platform-icon";
 import { db } from "@/lib/db";
 import { accounts, uploadJobs } from "@/lib/db/schema";
 import { PLATFORM } from "@/lib/platforms";
+import { FB_IDENTITIES, type FacebookIdentities } from "@/lib/platforms/meta";
+import { getShopCache } from "@/lib/showcase";
 import { ConnectButton } from "./connect-button";
+import { FacebookTarget } from "./facebook-target";
 
 const timeFmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
 
@@ -18,6 +21,7 @@ export async function MetaOverview({ platform }: { platform: "instagram" | "face
   const queued = ids.length
     ? await db.select({ id: uploadJobs.accountId, n: count() }).from(uploadJobs).where(and(inArray(uploadJobs.accountId, ids), eq(uploadJobs.status, "queued"))).groupBy(uploadJobs.accountId)
     : [];
+  const fb = platform === "facebook" ? await Promise.all(ids.map((id) => getShopCache<FacebookIdentities>(id, FB_IDENTITIES))) : [];
   const profile = (a: (typeof list)[number]) =>
     platform === "instagram" ? `https://www.instagram.com/${a.username}/` : /^\d+$/.test(a.username) ? `https://www.facebook.com/profile.php?id=${a.username}` : `https://www.facebook.com/${a.username}`;
 
@@ -46,7 +50,7 @@ export async function MetaOverview({ platform }: { platform: "instagram" | "face
           <section className="space-y-2">
             <h2 className="text-[13px] font-semibold text-muted-foreground">Akun ({list.length})</h2>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {list.map((a) => (
+              {list.map((a, i) => (
                 <AccountOverviewCard
                   key={a.id}
                   a={a}
@@ -57,7 +61,9 @@ export async function MetaOverview({ platform }: { platform: "instagram" | "face
                   ]}
                   note={a.lastCheckAt ? `Sesi dicek ${timeFmt.format(a.lastCheckAt)} WIB` : undefined}
                   actions={[{ href: profile(a), label: "Buka profil", icon: ExternalLink, external: true }, { href: `/akun?platform=${platform}`, label: "Kelola sesi", icon: ShieldCheck, primary: true }]}
-                />
+                >
+                  {platform === "facebook" && <FacebookTarget accountId={a.id} data={fb[i]?.data ?? null} />}
+                </AccountOverviewCard>
               ))}
             </div>
           </section>

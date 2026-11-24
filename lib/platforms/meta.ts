@@ -78,13 +78,14 @@ async function identifyFacebook(ctx: BrowserContext, uid: string): Promise<MetaI
   if (!page) return null;
   const r = await page.evaluate(async (id) => {
     const res = await fetch(`/profile.php?id=${id}`, { credentials: "include" }).catch(() => null);
-    return res?.ok ? { url: res.url, html: await res.text() } : null;
+    return res?.ok ? { url: res.url, html: await res.text(), me: document.documentElement.innerHTML.match(/"NAME":"([^"]+)"/)?.[1] ?? null } : null;
   }, uid);
   if (!r || IN_FLOW.test(new URL(r.url).pathname)) return null;
   const vanity = r.url.match(/facebook\.com\/(?!profile\.php)([\w.]+)\/?(?:$|\?)/)?.[1] ?? null;
   const decode = (t: string) => t.replace(/&amp;/g, "&").replace(/&#039;|&#x27;/g, "'").replace(/&quot;/g, '"');
   const title = decode(r.html.match(/<title>([^<]*)<\/title>/i)?.[1] ?? "").replace(/^\(\d+\+?\)\s*/, "").replace(/\s*\|\s*Facebook\s*$/i, "").trim();
-  return { username: vanity ?? uid, uid, name: title && title.toLowerCase() !== "facebook" ? title : null, avatar: null };
+  const me = r.me ? (JSON.parse(`"${r.me}"`) as string) : null;
+  return { username: vanity ?? uid, uid, name: me ?? (title && title.toLowerCase() !== "facebook" ? title : null), avatar: null };
 }
 
 /** Who is signed in. Without a readable profile the session's own user id is enough (filled in on the next check). */
@@ -172,5 +173,49 @@ export async function checkSession(platform: MetaPlatform, sessionKey: string) {
     if (!(await sessionUid(ctx, platform))) return { valid: false as const, checkpoint: false };
     const who = await identify(ctx, platform);
     return who ? { valid: true as const, ...who } : { valid: false as const, checkpoint: false };
+  });
+}
+
+// ---------- Facebook: who to post as (the personal profile or a Page this account manages) ----------
+
+/** One identity the account can post as. id = the profile id Facebook switches to (cookie i_user for a Page). */
+export type FacebookIdentity = { kind: "user" | "page"; id: string; name: string; url: string; pageId: string | null };
+export const FB_IDENTITIES = "fb-identities"; // shopCache key: { list, target }
+export type FacebookIdentities = { list: FacebookIdentity[]; target: string | null };
+
+/** The personal profile plus every Page on "Halaman Anda" (facebook.com/pages/?category=your_pages). */
+export async function listFacebookIdentities(sessionKey: string): Promise<FacebookIdentity[]> {
+  return withProfile(sessionKey, { headless: true }, async (ctx) => {
+    const uid = await sessionUid(ctx, "facebook");
+    if (!uid) throw new Error("Sesi Facebook habis. Login ulang dulu.");
+    const page = ctx.pages()[0] ?? (await ctx.newPage());
+    await page.goto("https://www.facebook.com/pages/?category=your_pages", { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await page.waitForLoadState("load", { timeout: 20_000 }).catch(() => {});
+    await sleep(5000);
+    if (IN_FLOW.test(new URL(page.url()).pathname)) throw new Error("Facebook meminta verifikasi. Klik Login lalu selesaikan di jendela yang terbuka.");
+    const found = await page.evaluate(() => {
+      const html = document.documentElement.innerHTML;
+      const me = html.match(/"NAME":"([^"]+)"/)?.[1] ?? null;
+      const main = document.querySelector("[role=main]") ?? document.body;
+      const pages: { name: string; url: string; id: string | null; pageId: string | null }[] = [];
+      for (const a of main.querySelectorAll("a[href]")) {
+        const href = (a as HTMLAnchorElement).href;
+        const name = (a.textContent ?? "").trim();
+        const m = href.match(/^https:\/\/www\.facebook\.com\/(?:profile\.php\?id=(\d+)|([A-Za-z0-9.]{3,})\/?$)/);
+        if (!m || !name || name.length > 80) continue;
+        // the Page card around it carries the business page id in its other links (Pesan / Promosikan)
+        let box: Element | null = a;
+        let pageId: string | null = null;
+        for (let i = 0; i < 10 && box && !pageId; i++) {
+          box = box.parentElement;
+          pageId = box?.innerHTML.match(/(?:asset_id|page_id)=(\d+)/)?.[1] ?? null;
+        }
+        if (!pageId) continue; // not a Page card (menus, own profile links)
+        if (!pages.some((p) => p.url === href)) pages.push({ name, url: href, id: m[1] ?? null, pageId });
+      }
+      return { me, pages };
+    });
+    const user: FacebookIdentity = { kind: "user", id: uid, name: found.me ? JSON.parse(`"${found.me}"`) : "Profil pribadi", url: `https://www.facebook.com/profile.php?id=${uid}`, pageId: null };
+    return [user, ...found.pages.map((p) => ({ kind: "page" as const, id: p.id ?? p.pageId!, name: p.name, url: p.url, pageId: p.pageId }))];
   });
 }

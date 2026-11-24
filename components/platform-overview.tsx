@@ -35,7 +35,7 @@ type CardAccount = { id: number; username: string; displayName: string | null; a
 
 /** One account/channel: who, login state, six numbers, an optional warning, and its actions. */
 export function AccountOverviewCard({
-  a, stats, warning, actions, loginHref, note,
+  a, stats, warning, actions, loginHref, note, children,
 }: {
   a: CardAccount;
   stats: { icon: LucideIcon; label: string; value: string | number }[];
@@ -43,6 +43,7 @@ export function AccountOverviewCard({
   actions: CardAction[];
   loginHref: string; // where "Perlu login" leads
   note?: string; // small line under the numbers (e.g. when the data was refreshed)
+  children?: React.ReactNode; // platform-specific block above the buttons
 }) {
   const handle = a.username.includes("@") ? a.username : `@${a.username}`;
   return (
@@ -69,6 +70,7 @@ export function AccountOverviewCard({
       </div>
       {note && <p className="text-[11px] text-muted-foreground">{note}</p>}
       {warning && <div className="rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">{warning}</div>}
+      {children}
       <div className="mt-auto grid gap-2 text-xs font-medium" style={{ gridTemplateColumns: `repeat(${actions.length}, minmax(0, 1fr))` }}>
         {actions.map((x) => {
           const cls = `flex h-8 items-center justify-center gap-1.5 rounded-lg ${x.primary ? "bg-primary text-primary-foreground hover:bg-primary/90" : "border hover:bg-accent"}`;
