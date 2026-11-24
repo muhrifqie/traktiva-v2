@@ -181,3 +181,23 @@ export async function syncStudio(sessionKey: string, channelId: string): Promise
     };
   });
 }
+
+/** "1.234" · "0,5" · "1,2 rb" · "3 jt" (Studio's Indonesian numbers) → number */
+export function idNum(s: string | undefined) {
+  const m = s?.match(/([\d.,]+)\s*(rb|jt|M)?/);
+  if (!m) return null;
+  return Number(m[1].replace(/\./g, "").replace(",", ".")) * ({ rb: 1e3, jt: 1e6, M: 1e9 }[m[2] as "rb"] ?? 1);
+}
+
+/** Headline numbers of one channel's last Studio sync (Ringkasan cards). */
+export function ytSummary(d: YouTubeCache) {
+  const cards = [...d.insight.overview, ...d.insight.shorts];
+  return {
+    subscribers: d.channel.subscribers,
+    shorts: Object.values(d.types).filter((t) => t === "short").length,
+    videos: Object.keys(d.types).length,
+    views28: d.insight.overview.find((c) => c.series && /^Penayangan$/i.test(c.title))?.series?.points.reduce((s, [, n]) => s + n, 0) ?? 0,
+    hours28: idNum(cards.find((c) => /waktu tonton/i.test(c.title))?.metrics[0]?.value) ?? 0,
+    stay: cards.flatMap((c) => c.metrics).find((m) => /tetap menonton/i.test(m.label ?? ""))?.value ?? null,
+  };
+}

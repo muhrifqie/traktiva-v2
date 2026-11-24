@@ -1,87 +1,115 @@
 import Link from "next/link";
-import { asc, eq } from "drizzle-orm";
-import { ChevronRight, CircleAlert, Download } from "lucide-react";
-import { AccountAvatar } from "@/components/account-avatar";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
+import { CalendarClock, ChartNoAxesColumn, ChevronRight, Clock, Download, Eye, Film, Layers, MonitorPlay, Repeat, Users } from "lucide-react";
+import { AccountOverviewCard, OverviewEmpty, OverviewTiles } from "@/components/platform-overview";
 import { PageHeader } from "@/components/page-header";
 import { PlatformIcon } from "@/components/platform-icon";
 import { db } from "@/lib/db";
-import { accounts } from "@/lib/db/schema";
-import { isProfileKey } from "@/lib/browser/chrome";
+import { accounts, uploadJobs } from "@/lib/db/schema";
+import { PLATFORM } from "@/lib/platforms";
+import { YT_CACHE, ytSummary, type YouTubeCache } from "@/lib/platforms/youtube-studio";
 import { VERIFY_URL } from "@/lib/platforms/youtube-upload";
 import { youtubeUploadDefaults } from "@/lib/settings";
+import { getShopCache } from "@/lib/showcase";
 import { uploadLimitUntil } from "@/lib/youtube-limit";
 import { UploadSettings } from "./upload-settings";
-import { AccountActions } from "../akun/row-actions";
 import { YouTubeConnectButton } from "../akun/tiktok-connect";
 
 export const dynamic = "force-dynamic";
 
-const dateFmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
+const num = new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 1 });
+const timeFmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
+const COLOR = PLATFORM.youtube.color;
 
-// YouTube home (the sidebar's YouTube button): connected channels with their stored login, then the YouTube tools.
+// YouTube → Ringkasan (also the group button): every channel side by side, same layout as TikTok Shop → Ringkasan
+// (components/platform-overview.tsx); then the upload templates and the YouTube tools.
 export default async function YouTubePage() {
   const list = await db.select().from(accounts).where(eq(accounts.platform, "youtube")).orderBy(asc(accounts.username));
-  const limits = await Promise.all(list.map((a) => uploadLimitUntil(a.id)));
+  const ids = list.map((a) => a.id);
+  const [caches, limits, queued] = await Promise.all([
+    Promise.all(ids.map((id) => getShopCache<YouTubeCache>(id, YT_CACHE))),
+    Promise.all(ids.map((id) => uploadLimitUntil(id))),
+    ids.length
+      ? db.select({ id: uploadJobs.accountId, n: count() }).from(uploadJobs).where(and(inArray(uploadJobs.accountId, ids), eq(uploadJobs.status, "queued"))).groupBy(uploadJobs.accountId)
+      : Promise.resolve([] as { id: number; n: number }[]),
+  ]);
+  const sums = caches.map((c) => (c ? ytSummary(c.data) : null));
+  const total = (f: (s: NonNullable<(typeof sums)[number]>) => number) => sums.reduce((t, s) => t + (s ? f(s) : 0), 0);
+  const q = (id: number) => queued.find((r) => r.id === id)?.n ?? 0;
+
   return (
     <>
       <PageHeader slug="youtube">{list.length > 0 && <YouTubeConnectButton label="Tambah channel" />}</PageHeader>
 
-      <section className="space-y-2">
-        <h2 className="text-[13px] font-semibold text-muted-foreground">Channel tersambung</h2>
-        {list.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed p-8 text-center">
-            <PlatformIcon platform="youtube" className="size-7" />
-            <p className="text-sm font-medium">Belum ada channel YouTube</p>
-            <p className="max-w-sm text-xs text-muted-foreground">Login sekali di jendela Chrome yang terbuka. Sesinya disimpan di profil browser khusus akun ini, jadi tidak perlu login lagi.</p>
-            <div className="mt-2"><YouTubeConnectButton /></div>
-          </div>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {list.map((a) => {
-              const hasSession = isProfileKey(a.sessionKey);
-              return (
-                <article key={a.id} className="flex flex-col gap-3 rounded-xl border bg-card p-4">
-                  <header className="flex items-center gap-3">
-                    <AccountAvatar a={a} size="size-10" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{a.displayName || a.username}</p>
-                      <p className="truncate text-xs text-muted-foreground">{a.username.includes("@") ? a.username : `@${a.username}`}</p>
-                    </div>
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${a.status === "active" ? "bg-status-ok/10 text-status-ok" : "bg-destructive/10 text-destructive"}`}>
-                      {a.status === "active" ? "Login" : "Perlu login"}
-                    </span>
-                  </header>
-                  <p className="text-xs text-muted-foreground">Dicek {a.lastCheckAt ? dateFmt.format(a.lastCheckAt) : "belum pernah"}</p>
-                  {limits[list.indexOf(a)] && (
-                    <p className="flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-                      <CircleAlert className="mt-px size-3.5 shrink-0" />
-                      <span>
-                        Batas upload harian tercapai sampai {dateFmt.format(limits[list.indexOf(a)]!)}. Jadwal upload menunggu otomatis.{" "}
-                        <a href={VERIFY_URL} target="_blank" rel="noreferrer" className="font-medium underline underline-offset-2">Verifikasi nomor HP</a> supaya batasnya naik.
-                      </span>
-                    </p>
-                  )}
-                  <AccountActions id={a.id} platform="youtube" username={a.username} hasSession={hasSession} needsLogin={a.status !== "active" || !hasSession} />
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
+      {list.length === 0 ? (
+        <OverviewEmpty icon={<PlatformIcon platform="youtube" className="size-7" />} title="Belum ada channel YouTube" text="Login sekali di jendela Chrome yang terbuka; sesinya disimpan di profil browser khusus channel itu.">
+          <YouTubeConnectButton />
+        </OverviewEmpty>
+      ) : (
+        <div className="space-y-6">
+          <OverviewTiles
+            color={COLOR}
+            tiles={[
+              { icon: Layers, label: "Channel", value: list.length, sub: `${list.filter((a) => a.status === "active").length} login` },
+              { icon: Users, label: "Subscriber", value: num.format(total((s) => s.subscribers)) },
+              { icon: Eye, label: "Penayangan 28 hari", value: num.format(total((s) => s.views28)) },
+              { icon: CalendarClock, label: "Antre upload", value: queued.reduce((t, r) => t + r.n, 0) },
+            ]}
+          />
+          <section className="space-y-2">
+            <h2 className="text-[13px] font-semibold text-muted-foreground">Channel ({list.length})</h2>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {list.map((a, i) => {
+                const s = sums[i];
+                const limit = limits[i];
+                return (
+                  <AccountOverviewCard
+                    key={a.id}
+                    a={a}
+                    loginHref="/akun?platform=youtube"
+                    stats={[
+                      { icon: Users, label: "Subscriber", value: s ? num.format(s.subscribers) : "—" },
+                      { icon: Film, label: "Video", value: s ? `${s.videos}` : "—" },
+                      { icon: Eye, label: "Views 28h", value: s ? num.format(s.views28) : "—" },
+                      { icon: Clock, label: "Jam tonton", value: s ? num.format(s.hours28) : "—" },
+                      { icon: Repeat, label: "Ditonton", value: s?.stay ?? "—" },
+                      { icon: CalendarClock, label: "Antre", value: q(a.id) },
+                    ]}
+                    note={caches[i] ? `Diperbarui ${timeFmt.format(caches[i]!.capturedAt)} WIB · ${s?.shorts ?? 0} Shorts` : "Belum disinkron dari YouTube Studio"}
+                    warning={
+                      limit ? (
+                        <>
+                          Batas upload harian tercapai sampai {timeFmt.format(limit)}; jadwal menunggu otomatis.{" "}
+                          <a href={VERIFY_URL} target="_blank" rel="noreferrer" className="font-medium underline underline-offset-2">Verifikasi nomor HP</a>
+                        </>
+                      ) : undefined
+                    }
+                    actions={[
+                      { href: `/youtube-performa?akun=${a.id}`, label: "Performa", icon: ChartNoAxesColumn },
+                      ...(a.externalId?.startsWith("UC") ? [{ href: `https://studio.youtube.com/channel/${a.externalId}`, label: "Studio", icon: MonitorPlay, external: true }] : []),
+                      { href: `/jadwal?tampilan=daftar&akun=${a.id}`, label: "Jadwalkan", icon: CalendarClock, primary: true },
+                    ]}
+                  />
+                );
+              })}
+            </div>
+          </section>
 
-      {list.length > 0 && <UploadSettings initial={youtubeUploadDefaults()} />}
+          <UploadSettings initial={youtubeUploadDefaults()} />
 
-      <section className="space-y-2">
-        <h2 className="text-[13px] font-semibold text-muted-foreground">Alat</h2>
-        <Link href="/youtube-shorts" className="flex max-w-md items-center gap-3 rounded-xl border bg-card p-4 hover:border-ring/30 hover:bg-accent/40">
-          <span className="grid size-10 place-items-center rounded-lg bg-muted"><Download className="size-5" /></span>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">Shorts Downloader</p>
-            <p className="text-xs text-muted-foreground">Unduh semua Shorts dari satu channel.</p>
-          </div>
-          <ChevronRight className="size-4 text-muted-foreground" />
-        </Link>
-      </section>
+          <section className="space-y-2">
+            <h2 className="text-[13px] font-semibold text-muted-foreground">Alat</h2>
+            <Link href="/youtube-shorts" className="flex max-w-md items-center gap-3 rounded-xl border bg-card p-4 hover:border-ring/30 hover:bg-accent/40">
+              <span className="grid size-10 place-items-center rounded-lg" style={{ background: `${COLOR}1a`, color: COLOR }}><Download className="size-5" /></span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">Shorts Downloader</p>
+                <p className="text-xs text-muted-foreground">Unduh semua Shorts dari satu channel.</p>
+              </div>
+              <ChevronRight className="size-4 text-muted-foreground" />
+            </Link>
+          </section>
+        </div>
+      )}
     </>
   );
 }
