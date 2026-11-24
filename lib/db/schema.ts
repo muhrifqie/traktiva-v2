@@ -272,6 +272,9 @@ export const uploadJobs = sqliteTable("upload_jobs", {
   attempts: integer("attempts").notNull().default(0),
   postedAt: integer("posted_at", { mode: "timestamp" }),
   postId: text("post_id"), // TikTok video id once matched from the profile sync
+  // YouTube jobs: the video title, and tags/visibility/audience/AI label (TikTok jobs leave both empty)
+  videoTitle: text("video_title"),
+  meta: text("meta", { mode: "json" }).$type<{ tags?: string[]; visibility?: "public" | "unlisted" | "private"; madeForKids?: boolean; aiContent?: boolean }>(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
 });
 

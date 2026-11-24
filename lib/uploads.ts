@@ -4,8 +4,12 @@ import { db } from "@/lib/db";
 import { accounts, uploadJobs } from "@/lib/db/schema";
 import { resolveMedia } from "@/lib/media";
 import { uploadToTikTok } from "@/lib/platforms/tiktok-upload";
+import { UploadLimitError, uploadToYouTube } from "@/lib/platforms/youtube-upload";
+import { markUploadLimit, uploadLimitUntil } from "@/lib/youtube-limit";
 
-// Jadwal Upload runner. A new job is uploaded to TikTok Studio right away (one at a time across the app, so only one
+// Jadwal Upload runner. YouTube jobs go through YouTube Studio at their own time (Studio's schedule pickers are not
+// automatable, so the app must be open then); a channel that hit the daily upload cap waits 24 hours.
+// TikTok: a new job is uploaded to TikTok Studio right away (one at a time across the app, so only one
 // TikTok window works at once): when its time is far enough ahead, TikTok's own "Schedule" is set to it, so TikTok
 // publishes it on time even with the app closed; otherwise it is posted now. A minute timer picks up anything left.
 
@@ -37,13 +41,22 @@ export async function tickUploads() {
   try {
     const waiting = await db.select().from(uploadJobs).where(eq(uploadJobs.status, "queued")).orderBy(asc(uploadJobs.scheduledAt)).limit(10);
     for (const job of waiting) {
-      if (job.scheduledAt.getTime() - Date.now() > SCHEDULE_MAX_DAYS * 86_400_000) continue; // too far for TikTok's schedule yet
       const acc = await db.select().from(accounts).where(eq(accounts.id, job.accountId)).get();
+      const yt = acc?.platform === "youtube";
+      if (yt ? job.scheduledAt.getTime() > Date.now() : job.scheduledAt.getTime() - Date.now() > SCHEDULE_MAX_DAYS * 86_400_000) continue; // not its time yet
       if (!acc?.sessionKey || acc.status !== "active") {
-        await setJob(job.id, { status: "failed", error: "Akun TikTok tidak aktif atau perlu login ulang (Akun Sosial)." });
+        await setJob(job.id, { status: "failed", error: `Akun ${yt ? "YouTube" : "TikTok"} tidak aktif atau perlu login ulang (${yt ? "menu YouTube" : "Akun Sosial"}).` });
         continue;
       }
-      if (!scheduleFor(job.scheduledAt)) {
+      if (yt) {
+        const until = await uploadLimitUntil(acc.id);
+        if (until) {
+          const msg = `Menunggu batas upload harian YouTube (sampai ${new Date(until).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })})`;
+          if (job.progress !== msg) await setJob(job.id, { progress: msg });
+          continue;
+        }
+      }
+      if (yt || !scheduleFor(job.scheduledAt)) {
         // posting now: keep a gap after this account's last post that already went live; the job waits for a later tick
         const last = await db
           .select()
@@ -56,7 +69,7 @@ export async function tickUploads() {
       // re-read right before uploading: it may have been cancelled or deleted since the list was taken
       const fresh = await db.select({ status: uploadJobs.status }).from(uploadJobs).where(eq(uploadJobs.id, job.id)).get();
       if (fresh?.status !== "queued") continue;
-      await runJob(job.id, acc.sessionKey);
+      await runJob(job.id, acc);
     }
   } finally {
     g.__uploadBusy = false;
@@ -68,9 +81,12 @@ export function kickUploads() {
   void tickUploads().catch((e) => console.warn("[upload]", e));
 }
 
-async function runJob(id: number, sessionKey: string, dryRun = false, postNow = false) {
+type Acc = { id: number; platform: string; sessionKey: string | null; externalId: string | null };
+
+async function runJob(id: number, acc: Acc, dryRun = false, postNow = false) {
   const job = await db.select().from(uploadJobs).where(eq(uploadJobs.id, id)).get();
   if (!job) return; // deleted meanwhile
+  const sessionKey = acc.sessionKey!;
   await setJob(id, { status: "uploading", progress: "Menyiapkan...", error: null, attempts: job.attempts + 1 });
   let last = 0;
   const onProgress = (stage: string) => {
@@ -78,6 +94,7 @@ async function runJob(id: number, sessionKey: string, dryRun = false, postNow = 
     last = Date.now();
     void setJob(id, { progress: stage });
   };
+  if (acc.platform === "youtube") return runYouTubeJob(job, acc, dryRun, onProgress);
   try {
     const scheduleAt = postNow ? null : scheduleFor(job.scheduledAt);
     const r = await uploadToTikTok(
@@ -97,16 +114,54 @@ async function runJob(id: number, sessionKey: string, dryRun = false, postNow = 
   }
 }
 
+/** One YouTube job through YouTube Studio: posted now with its visibility (the runner calls it at its time). */
+async function runYouTubeJob(job: typeof uploadJobs.$inferSelect, acc: Acc, dryRun: boolean, onProgress: (s: string) => void) {
+  try {
+    if (!acc.externalId?.startsWith("UC")) throw new Error("Channel YouTube ini belum dikenali (login ulang di menu YouTube).");
+    const m = job.meta ?? {};
+    const r = await uploadToYouTube(
+      {
+        sessionKey: acc.sessionKey!,
+        channelId: acc.externalId,
+        file: resolveMedia(job.video),
+        title: job.videoTitle || job.label || "Video",
+        description: job.caption,
+        tags: m.tags ?? [],
+        visibility: m.visibility ?? "public",
+        madeForKids: !!m.madeForKids,
+        aiContent: m.aiContent ?? true,
+        dryRun,
+        visible: process.env.TRAKTIVA_UPLOAD_HEADLESS !== "1", // Studio misbehaves headless: a visible window, like TikTok
+      },
+      onProgress,
+    );
+    await setJob(
+      job.id,
+      !r.posted
+        ? { status: "queued", progress: `Uji coba berhasil: siap diunggah${"draftPending" in r && r.draftPending ? " (draf uji dihapus otomatis beberapa menit lagi)" : " (draf uji sudah dihapus)"}.` }
+        : { status: "done", progress: null, postedAt: new Date(), postId: r.videoId },
+    );
+  } catch (e) {
+    if (e instanceof UploadLimitError) {
+      await markUploadLimit(acc.id);
+      await setJob(job.id, { status: "queued", progress: null, error: e.message }); // retried by itself after 24 h
+      return;
+    }
+    await setJob(job.id, { status: "failed", progress: null, error: e instanceof Error ? e.message.slice(0, 300) : String(e) });
+  }
+}
+
 /** Post one job now ("Posting sekarang", ignoring its time) or dry-run it (fills everything, incl. TikTok's schedule, without pressing the button). */
 export async function runJobNow(id: number, dryRun = false) {
   if (g.__uploadBusy) throw new Error("Masih ada upload yang berjalan. Tunggu sebentar.");
   const job = await db.select().from(uploadJobs).where(eq(uploadJobs.id, id)).get();
   if (!job) throw new Error("Jadwal tidak ditemukan.");
   const acc = await db.select().from(accounts).where(eq(accounts.id, job.accountId)).get();
-  if (!acc?.sessionKey) throw new Error("Akun TikTok belum login.");
+  if (!acc?.sessionKey) throw new Error("Akun belum login.");
+  if (acc.platform === "youtube" && !dryRun && (await uploadLimitUntil(acc.id))) throw new Error("Channel ini sedang terkena batas upload harian YouTube. Tunggu 24 jam atau verifikasi nomor HP di youtube.com/verify.");
   g.__uploadBusy = true;
   try {
-    await runJob(id, acc.sessionKey, dryRun, !dryRun);
+    await runJob(id, acc, dryRun, !dryRun);
   } finally {
     g.__uploadBusy = false;
   }
@@ -120,7 +175,7 @@ export function startUploadRunner() {
   if (g.__uploadTimer) return;
   void db
     .update(uploadJobs)
-    .set({ status: "failed", progress: null, error: "Upload terputus (aplikasi ditutup). Cek TikTok Studio dulu, lalu Ulangi kalau belum terposting." })
+    .set({ status: "failed", progress: null, error: "Upload terputus (aplikasi ditutup). Cek TikTok/YouTube Studio dulu, lalu Ulangi kalau belum terposting." })
     .where(eq(uploadJobs.status, "uploading"))
     .catch(() => {});
   g.__uploadTimer = setInterval(() => void tickUploads().catch((e) => console.warn("[upload]", e)), TICK_MS);

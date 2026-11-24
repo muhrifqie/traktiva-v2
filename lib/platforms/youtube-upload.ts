@@ -99,7 +99,7 @@ async function waitUploaded(page: Page, onProgress: UploadProgress, timeoutMs = 
 }
 
 /** Delete a draft this run created (dry run, or a run that failed before publishing): row menu "Hapus selamanya". */
-export async function deleteDraft(page: Page, channelId: string, match: { videoId?: string; title?: string }) {
+export async function deleteDraft(page: Page, channelId: string, match: { videoId?: string; title?: string }, waitRounds = 1) {
   for (const tab of ["short", "upload"]) {
     await page.goto(`${STUDIO}/channel/${channelId}/videos/${tab}`, { waitUntil: "load", timeout: 60_000 });
     await sleep(5000);
@@ -107,14 +107,24 @@ export async function deleteDraft(page: Page, channelId: string, match: { videoI
     // by id; else by exact title, and then ONLY a row marked "Draf" (a published/private video with the same title
     // must never be touched)
     const exact = new RegExp(`^\\s*${(match.title ?? "(tanpa judul)").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`);
-    const pick = () => (match.videoId ? rows.filter({ has: page.locator(`a[href*="${match.videoId}"]`) }) : rows.filter({ has: page.locator("#video-title", { hasText: exact }) }).filter({ hasText: /\bdraf\b|\bdraft\b/i })).first();
+    // row links are set as DOM properties (no href attribute): match the id on .href in the page
+    const byId = async () => {
+      if (!match.videoId) return -1;
+      return page
+        .evaluate((id) => [...document.querySelectorAll("ytcp-video-row")].findIndex((r) => [...r.querySelectorAll("a")].some((a) => (a as HTMLAnchorElement).href.includes(id))), match.videoId)
+        .catch(() => -1);
+    };
+    const pick = async () => {
+      const i = await byId();
+      return i >= 0 ? rows.nth(i) : rows.filter({ has: page.locator("#video-title", { hasText: exact }) }).filter({ hasText: /\bdraf\b|\bdraft\b/i }).first();
+    };
     // a fresh draft can take a minute to show up in the list
-    for (let i = 0; i < 6 && !(await pick().count()); i++) {
+    for (let i = 0; i < waitRounds && !(await (await pick()).count()); i++) {
       await sleep(8000);
       await page.reload({ waitUntil: "load" }).catch(() => {});
       await sleep(5000);
     }
-    const row = pick();
+    const row = await pick();
     if (!(await row.count())) continue;
     await row.hover();
     await row.getByRole("button", { name: /^(opsi|options)$/i }).first().click({ timeout: 8000 });
@@ -129,6 +139,34 @@ export async function deleteDraft(page: Page, channelId: string, match: { videoI
     return true;
   }
   return false;
+}
+
+/**
+ * A fresh draft shows up in Studio's content list only once YouTube starts processing it (minutes): when it could not
+ * be deleted right away, try again in the background every 3 minutes (headless; same safe matching: its id, or its
+ * exact title on a row marked "Draf").
+ */
+export function scheduleDraftCleanup(sessionKey: string, channelId: string, match: { videoId?: string; title?: string }, attempt = 1) {
+  const t = setTimeout(async () => {
+    let ok = false;
+    try {
+      ok = await withProfile(sessionKey, { headless: true }, async (ctx) => {
+        const page = await ctx.newPage();
+        page.on("dialog", (d) => void d.accept().catch(() => {}));
+        try {
+          return await deleteDraft(page, channelId, match);
+        } finally {
+          await page.close().catch(() => {});
+        }
+      });
+    } catch {
+      // profile busy (an upload or a sync): next round
+    }
+    if (ok) console.info("[yt-upload] draf uji terhapus", match.videoId ?? match.title);
+    else if (attempt < 6) scheduleDraftCleanup(sessionKey, channelId, match, attempt + 1);
+    else console.warn("[yt-upload] draf uji belum terhapus setelah 18 menit, hapus manual:", match.videoId ?? match.title);
+  }, 3 * 60_000);
+  t.unref?.();
 }
 
 /** Upload one video. dryRun = fill everything, then delete the draft instead of pressing Save/Schedule. */
@@ -204,12 +242,13 @@ export async function uploadToYouTube(input: YouTubeUploadInput, onProgress: Upl
         await sleep(2000);
         const id = videoId;
         videoId = null; // handled here: the catch below must not try again
-        const removed = await deleteDraft(page, input.channelId, id ? { videoId: id } : { title: input.title.slice(0, 100) }).catch((e) => {
+        const match = { videoId: id ?? undefined, title: input.title.slice(0, 100) };
+        const removed = await deleteDraft(page, input.channelId, match).catch((e) => {
           console.warn("[yt-upload] hapus draf gagal:", String(e).split(/\r?\n/)[0]);
           return false;
         });
-        if (!removed) throw new Error(`Uji coba berhasil, tapi draf uji${id ? ` (${id})` : ""} belum terhapus. Hapus manual di YouTube Studio → Konten.`);
-        return { posted: false, videoId };
+        if (!removed) scheduleDraftCleanup(input.sessionKey, input.channelId, match);
+        return { posted: false, videoId: id, draftPending: !removed };
       }
       onProgress("Menekan Simpan...");
       published = true; // from here on the video may be live: never delete it
@@ -227,7 +266,9 @@ export async function uploadToYouTube(input: YouTubeUploadInput, onProgress: Upl
       // failed before publishing: remove the private draft Studio already made, so a retry does not pile them up
       if (videoId && !published) {
         onProgress("Gagal, menghapus draf yang terlanjur dibuat...");
-        await deleteDraft(page, input.channelId, { videoId }).catch((err) => console.warn("[yt-upload] draf belum terhapus", videoId, String(err).slice(0, 120)));
+        const match = { videoId, title: input.title.slice(0, 100) };
+        const removed = await deleteDraft(page, input.channelId, match).catch(() => false);
+        if (!removed) scheduleDraftCleanup(input.sessionKey, input.channelId, match);
       }
       throw e;
     } finally {

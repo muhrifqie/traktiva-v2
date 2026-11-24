@@ -53,6 +53,7 @@ export async function tickProfileSync() {
     const yt = await db.select().from(accounts).where(and(eq(accounts.platform, "youtube"), eq(accounts.status, "active")));
     const { syncYouTubeAccount } = await import("@/app/(dashboard)/youtube-performa/actions");
     for (const a of yt) {
+      if (isUploadBusy()) break; // an upload drives a Chrome profile right now
       if (!a.sessionKey?.startsWith("cfx_") || !a.externalId?.startsWith("UC")) continue;
       const now = Date.now();
       if (now - (tried.get(a.id) ?? 0) < RETRY_MIN * 60_000) continue;

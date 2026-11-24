@@ -48,13 +48,20 @@ const NewJobs = z.object({
   musicVolume: z.number().int().min(-60).max(20).default(-20),
   startAt: z.number().int(), // epoch ms
   gapMinutes: z.number().int().min(20).max(24 * 60),
+  // YouTube channels: video title + tags/visibility/audience/AI label (caption = description)
+  videoTitle: z.string().max(100).nullish(),
+  meta: z
+    .object({ tags: z.array(z.string().max(100)).max(30), visibility: z.enum(["public", "unlisted", "private"]), madeForKids: z.boolean(), aiContent: z.boolean() })
+    .nullish(),
 });
 
 /** Schedule one or more videos for an account, spaced by gapMinutes (A/B variants go out at different times). */
 export async function createUploadJobs(input: z.input<typeof NewJobs>) {
   const d = NewJobs.parse(input);
   const acc = await db.select().from(accounts).where(eq(accounts.id, d.accountId)).get();
-  if (!acc || acc.platform !== "tiktok") throw new Error("Pilih akun TikTok.");
+  if (!acc || (acc.platform !== "tiktok" && acc.platform !== "youtube")) throw new Error("Pilih akun TikTok atau channel YouTube.");
+  const yt = acc.platform === "youtube";
+  if (yt && !d.videoTitle?.trim()) throw new Error("Judul video YouTube wajib diisi.");
   for (const it of d.items) await fs.access(resolveMedia(it.video)).catch(() => Promise.reject(new Error(`Video tidak ditemukan: ${it.video}`)));
   const start = Math.max(d.startAt, Date.now());
   await db.insert(uploadJobs).values(
@@ -65,15 +72,17 @@ export async function createUploadJobs(input: z.input<typeof NewJobs>) {
       label: it.label,
       hook: it.hook ?? null,
       caption: d.caption.trim(),
-      productId: d.productId || null,
-      productTitle: d.productTitle || null,
-      music: d.music,
+      productId: yt ? null : d.productId || null,
+      productTitle: yt ? null : d.productTitle || null,
+      music: yt ? false : d.music,
       musicVolume: d.musicVolume,
+      videoTitle: yt ? d.videoTitle!.trim() : null,
+      meta: yt ? d.meta ?? null : null,
       scheduledAt: new Date(start + i * d.gapMinutes * 60_000),
     })),
   );
   refresh();
-  kickUploads(); // upload now; far-ahead times are set as TikTok's own schedule (lib/uploads.ts)
+  kickUploads(); // TikTok: upload now (far-ahead times go to TikTok's schedule); YouTube: at its time (lib/uploads.ts)
 }
 
 export async function cancelUpload(id: number) {

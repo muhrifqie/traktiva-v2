@@ -10,6 +10,7 @@ import { openLightbox } from "@/components/media-lightbox";
 import type { UploadJob } from "@/lib/db/schema";
 import { mediaUrl } from "@/lib/media-url";
 import type { AccountTips } from "@/lib/schedule-tips";
+import type { YouTubeUploadDefaults } from "@/lib/settings";
 import { cancelUpload, createUploadJobs, deleteUploads, retryUpload, runUploadNow, type Uploadable } from "./actions";
 
 type EtalaseItem = { accountId: number; productId: string; title: string; price: string; stock: number | null; inStock: boolean; hidden: boolean; cover: string | null };
@@ -132,14 +133,19 @@ const STATUS: Record<Job["status"], { label: string; cls: string }> = {
   cancelled: { label: "Dibatalkan", cls: "bg-muted text-muted-foreground" },
 };
 
+type Account = { id: number; username: string; status: string; platform: string; displayName: string | null };
+const accName = (a: Account) => (a.platform === "youtube" ? `${a.displayName || a.username} (YouTube)` : `@${a.username}`);
+
 export function JadwalBoard({
-  jobs, accounts, videos, etalase, minGap, initialProject, tips, banned, maxPerDay, selectedAccountId, provenTags,
+  jobs, accounts, videos, etalase, minGap, initialProject, tips, banned, maxPerDay, selectedAccountId, provenTags, ytDefaults, ytLimited,
 }: {
+  ytDefaults: YouTubeUploadDefaults; // menu YouTube → Pengaturan upload
+  ytLimited: Record<number, number>; // channels capped by YouTube's daily upload limit → until (ms)
   tips: Record<number, AccountTips>; banned: { from: string; to: string }[]; maxPerDay: number;
   selectedAccountId: number | null; // ?akun=<id> (from the TikTok Shop dashboard), else the first logged-in one
   provenTags: Record<number, string[]>; // general hashtags that did best on each account (lib/hashtags.ts)
   etalase: EtalaseItem[];
-  jobs: Job[]; accounts: { id: number; username: string; status: string }[]; videos: Uploadable[]; minGap: number; initialProject: number | null;
+  jobs: Job[]; accounts: Account[]; videos: Uploadable[]; minGap: number; initialProject: number | null;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -160,11 +166,30 @@ export function JadwalBoard({
   const [titleIdea, setTitleIdea] = useState(0); // which curiousTitles() idea is shown
   const [at, setAt] = useState("");
   const gap = 180; // spacing between a project's videos (main + A/B variants), 3 h
+  // YouTube channel picked: title + description (caption) + tags/visibility/audience/AI label, from the templates
+  const yt = target?.platform === "youtube";
+  const [ytTitle, setYtTitle] = useState("");
+  const [ytTags, setYtTags] = useState("");
+  const [ytVis, setYtVis] = useState<YouTubeUploadDefaults["visibility"]>("public");
+  const [ytKids, setYtKids] = useState(false);
+  const [ytAi, setYtAi] = useState(true);
 
   // project changed: default to all of its videos, its caption and its product
   useEffect(() => {
     const t = setTimeout(() => {
       setPicked(own.map((v) => v.video));
+      if (yt) {
+        const fill = (tpl: string) => tpl.replaceAll("{judul}", projects.find((p) => p[0] === projectId)?.[1] ?? "").replaceAll("{produk}", own[0] ? shortName(own[0]) : "").trim();
+        setYtTitle(fill(ytDefaults.title).slice(0, 100));
+        setCaption(fill(ytDefaults.description));
+        setYtTags(ytDefaults.tags);
+        setYtVis(ytDefaults.visibility);
+        setYtKids(ytDefaults.madeForKids);
+        setYtAi(ytDefaults.aiContent);
+        setProductId("");
+        setAt((x) => x || nextSlot());
+        return;
+      }
       setCaption(own[0] ? shortCaption(shortName(own[0]), (accountId && provenTags[accountId]) || []) : "");
       // the project's own product, only when it can really be linked from this account's showcase
       const mine = etalase.find((e) => e.accountId === accountId && e.productId === own[0]?.productId && usable(e));
@@ -188,12 +213,15 @@ export function JadwalBoard({
   const schedule = () =>
     start(async () => {
       try {
-        if (!accountId) throw new Error("Pilih akun TikTok dulu.");
+        if (!accountId) throw new Error("Pilih akun dulu.");
         const items = own.filter((v) => picked.includes(v.video)).map((v) => ({ projectId: v.projectId, video: v.video, label: v.label, hook: v.hook }));
         if (!items.length) throw new Error("Pilih minimal satu video.");
         const startAt = new Date(at || nextSlot()).getTime();
-        await createUploadJobs({ accountId, items, caption, productId: productId.trim() || null, productTitle: productTitle.trim() || null, music, musicVolume, startAt, gapMinutes: gap });
-        toast.success(`${items.length} video dijadwalkan: sedang diunggah ke TikTok Studio`);
+        await createUploadJobs({
+          accountId, items, caption, productId: productId.trim() || null, productTitle: productTitle.trim() || null, music, musicVolume, startAt, gapMinutes: gap,
+          ...(yt ? { videoTitle: ytTitle, meta: { tags: ytTags.split(",").map((t) => t.trim()).filter(Boolean), visibility: ytVis, madeForKids: ytKids, aiContent: ytAi } } : {}),
+        });
+        toast.success(yt ? `${items.length} video dijadwalkan ke YouTube: diunggah otomatis di jamnya` : `${items.length} video dijadwalkan: sedang diunggah ke TikTok Studio`);
         // move the form past what was just scheduled, so it doesn't warn about its own new job
         setAt(toLocal(new Date(Math.max(startAt, Date.now()) + items.length * gap * 60_000)));
         router.refresh();
@@ -236,7 +264,13 @@ export function JadwalBoard({
     ? jobs.find((j) => j.accountId === accountId && (j.status === "queued" || j.status === "uploading" || (j.status === "done" && !!j.postedAt && j.postedAt > now)) && Math.abs(j.scheduledAt - startMs) < minGap * 60_000)
     : undefined;
   const bannedHit = banned.filter((b) => b.from && caption.toLowerCase().includes(b.from.toLowerCase()));
-  const warnings: { text: string; fix?: { label: string; run: () => void } }[] = [
+  const limitUntil = yt && accountId ? ytLimited[accountId] : undefined;
+  const warnings: { text: string; fix?: { label: string; run: () => void } }[] = yt ? [
+    ...(limitUntil ? [{ text: `Channel ini kena batas upload harian YouTube sampai ${when.format(limitUntil)}. Jadwal tetap disimpan dan diunggah setelah itu. Verifikasi nomor HP di youtube.com/verify supaya batasnya naik.` }] : []),
+    ...(!ytTitle.trim() ? [{ text: "Judul video masih kosong." }] : []),
+    ...(sameDay + picked.length > maxPerDay ? [{ text: `Hari itu channel ini sudah punya ${sameDay} upload; channel baru cepat kena batas upload harian.` }] : []),
+    { text: "YouTube diunggah tepat di jam tayang, jadi aplikasi harus terbuka saat itu (jendela Chrome akan muncul sebentar)." },
+  ] : [
     ...bannedHit.map((b) => ({
       text: `Caption memakai “${b.from}” (dilarang di Aturan naskah).`,
       fix: { label: `Ganti jadi “${b.to}”`, run: () => setCaption((c) => c.replace(new RegExp(b.from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), b.to)) },
@@ -294,15 +328,49 @@ export function JadwalBoard({
                 <DateTime24 value={at} onChange={setAt} />
               </div>
 
+              {yt && (
+                <label className="block">
+                  <span className={fieldLabel}>
+                    Judul video YouTube
+                    <span className="ml-auto font-normal text-muted-foreground">{ytTitle.length}/100</span>
+                  </span>
+                  <input className={field} maxLength={100} value={ytTitle} onChange={(e) => setYtTitle(e.target.value)} placeholder="Judul yang tampil di YouTube" />
+                </label>
+              )}
               <label className="flex flex-col lg:row-span-3">
                 <span className={fieldLabel}>
-                  Caption & hashtag
-                  <span className={`ml-auto truncate font-normal ${hashtagsOf(caption).length > MAX_TAGS ? "text-status-progress" : "text-muted-foreground"}`}>
-                    {hashtagsOf(caption).length}/{MAX_TAGS} hashtag · terbukti ramai di akunmu
-                  </span>
+                  {yt ? "Deskripsi" : "Caption & hashtag"}
+                  {!yt && (
+                    <span className={`ml-auto truncate font-normal ${hashtagsOf(caption).length > MAX_TAGS ? "text-status-progress" : "text-muted-foreground"}`}>
+                      {hashtagsOf(caption).length}/{MAX_TAGS} hashtag · terbukti ramai di akunmu
+                    </span>
+                  )}
                 </span>
-                <textarea className={`${field} h-auto min-h-[84px] flex-1 resize-none py-2 leading-relaxed`} rows={3} maxLength={2200} value={caption} onChange={(e) => setCaption(e.target.value)} />
+                <textarea className={`${field} h-auto min-h-[84px] flex-1 resize-none py-2 leading-relaxed`} rows={3} maxLength={yt ? 5000 : 2200} value={caption} onChange={(e) => setCaption(e.target.value)} />
               </label>
+              {yt ? (
+                <>
+                  <label className="block">
+                    <span className={fieldLabel}>Tag <span className="ml-auto font-normal text-muted-foreground">pisahkan dengan koma</span></span>
+                    <input className={field} value={ytTags} onChange={(e) => setYtTags(e.target.value)} placeholder="shorts, review, produk" />
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block">
+                      <span className={fieldLabel}>Visibilitas</span>
+                      <select className={field} value={ytVis} onChange={(e) => setYtVis(e.target.value as typeof ytVis)}>
+                        <option value="public">Publik</option>
+                        <option value="unlisted">Tidak publik</option>
+                        <option value="private">Pribadi</option>
+                      </select>
+                    </label>
+                    <div className="space-y-1.5 pt-1 text-[12px]">
+                      <label className="flex items-center gap-2"><input type="checkbox" checked={ytAi} onChange={(e) => setYtAi(e.target.checked)} className="accent-primary" /> Konten AI (label sintetis)</label>
+                      <label className="flex items-center gap-2"><input type="checkbox" checked={ytKids} onChange={(e) => setYtKids(e.target.checked)} className="accent-primary" /> Dibuat untuk anak</label>
+                    </div>
+                  </div>
+                </>
+              ) : (
+              <>
               <ProductPicker
                 items={etalase.filter((e) => e.accountId === accountId)}
                 value={productId}
@@ -403,6 +471,8 @@ export function JadwalBoard({
                   )}
                 </div>
               </div>
+              </>
+              )}
             </div>
 
             {warnings.length > 0 && (
@@ -423,17 +493,21 @@ export function JadwalBoard({
                     Diunggah ke{" "}
                     {active.length > 1 ? (
                       <select aria-label="Akun tujuan" value={target.id} onChange={(e) => setAccountId(Number(e.target.value))} className="h-6 rounded-md border bg-background px-1.5 text-[11px] font-medium text-foreground" style={{ borderColor: accountColor(target.id) }}>
-                        {active.map((a) => <option key={a.id} value={a.id}>@{a.username}</option>)}
+                        {active.map((a) => <option key={a.id} value={a.id}>{accName(a)}</option>)}
                       </select>
                     ) : (
-                      <b className="font-medium text-foreground"><i className="mr-1 inline-block size-2 rounded-full align-middle" style={{ background: accountColor(target.id) }} />@{target.username}</b>
+                      <b className="font-medium text-foreground"><i className="mr-1 inline-block size-2 rounded-full align-middle" style={{ background: accountColor(target.id) }} />{accName(target)}</b>
                     )}
                     {own.length > 1 ? ` · ${own.length} video, jarak ${gap / 60} jam` : ""}
                   </p>
                 ) : (
-                  <p className="text-destructive">Belum ada akun TikTok aktif. Login di Akun Sosial.</p>
+                  <p className="text-destructive">Belum ada akun aktif. Login di Akun Sosial atau menu YouTube.</p>
                 )}
-                <p>Video langsung diunggah ke TikTok Studio dan dijadwalkan di sana, jadi tetap tayang tepat waktu walau aplikasi ditutup. Jangan terlalu sering supaya akun tidak dibatasi TikTok.</p>
+                <p>
+                  {yt
+                    ? "Diunggah lewat YouTube Studio di jam tayangnya. Channel baru punya batas upload harian; kalau kena, jadwal menunggu 24 jam."
+                    : "Video langsung diunggah ke TikTok Studio dan dijadwalkan di sana, jadi tetap tayang tepat waktu walau aplikasi ditutup. Jangan terlalu sering supaya akun tidak dibatasi TikTok."}
+                </p>
               </div>
               <button type="button" className={`${btn} shrink-0 bg-primary px-5 text-primary-foreground hover:bg-primary/90`} disabled={pending || !active.length} onClick={schedule}>
                 {pending && busyId === null ? <Loader2 className="size-4 animate-spin" /> : <CalendarClock className="size-4" />} Jadwalkan {picked.length > 1 ? `${picked.length} video` : ""}
@@ -504,7 +578,7 @@ export function JadwalBoard({
                       {busyId === j.id && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
                       {j.status === "queued" && (
                         <>
-                          <IconBtn title="Uji coba: buka TikTok Studio, isi semua, TANPA menekan Post" onClick={() => run(j.id, () => runUploadNow(j.id, true), "Uji coba selesai, tidak diposting")} disabled={pending}><FlaskConical className="size-4" /></IconBtn>
+                          <IconBtn title={`Uji coba: buka ${j.videoTitle ? "YouTube" : "TikTok"} Studio, isi semua, TANPA menekan ${j.videoTitle ? "Simpan" : "Post"}`} onClick={() => run(j.id, () => runUploadNow(j.id, true), "Uji coba selesai, tidak diposting")} disabled={pending}><FlaskConical className="size-4" /></IconBtn>
                           <IconBtn title="Posting sekarang" onClick={async () => (await confirmDialog({ title: "Posting sekarang?", description: `Video “${j.title || "Video"}” (${j.label}) langsung diunggah ke TikTok @${j.username}${j.productId ? " dengan produk keranjang" : ""}. Postingan tidak bisa dibatalkan dari sini.`, confirmLabel: "Posting sekarang" })) && run(j.id, () => runUploadNow(j.id, false), "Video terposting")} disabled={pending}><Send className="size-4" /></IconBtn>
                           <IconBtn title="Batalkan" onClick={() => run(j.id, () => cancelUpload(j.id))} disabled={pending}><X className="size-4" /></IconBtn>
                         </>

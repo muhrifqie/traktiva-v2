@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { CalendarDays, Plus } from "lucide-react";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
@@ -9,7 +9,8 @@ import { provenHashtagsFor } from "@/lib/hashtags";
 import { hookInsights } from "@/lib/insights";
 import { projectName } from "@/lib/presets";
 import { MAX_PER_DAY, scheduleTips } from "@/lib/schedule-tips";
-import { pickActive, writingRules } from "@/lib/settings";
+import { pickActive, writingRules, youtubeUploadDefaults } from "@/lib/settings";
+import { uploadLimitUntil } from "@/lib/youtube-limit";
 import { MIN_GAP_MIN } from "@/lib/uploads";
 import { listUploadable } from "./actions";
 import { JadwalBoard } from "./board";
@@ -27,7 +28,7 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
   // Kalender by default; the list (with the scheduling form) when asked, or when coming from a project to schedule it
   const view = tampilan === "daftar" || project || akun ? "daftar" : "kalender";
   await hookInsights().catch(() => null); // links finished jobs to the TikTok post the profile sync found (postId)
-  const [jobs, tiktok, videos, etalase] = await Promise.all([
+  const [jobs, social, videos, etalase] = await Promise.all([
     db
       .select({ job: uploadJobs, username: accounts.username, project: { title: videoProjects.title, presetId: videoProjects.presetId, product: videoProjects.product }, views: accountPosts.views })
       .from(uploadJobs)
@@ -36,7 +37,7 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
       .leftJoin(accountPosts, and(eq(accountPosts.accountId, uploadJobs.accountId), eq(accountPosts.externalId, uploadJobs.postId)))
       .orderBy(desc(uploadJobs.scheduledAt))
       .limit(150),
-    db.select({ id: accounts.id, username: accounts.username, status: accounts.status }).from(accounts).where(eq(accounts.platform, "tiktok")),
+    db.select({ id: accounts.id, username: accounts.username, status: accounts.status, platform: accounts.platform, displayName: accounts.displayName }).from(accounts).where(inArray(accounts.platform, ["tiktok", "youtube"])),
     listUploadable(),
     // each account's affiliate showcase (synced in TikTok Shop): the product picker's options
     db
@@ -44,7 +45,14 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
       .from(showcaseProducts)
       .orderBy(asc(showcaseProducts.position)),
   ]);
-  const [tips, provenTags] = await Promise.all([scheduleTips(tiktok.map((a) => a.id), MIN_GAP_MIN), provenHashtagsFor(tiktok.map((a) => a.id))]);
+  const tiktok = social.filter((a) => a.platform === "tiktok");
+  const youtube = social.filter((a) => a.platform === "youtube");
+  const [tips, provenTags, limits] = await Promise.all([
+    scheduleTips(tiktok.map((a) => a.id), MIN_GAP_MIN),
+    provenHashtagsFor(tiktok.map((a) => a.id)),
+    Promise.all(youtube.map(async (a) => [a.id, await uploadLimitUntil(a.id)] as const)),
+  ]);
+  const ytLimited = Object.fromEntries(limits.filter(([, u]) => u)) as Record<number, number>;
   const queued = jobs.filter((j) => inQueue(j.job)).length;
 
   const mapped = jobs.map((j) => ({ ...j.job, scheduledAt: j.job.scheduledAt.getTime(), postedAt: j.job.postedAt?.getTime() ?? null, createdAt: j.job.createdAt.getTime(), username: j.username, title: j.project?.presetId ? projectName(j.project as Parameters<typeof projectName>[0]) : null, views: j.views ?? null }));
@@ -71,7 +79,9 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
       ) : (
       <JadwalBoard
         jobs={mapped}
-        accounts={tiktok}
+        accounts={social}
+        ytDefaults={youtubeUploadDefaults()}
+        ytLimited={ytLimited}
         videos={videos}
         etalase={etalase}
         minGap={MIN_GAP_MIN}
@@ -79,7 +89,7 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
         banned={writingRules().replace}
         maxPerDay={MAX_PER_DAY}
         initialProject={project ? Number(project) : null}
-        selectedAccountId={pickActive(tiktok.filter((a) => a.status === "active"), akun)?.id ?? null}
+        selectedAccountId={pickActive(social.filter((a) => a.status === "active"), akun)?.id ?? null}
         provenTags={provenTags}
       />
       )}

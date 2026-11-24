@@ -26,6 +26,7 @@ Server actions Studio: `app/(dashboard)/video/project-actions.ts` (semua aksi pr
 
 ## Upload & akun
 - TikTok Studio upload: `lib/platforms/tiktok-upload.ts` (caption, produk keranjang, dry-run). Runner terjadwal: `lib/uploads.ts` (dimulai di `instrumentation-node.ts`).
+- YouTube Studio upload: `lib/platforms/youtube-upload.ts` (judul, deskripsi, tag, audiens, label konten AI, visibilitas; jendela Chrome terlihat; dry-run menghapus drafnya sendiri, ulang di latar kalau draf belum muncul). Runner yang sama mengunggah job YouTube **di jamnya** (jadwal Studio tidak dipakai). Batas upload harian → `lib/youtube-limit.ts` (channel ditahan 24 jam). Template di settings.json (`youtubeUpload`, menu YouTube → Pengaturan upload).
 - Etalase TikTok Shop: `lib/platforms/tiktok-shop.ts` (panggilan bertanda tangan dari dalam halaman Streamer Desktop; detail produk dibuka lewat halaman etalase) + cermin lokal `lib/showcase.ts`.
 - Browser otomasi: `lib/browser/chrome.ts`: Chrome terpasang dijalankan biasa dengan `--user-data-dir` per akun lalu disambung `connectOverCDP` (`withProfile`, kunci lintas proses, headless untuk kerja latar).
 - KaloData: `lib/kalodata/` (klien API, lihat `lib/kalodata/README.md`), cache di `lib/kalo.ts`.

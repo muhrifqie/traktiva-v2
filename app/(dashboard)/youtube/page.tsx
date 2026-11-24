@@ -1,12 +1,16 @@
 import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
-import { ChevronRight, Download } from "lucide-react";
+import { ChevronRight, CircleAlert, Download } from "lucide-react";
 import { AccountAvatar } from "@/components/account-avatar";
 import { PageHeader } from "@/components/page-header";
 import { PlatformIcon } from "@/components/platform-icon";
 import { db } from "@/lib/db";
 import { accounts } from "@/lib/db/schema";
 import { isProfileKey } from "@/lib/browser/chrome";
+import { VERIFY_URL } from "@/lib/platforms/youtube-upload";
+import { youtubeUploadDefaults } from "@/lib/settings";
+import { uploadLimitUntil } from "@/lib/youtube-limit";
+import { UploadSettings } from "./upload-settings";
 import { AccountActions } from "../akun/row-actions";
 import { YouTubeConnectButton } from "../akun/tiktok-connect";
 
@@ -17,6 +21,7 @@ const dateFmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short
 // YouTube home (the sidebar's YouTube button): connected channels with their stored login, then the YouTube tools.
 export default async function YouTubePage() {
   const list = await db.select().from(accounts).where(eq(accounts.platform, "youtube")).orderBy(asc(accounts.username));
+  const limits = await Promise.all(list.map((a) => uploadLimitUntil(a.id)));
   return (
     <>
       <PageHeader slug="youtube">{list.length > 0 && <YouTubeConnectButton label="Tambah channel" />}</PageHeader>
@@ -47,6 +52,15 @@ export default async function YouTubePage() {
                     </span>
                   </header>
                   <p className="text-xs text-muted-foreground">Dicek {a.lastCheckAt ? dateFmt.format(a.lastCheckAt) : "belum pernah"}</p>
+                  {limits[list.indexOf(a)] && (
+                    <p className="flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-2 text-[11px] text-amber-700 dark:text-amber-300">
+                      <CircleAlert className="mt-px size-3.5 shrink-0" />
+                      <span>
+                        Batas upload harian tercapai sampai {dateFmt.format(limits[list.indexOf(a)]!)}. Jadwal upload menunggu otomatis.{" "}
+                        <a href={VERIFY_URL} target="_blank" rel="noreferrer" className="font-medium underline underline-offset-2">Verifikasi nomor HP</a> supaya batasnya naik.
+                      </span>
+                    </p>
+                  )}
                   <AccountActions id={a.id} platform="youtube" username={a.username} hasSession={hasSession} needsLogin={a.status !== "active" || !hasSession} />
                 </article>
               );
@@ -54,6 +68,8 @@ export default async function YouTubePage() {
           </div>
         )}
       </section>
+
+      {list.length > 0 && <UploadSettings initial={youtubeUploadDefaults()} />}
 
       <section className="space-y-2">
         <h2 className="text-[13px] font-semibold text-muted-foreground">Alat</h2>

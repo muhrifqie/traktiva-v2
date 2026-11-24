@@ -22,7 +22,27 @@ type VoiceSettings = {
 export type MyConcept = { id: string; name: string; idea: string; scenes: number; background: string; audio: "on" | "off"; createdAt: number };
 /** ChatGPT web account (its own Chrome profile) used as the writer; null = Gemini writes. */
 export type ChatgptSettings = { profileKey: string; email: string | null; connectedAt: number };
-type Settings = { activeAccountId?: number | null /* social account shown in the sidebar */; myConcepts?: MyConcept[]; voice: VoiceSettings; editTemplates?: EditTemplate[]; chatgpt?: ChatgptSettings | null; writing?: WritingRules };
+/**
+ * Defaults for every YouTube upload (menu YouTube → Pengaturan upload), filled into the Kalender form.
+ * Templates take {judul} (video/project name) and {produk} (product name).
+ */
+export type YouTubeUploadDefaults = {
+  title: string;
+  description: string;
+  tags: string; // comma separated
+  visibility: "public" | "unlisted" | "private";
+  madeForKids: boolean;
+  aiContent: boolean; // "altered or synthetic content": realistic AI video must say yes
+};
+export const YOUTUBE_UPLOAD_DEFAULTS: YouTubeUploadDefaults = {
+  title: "{judul} #shorts",
+  description: "{judul}\n\n#shorts",
+  tags: "shorts",
+  visibility: "public",
+  madeForKids: false,
+  aiContent: true,
+};
+type Settings = { activeAccountId?: number | null /* social account shown in the sidebar */; myConcepts?: MyConcept[]; voice: VoiceSettings; editTemplates?: EditTemplate[]; chatgpt?: ChatgptSettings | null; writing?: WritingRules; youtubeUpload?: Partial<YouTubeUploadDefaults> };
 const DEFAULTS: Settings = { voice: { provider: "flow" } };
 const FILE = path.join(/* turbopackIgnore: true */ DATA_DIR, "settings.json");
 
@@ -54,6 +74,8 @@ export function updateSettings(patch: Partial<Settings>) {
   g.__settingsMtime = fs.statSync(FILE).mtimeMs;
   return next;
 }
+
+export const youtubeUploadDefaults = (): YouTubeUploadDefaults => ({ ...YOUTUBE_UPLOAD_DEFAULTS, ...getSettings().youtubeUpload });
 
 /** Owner's writing rules (CTA, banned words, extra notes) with defaults filled in. */
 export const writingRules = (): WritingRules => ({ ...DEFAULT_WRITING, ...getSettings().writing });
