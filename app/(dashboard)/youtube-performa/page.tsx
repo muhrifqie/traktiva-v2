@@ -489,7 +489,6 @@ export default async function YouTubePerformaPage({ searchParams }: PageProps<"/
     return (
       <>
         <PageHeader slug="youtube-performa" />
-        <YouTubeTabs current="performa" />
         <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-10 text-center">
           <PlatformIcon platform="youtube" className="size-7" />
           <p className="text-sm font-medium">Belum ada channel YouTube</p>
@@ -520,12 +519,14 @@ export default async function YouTubePerformaPage({ searchParams }: PageProps<"/
     <>
       <PageHeader slug="youtube-performa" desc={updated}>
         {one?.cache && <YouTubeSyncButton accountId={one.a.id} name={one.a.displayName || one.a.username} />}
-        <ChannelSelect
-          current={one ? one.a.id : "all"}
-          channels={channels.map((c) => ({ id: c.a.id, name: c.a.displayName || c.a.username, handle: c.a.username, avatarUrl: c.a.avatarUrl, status: c.a.status, synced: !!c.cache }))}
-        />
+        {!one && (
+          <ChannelSelect
+            current="all"
+            channels={channels.map((c) => ({ id: c.a.id, name: c.a.displayName || c.a.username, handle: c.a.username, avatarUrl: c.a.avatarUrl, status: c.a.status, synced: !!c.cache }))}
+          />
+        )}
       </PageHeader>
-      <YouTubeTabs current="performa" />
+      {one && <YouTubeTabs accountId={one.a.id} current="performa" />}
       <AutoSync ids={missing} />
       {one ? <OneChannel c={one} /> : <AllChannels list={channels} />}
     </>

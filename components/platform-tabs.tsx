@@ -3,7 +3,7 @@ import { ChevronLeft } from "lucide-react";
 
 // Numbered page tabs under a platform page header, so a platform reads as one place with a few pages:
 // TikTok = one account's 1 Profil · 2 Etalase (from the account cards on /tiktok-shop);
-// YouTube = 1 Channel · 2 Performa · 3 Unduh Shorts.
+// YouTube = one channel's 1 Channel · 2 Performa · 3 Unduh Shorts (from the channel cards on /youtube).
 
 function Tabs({ tabs, back }: { tabs: { href: string; label: string; on: boolean }[]; back?: { href: string; label: string } }) {
   return (
@@ -43,14 +43,15 @@ export function TikTokTabs({ accountId, current }: { accountId: number; current:
   );
 }
 
-/** YouTube: 1 Channel, 2 Performa, 3 Unduh Shorts. */
-export function YouTubeTabs({ current }: { current: "performa" | "channel" | "shorts" }) {
+/** One YouTube channel: 1 Channel, 2 Performa, 3 Unduh Shorts; back to every channel. */
+export function YouTubeTabs({ accountId, current }: { accountId: number; current: "performa" | "channel" | "shorts" }) {
   return (
     <Tabs
+      back={{ href: "/youtube", label: "Semua channel YouTube" }}
       tabs={[
-        { href: "/youtube", label: "Channel", on: current === "channel" },
-        { href: "/youtube-performa", label: "Performa", on: current === "performa" },
-        { href: "/youtube-shorts", label: "Unduh Shorts", on: current === "shorts" },
+        { href: `/youtube-channel?akun=${accountId}`, label: "Channel", on: current === "channel" },
+        { href: `/youtube-performa?akun=${accountId}`, label: "Performa", on: current === "performa" },
+        { href: `/youtube-shorts?akun=${accountId}`, label: "Unduh Shorts", on: current === "shorts" },
       ]}
     />
   );
