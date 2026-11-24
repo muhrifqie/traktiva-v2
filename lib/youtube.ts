@@ -65,7 +65,7 @@ export type DownloadOptions = {
 };
 
 const ROOT = () => path.join(MEDIA_DIR, "YouTube Shorts");
-const folderOf = (handle: string) => path.join(ROOT(), handle.replace(/[^\w.@-]+/g, "_"));
+const folderOf = (handle: string) => path.join(ROOT(), handle.replace(/[^\w.@-]+/g, "_").replace(/^\.+$/, "_")); // "." / ".." never leave the folder
 // one archive per format: an id downloaded as video can still be fetched as audio (and the other way round)
 const archiveOf = (dir: string, format: DownloadOptions["format"] = "video") => path.join(dir, format === "audio" ? ".unduhan-audio.txt" : ".unduhan.txt");
 /** ids already downloaded into this channel's folder (yt-dlp's download archive: "youtube <id>" per line) */

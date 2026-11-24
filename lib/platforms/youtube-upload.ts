@@ -116,7 +116,11 @@ export async function deleteDraft(page: Page, channelId: string, match: { videoI
     };
     const pick = async () => {
       const i = await byId();
-      return i >= 0 ? rows.nth(i) : rows.filter({ has: page.locator("#video-title", { hasText: exact }) }).filter({ hasText: /\bdraf\b|\bdraft\b/i }).first();
+      // title fallback: only a row that is really a draft (its own "Edit draf" button), never a published video
+      // whose description happens to say "draft"
+      return i >= 0
+        ? rows.nth(i)
+        : rows.filter({ has: page.locator("#video-title", { hasText: exact }) }).filter({ has: page.getByRole("button", { name: /^(edit draf|edit draft)$/i }) }).first();
     };
     // a fresh draft can take a minute to show up in the list
     for (let i = 0; i < waitRounds && !(await (await pick()).count()); i++) {

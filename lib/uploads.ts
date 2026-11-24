@@ -39,7 +39,7 @@ export async function tickUploads() {
   if (g.__uploadBusy) return;
   g.__uploadBusy = true;
   try {
-    const waiting = await db.select().from(uploadJobs).where(eq(uploadJobs.status, "queued")).orderBy(asc(uploadJobs.scheduledAt)).limit(10);
+    const waiting = await db.select().from(uploadJobs).where(eq(uploadJobs.status, "queued")).orderBy(asc(uploadJobs.scheduledAt)).limit(200); // all of them in practice: capped/waiting ones are skipped, the rest must still be seen
     for (const job of waiting) {
       const acc = await db.select().from(accounts).where(eq(accounts.id, job.accountId)).get();
       const yt = acc?.platform === "youtube";

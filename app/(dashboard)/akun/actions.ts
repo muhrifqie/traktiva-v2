@@ -219,9 +219,14 @@ export async function cancelYouTubeLogin(loginId: string) {
 export async function checkYouTubeSession(id: number) {
   const a = await getAccount(id);
   const res = isProfileKey(a.sessionKey) ? await youtube.checkSession(a.sessionKey) : { valid: false as const };
+  // never lose a known channel id: a slow Studio redirect gives no id (only the email), and a profile switched to
+  // another channel (brand account) must not silently move this row (uploads would land on the wrong channel)
+  const known = a.externalId?.startsWith("UC") ? a.externalId : null;
+  const sameChannel = res.valid && res.channelId?.startsWith("UC") && (!known || res.channelId === known);
+  const identity = sameChannel ? { username: res.username, externalId: res.channelId, displayName: res.name, ...(res.avatar ? { avatarUrl: res.avatar } : {}) } : {};
   await db
     .update(accounts)
-    .set({ status: res.valid ? "active" : "need_login", lastCheckAt: new Date(), ...(res.valid ? { username: res.username, externalId: res.channelId ?? res.email, displayName: res.name, ...(res.avatar ? { avatarUrl: res.avatar } : {}) } : {}) })
+    .set({ status: res.valid ? "active" : "need_login", lastCheckAt: new Date(), ...identity })
     .where(eq(accounts.id, a.id));
   refresh();
   revalidatePath("/youtube");
