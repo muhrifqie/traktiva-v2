@@ -11,7 +11,7 @@ import { getSettings, updateSettings, youtubeEditorPresets } from "@/lib/setting
 import { kickUploads } from "@/lib/uploads";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { cancelRender, cleanTitle, editorJob, resultTitle, GAMEPLAY_DIR, listGameplay, listRendered, listResults, probe, renderPreview, renderPreviewClip, SIZES, startRender, type EditorSettings } from "@/lib/youtube-editor";
+import { cancelRender, cleanTitle, deleteResult, editorJob, resultTitle, revealResult, GAMEPLAY_DIR, listGameplay, listRendered, listResults, probe, renderPreview, renderPreviewClip, SIZES, startRender, type EditorSettings } from "@/lib/youtube-editor";
 
 // errors come back as { error } (thrown server-action errors are hidden in production)
 const safe = async <T,>(f: () => Promise<T>) => {
@@ -91,6 +91,14 @@ export const renderVideos = async (input: { originals: string[]; gameplay: strin
   });
 
 export const renderStatus = async () => editorJob();
+
+/** Result file actions (Hasil tab, right-click): to the Recycle Bin / show in the file manager. */
+export const removeResult = async (rel: string) =>
+  safe(async () => {
+    await deleteResult(Rel.parse(rel));
+    return { results: listResults(), rendered: listRendered() };
+  });
+export const showResult = async (rel: string) => safe(async () => revealResult(Rel.parse(rel)));
 
 // ---- presets: named styles in settings.json ----
 const Name = z.string().trim().min(1).max(40);

@@ -7,11 +7,12 @@ import {
   Music, Plus, Ratio, RefreshCw, Rows2, Search, Shuffle, Square, Timer, Upload, Video, Volume2, VolumeX, X, type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { confirmDialog } from "@/components/confirm-dialog";
 import { mediaUrl } from "@/lib/media-url";
 import type { EditorPreset, YouTubeUploadDefaults } from "@/lib/settings";
 import type { EditorJob, SourceFile } from "@/lib/youtube-editor";
 import { ASPECTS, PIP_RANGE, pipBox, RATIO_RANGE, SIZES, type Aspect, type EditorSettings, type Fill, type Fit, type Flip, type Seam, type Shape, type Size } from "@/lib/youtube-editor-config";
-import { clipLengths, deletePreset, musicList, savePreset, scheduleResults, openMediaFolder, previewClip, previewFrame, refreshLists, renderStatus, renderVideos, saveEditorSettings, stopRender, uploadEditorMusic } from "./actions";
+import { clipLengths, deletePreset, removeResult, showResult, musicList, savePreset, scheduleResults, openMediaFolder, previewClip, previewFrame, refreshLists, renderStatus, renderVideos, saveEditorSettings, stopRender, uploadEditorMusic } from "./actions";
 
 // YouTube → Editor, full screen over the app (sidebar hidden): media on the left, the live monitor in the middle,
 // settings on the right. Click Shorts to pick them, drag the divider (or the reaction overlay) on the monitor, press Render.
@@ -165,6 +166,33 @@ export function VideoEditor({
     visibility: uploadDefaults.visibility,
   }));
   const [scheduling, setScheduling] = useState(false);
+  // right-click menu on a result (Hasil tab)
+  const [menu, setMenu] = useState<{ x: number; y: number; rel: string; name: string } | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: KeyboardEvent) => e.key === "Escape" && setMenu(null);
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [menu]);
+  const reveal = async (rel: string) => {
+    setMenu(null);
+    const r = await showResult(rel);
+    if ("error" in r) toast.error(r.error);
+  };
+  const trash = async (rel: string, name: string) => {
+    setMenu(null);
+    if (!(await confirmDialog({ title: `Hapus "${name.replace(/^\d{14}\s+/, "").slice(0, 60)}"?`, description: "File hasil dipindah ke Recycle Bin, masih bisa dikembalikan dari sana. Jadwal yang sudah memakai video ini akan gagal.", danger: true }))) return;
+    const r = await removeResult(rel);
+    if ("error" in r) return toast.error(r.error);
+    setResults(r.ok!.results);
+    setRendered(r.ok!.rendered);
+    setPicked((s0) => {
+      const n = new Set(s0);
+      n.delete(rel);
+      return n;
+    });
+    toast.success("Video dipindah ke Recycle Bin");
+  };
   const applyPreset = (pr: EditorPreset) => {
     setMany(pr.settings);
     setPresetOpen(false);
@@ -642,7 +670,7 @@ export function VideoEditor({
           {tab === "hasil" && (
             <div className="flex min-h-0 flex-1 flex-col gap-2 p-2.5">
               <div className="flex items-center gap-1 text-[11px]">
-                <span className="flex-1 text-muted-foreground">{picked.size ? <><b className="text-foreground">{picked.size}</b> dipilih</> : "Klik video untuk memilih"}</span>
+                <span className="flex-1 text-muted-foreground">{picked.size ? <><b className="text-foreground">{picked.size}</b> dipilih</> : "Klik untuk memilih, klik kanan untuk opsi"}</span>
                 <button type="button" onClick={() => setPicked(new Set(results.map((r) => r.rel)))} className="flex h-7 items-center gap-1 rounded-md px-2 hover:bg-accent"><Plus className="size-3" /> Semua</button>
                 {picked.size > 0 && <button type="button" onClick={() => setPicked(new Set())} className="flex h-7 items-center gap-1 rounded-md px-2 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-3" /> Hapus</button>}
                 <button type="button" onClick={() => void openMediaFolder("results")} title="Buka folder hasil" aria-label="Buka folder hasil" className="grid size-7 place-items-center rounded-md hover:bg-accent"><FolderOpen className="size-3.5" /></button>
@@ -652,7 +680,14 @@ export function VideoEditor({
                 {results.map((r) => {
                   const on = picked.has(r.rel);
                   return (
-                    <div key={r.rel} className={`group relative overflow-hidden rounded-lg border bg-muted ${on ? "ring-2 ring-orange-400" : "hover:ring-2 hover:ring-border"}`}>
+                    <div
+                      key={r.rel}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setMenu({ x: Math.min(e.clientX, window.innerWidth - 220), y: Math.min(e.clientY, window.innerHeight - 190), rel: r.rel, name: r.name });
+                      }}
+                      className={`group relative overflow-hidden rounded-lg border bg-muted ${on ? "ring-2 ring-orange-400" : "hover:ring-2 hover:ring-border"} ${menu?.rel === r.rel ? "ring-2 ring-amber-400" : ""}`}
+                    >
                       <button type="button" onClick={() => togglePicked(r.rel)} title={r.name} className="block w-full">
                         <video src={`${mediaUrl(r.rel)}#t=1`} preload="metadata" muted className="aspect-[9/16] w-full object-cover" />
                       </button>
@@ -986,6 +1021,21 @@ export function VideoEditor({
           <p className="px-4 py-3 text-[11px] text-muted-foreground">Metadata hasil dirapikan (judul & tanggal). Semua setelan tersimpan otomatis.</p>
         </section>
       </div>
+      {menu && (
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => setMenu(null)} onContextMenu={(e) => (e.preventDefault(), setMenu(null))} />
+          <div role="menu" className="fixed z-[61] w-52 rounded-xl border bg-popover p-1 text-xs text-popover-foreground shadow-xl" style={{ left: menu.x, top: menu.y }}>
+            <p className="truncate px-2.5 pt-1.5 pb-1 text-[10px] text-muted-foreground">{menu.name.replace(/^\d{14}\s+/, "")}</p>
+            <a role="menuitem" href={mediaUrl(menu.rel)} target="_blank" rel="noreferrer" onClick={() => setMenu(null)} className="flex h-8 items-center gap-2 rounded-md px-2.5 hover:bg-accent"><Play className="size-3.5 text-amber-500" /> Putar</a>
+            <button role="menuitem" type="button" onClick={() => (togglePicked(menu.rel), setMenu(null))} className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left hover:bg-accent">
+              <Check className="size-3.5 text-orange-500" /> {picked.has(menu.rel) ? "Batal pilih" : "Pilih untuk dijadwalkan"}
+            </button>
+            <button role="menuitem" type="button" onClick={() => void reveal(menu.rel)} className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left hover:bg-accent"><FolderOpen className="size-3.5 text-yellow-500" /> Tampilkan di folder</button>
+            <div className="my-1 h-px bg-border" />
+            <button role="menuitem" type="button" onClick={() => void trash(menu.rel, menu.name)} className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-destructive hover:bg-destructive/10"><Trash2 className="size-3.5" /> Hapus</button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

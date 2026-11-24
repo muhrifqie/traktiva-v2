@@ -68,6 +68,36 @@ export function resultTitle(resultRel: string) {
   const src = Object.entries(listRendered()).find(([, r]) => r === resultRel)?.[0];
   return pretty(path.basename(src ?? resultRel.replace(/^.*\/\d{14}\s+/, "")));
 }
+/** A result file (absolute), only when it really is a video inside YouTube Editor/. */
+function resultFile(rel: string) {
+  const abs = path.resolve(MEDIA_DIR, rel);
+  if (path.dirname(abs) !== path.resolve(OUT()) || !/\.mp4$/i.test(abs) || !fs.existsSync(abs)) throw new Error("File hasil tidak ditemukan.");
+  return abs;
+}
+
+/** Move a result to the Recycle Bin (Windows; deleted elsewhere) and forget it in the "sudah dirender" list. */
+export async function deleteResult(rel: string) {
+  const abs = resultFile(rel);
+  if (process.platform === "win32") {
+    await run(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($env:TRK_FILE, 'OnlyErrorDialogs', 'SendToRecycleBin')"],
+      { windowsHide: true, env: { ...process.env, TRK_FILE: abs } },
+    );
+  } else fs.rmSync(abs, { force: true });
+  const map = listRendered();
+  const kept = Object.fromEntries(Object.entries(map).filter(([, r]) => r !== rel));
+  if (Object.keys(kept).length !== Object.keys(map).length) fs.writeFileSync(RENDERED(), JSON.stringify(kept));
+}
+
+/** Open the OS file manager with the result selected. */
+export function revealResult(rel: string) {
+  const abs = resultFile(rel);
+  if (process.platform === "win32") spawn("explorer.exe", [`/select,${abs}`], { detached: true, stdio: "ignore" }).unref();
+  else if (process.platform === "darwin") spawn("open", ["-R", abs], { detached: true, stdio: "ignore" }).unref();
+  else spawn("xdg-open", [path.dirname(abs)], { detached: true, stdio: "ignore" }).unref();
+}
+
 function markRendered(source: string, result: string) {
   fs.writeFileSync(RENDERED(), JSON.stringify({ ...listRendered(), [source]: result }));
 }
