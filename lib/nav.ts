@@ -1,5 +1,5 @@
 import {
-  CalendarClock, ChartNoAxesColumn, Clapperboard, Download, Film, FolderKanban, ImagePlus, Images, LayoutDashboard, Settings, Store, TrendingUp, UserCircle, Users,
+  CalendarClock, ChartNoAxesColumn, Clapperboard, Columns2, Download, Film, FolderKanban, ImagePlus, Images, LayoutDashboard, Settings, Store, TrendingUp, UserCircle, Users,
 } from "lucide-react";
 
 // Single source for sidebar, page headers, command menu and placeholder routes. Add a menu here, then build its page.
@@ -25,6 +25,7 @@ export const NAV = [
   { slug: "youtube", title: "YouTube", short: "Ringkasan", icon: LayoutDashboard, group: "YouTube", platform: "youtube", color: "#ff3333", desc: "Channel YouTube yang tersambung, sesi login, dan alat YouTube." }, // overview: first branch + the group button
   { slug: "youtube-performa", title: "Performa Channel", short: "Performa", icon: ChartNoAxesColumn, group: "YouTube", color: "#ff3333", desc: "Semua video & Shorts, Insight 28 hari, dan progres monetisasi dari YouTube Studio." },
   { slug: "youtube-shorts", title: "Shorts Downloader", short: "Unduh Shorts", icon: Download, group: "YouTube", color: "#ff3333", desc: "Unduh semua Shorts dari satu channel YouTube ke folder video kamu." },
+  { slug: "youtube-editor", title: "Editor Video", short: "Editor", icon: Columns2, group: "YouTube", color: "#ff3333", desc: "Gabungkan dua video jadi satu Shorts: video asli di kiri, gameplay di kanan." },
   { slug: "akun", title: "Akun Sosial", icon: Users, group: "Akun", color: "#26b5ce", desc: "Kelola akun TikTok, Instagram, Facebook, YouTube, dan Shopee." },
   { slug: "pengaturan", title: "Pengaturan", icon: Settings, group: "Pengaturan", color: "#8b7cf6", desc: "Lisensi, akun Google, aturan naskah, suara, dan mesin AI." },
 ] as const;
