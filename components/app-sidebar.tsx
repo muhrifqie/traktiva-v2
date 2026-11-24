@@ -44,14 +44,18 @@ function toggleFolded(name: string) {
   listeners.forEach((l) => l());
 }
 
+// the Studio (/video/<id>) belongs to Proyek Video; Galeri's video tab lives on its own route
+const isHere = (pathname: string, slug: string) => {
+  const path = /^\/video\/\d+/.test(pathname) ? "/proyek" : pathname.startsWith("/galeri-video") ? "/galeri" : pathname;
+  return path === `/${slug}` || path.startsWith(`/${slug}/`);
+};
+
 function NavItems({ items, counts, rail }: { items: readonly NavItem[]; counts: NavCounts; rail: boolean }) {
   const pathname = usePathname();
   return (
     <SidebarMenu className="gap-0.5">
       {items.map((item) => {
-        // the Studio (/video/<id>) belongs to Proyek Video, not to the concept gallery
-        const path = /^\/video\/\d+/.test(pathname) ? "/proyek" : pathname;
-        const active = path === `/${item.slug}` || path.startsWith(`/${item.slug}/`);
+        const active = isHere(pathname, item.slug);
         const label = "short" in item ? item.short : item.title;
         const platform = "platform" in item ? item.platform : null;
         return (
@@ -77,10 +81,6 @@ function NavItems({ items, counts, rail }: { items: readonly NavItem[]; counts: 
   );
 }
 
-const isHere = (pathname: string, slug: string) => {
-  const path = /^\/video\/\d+/.test(pathname) ? "/proyek" : pathname; // the Studio belongs to Proyek Video
-  return path === `/${slug}` || path.startsWith(`/${slug}/`);
-};
 
 /** One child of a group: indented under the group button, on the branch line. */
 function SubItem({ item, counts }: { item: NavItem; counts: NavCounts }) {

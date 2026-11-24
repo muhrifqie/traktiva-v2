@@ -1,14 +1,14 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Download, ImageIcon, ImagePlus, Loader2, Search, Sparkles, Trash2, Upload } from "lucide-react";
+import { Download, ImageIcon, Loader2, Search, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { confirmDialog } from "@/components/confirm-dialog";
 import { mediaUrl } from "@/lib/media-url";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import { deleteFromLibrary, uploadToLibrary } from "./actions";
+import { GaleriTabs } from "./tabs";
 
 type Item = { rel: string; name: string; at: number; date: string; source?: string };
 
@@ -48,8 +48,6 @@ export function LibraryGrid({ tab, uploads, generated }: { tab: "uploads" | "ai"
   const all = tab === "ai" ? generated : uploads;
   const k = q.trim().toLowerCase();
   const items = k ? all.filter((it) => `${it.name} ${it.source ?? ""}`.toLowerCase().includes(k)) : all;
-  const tabCls = (on: boolean) =>
-    `flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors ${on ? "border-primary/50 bg-primary/10 text-brand-light" : "bg-card text-muted-foreground hover:text-foreground"}`;
 
   return (
     <div
@@ -68,8 +66,7 @@ export function LibraryGrid({ tab, uploads, generated }: { tab: "uploads" | "ai"
       }}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Link href="/galeri" className={tabCls(tab === "uploads")}><ImagePlus className="size-3.5" /> Unggahanku <span className="rounded-full bg-muted px-1.5 text-[10px]">{uploads.length}</span></Link>
-        <Link href="/galeri?tab=ai" className={tabCls(tab === "ai")}><Sparkles className="size-3.5" /> Hasil AI <span className="rounded-full bg-muted px-1.5 text-[10px]">{generated.length}</span></Link>
+        <GaleriTabs current={tab} counts={{ uploads: uploads.length, ai: generated.length }} />
         <label className="ml-auto flex h-8 w-full items-center gap-2 rounded-lg border bg-card px-3 text-xs focus-within:border-ring sm:w-64">
           <Search className="size-3.5 text-muted-foreground" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari gambar..." className="min-w-0 flex-1 bg-transparent outline-none" />

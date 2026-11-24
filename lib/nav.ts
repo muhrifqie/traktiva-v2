@@ -12,9 +12,9 @@ export const NAV = [
   { slug: "jadwal", title: "Kalender Upload", icon: CalendarClock, group: "Utama", color: "#5e6ad2", desc: "Semua upload terjadwal per hari, dan atur kapan video diunggah ke tiap akun." },
   { slug: "video", title: "Buat Video Reels", icon: Clapperboard, group: "Buat Konten", color: "#f2994a", desc: "Pilih konsep, masukkan produk, AI bikin videonya.", sidebar: false },
   { slug: "proyek", title: "Proyek Video", icon: FolderKanban, group: "Buat Konten", color: "#56ccf2", desc: "Semua proyek video: draf, sedang dibuat, dan yang sudah jadi." },
-  { slug: "gambar-ai", title: "Buat Gambar AI", icon: ImagePlus, group: "Buat Konten", color: "#e535ab", desc: "Bikin gambar produk dan konten dari prompt." },
-  { slug: "galeri", title: "Gambar & Unggahan", icon: Images, group: "Pustaka", color: "#f2c94c", desc: "Foto unggahan dan gambar AI, siap dipakai ulang tanpa unggah lagi." },
-  { slug: "galeri-video", title: "Galeri Video", icon: Film, group: "Pustaka", color: "#4ea7fc", desc: "Semua video siap unggah dan riwayatnya." },
+  { slug: "gambar-ai", title: "Buat Gambar AI", icon: ImagePlus, group: "Buat Konten", color: "#e535ab", desc: "Bikin gambar produk dan konten dari prompt.", sidebar: false }, // ponytail: not built; AI images live in Galeri → Hasil AI
+  { slug: "galeri", title: "Galeri", icon: Images, group: "Pustaka", color: "#f2c94c", desc: "Foto unggahan, gambar AI, dan video jadi di satu tempat, siap dipakai ulang." },
+  { slug: "galeri-video", title: "Galeri Video", icon: Film, group: "Pustaka", color: "#4ea7fc", desc: "Semua video siap unggah dan riwayatnya.", sidebar: false }, // a tab of Galeri
   { slug: "showcase", title: "Etalase TikTok Shop", short: "Etalase", icon: Store, group: "TikTok Shop", color: "#4cb782", desc: "Etalase produk affiliate dan sinkron otomatis dari TikTok Shop." },
   { slug: "profil", title: "Profil & Postingan", short: "Performa akun", icon: UserCircle, group: "TikTok Shop", color: "#ff3b6b", desc: "Profil, poin akun, dan performa postingan tiap akun." },
   // platforms not live yet: placeholder pages until they are built (status follows the website roadmap)
