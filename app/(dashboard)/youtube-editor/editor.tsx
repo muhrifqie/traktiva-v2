@@ -23,13 +23,19 @@ type Saved = { channel: string; queue: string[]; games: string[]; random: boolea
 const PAGE = 24;
 const PREVIEW_SECS = 6; // length of the playable preview (lib renderPreviewClip default)
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+// monitor backdrop: warm dark squares, like an editor canvas
+const CHECKER: React.CSSProperties = {
+  backgroundColor: "#16110e",
+  backgroundImage: "conic-gradient(#2a211c 25%, transparent 0 50%, #2a211c 0 75%, transparent 0)",
+  backgroundSize: "24px 24px",
+};
 const ON = "border-orange-400/60 bg-orange-500/10 font-semibold text-orange-600 dark:text-orange-300";
 
 function Segmented<T extends string>({ value, onChange, items, disabled }: { value: T; onChange: (v: T) => void; items: { v: T; label: React.ReactNode; title?: string }[]; disabled?: boolean }) {
   return (
     <div className="grid auto-cols-fr grid-flow-col gap-0.5 rounded-lg bg-muted p-0.5">
       {items.map((it) => (
-        <button key={it.v} type="button" title={it.title} disabled={disabled} onClick={() => onChange(it.v)} aria-pressed={value === it.v} className={`flex h-8 items-center justify-center gap-1 rounded-md px-1.5 text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-50 ${value === it.v ? "bg-gradient-to-b from-amber-400/25 to-orange-500/15 text-orange-700 shadow-sm ring-1 ring-orange-400/40 dark:text-amber-200" : "text-muted-foreground hover:bg-background/60 hover:text-foreground"}`}>
+        <button key={it.v} type="button" title={it.title} disabled={disabled} onClick={() => onChange(it.v)} aria-pressed={value === it.v} className={`flex h-8 items-center justify-center gap-1 rounded-md px-1.5 text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-50 ${value === it.v ? "bg-amber-500/20 text-orange-700 shadow-sm ring-1 ring-amber-500/40 dark:text-amber-200" : "text-muted-foreground hover:bg-background/60 hover:text-foreground"}`}>
           {it.label}
         </button>
       ))}
@@ -80,6 +86,39 @@ const SHAPES: { v: Shape; label: string; radius: string }[] = [
   { v: "round", label: "Bulat", radius: "4px" },
   { v: "circle", label: "Lingkaran", radius: "999px" },
 ];
+
+const PANELS_KEY = "trk-yt-editor-panels";
+const PANELS = { left: 320, right: 320 };
+const PANEL_RANGE = [240, 560] as const;
+
+/** Drag bar between two panels: reports the pointer's horizontal movement while held. */
+function Gutter({ onDrag, onDone, onReset }: { onDrag: (dx: number) => void; onDone: () => void; onReset: () => void }) {
+  const last = useRef<number | null>(null);
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      title="Geser untuk mengubah lebar panel (klik ganda: lebar awal)"
+      onPointerDown={(e) => {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        last.current = e.clientX;
+      }}
+      onPointerMove={(e) => {
+        if (last.current == null) return;
+        onDrag(e.clientX - last.current);
+        last.current = e.clientX;
+      }}
+      onPointerUp={() => {
+        last.current = null;
+        onDone();
+      }}
+      onDoubleClick={onReset}
+      className="group flex cursor-col-resize touch-none items-center justify-center select-none"
+    >
+      <span className="h-12 w-1 rounded-full bg-border transition-colors group-hover:bg-orange-400 group-active:bg-orange-500" />
+    </div>
+  );
+}
 
 const FLIPS: { v: Flip; label: string; title: string }[] = [
   { v: "none", label: "Asli", title: "Tidak dibalik" },
@@ -147,6 +186,25 @@ export function VideoEditor({
   const [show, setShow] = useState<Show>("all");
   const [page, setPage] = useState(0);
   const restored = useRef(false);
+  const [panels, setPanels] = useState(PANELS);
+  const resize = (side: "left" | "right", dx: number) =>
+    setPanels((p) => ({ ...p, [side]: Math.round(Math.min(PANEL_RANGE[1], Math.max(PANEL_RANGE[0], p[side] + dx))) }));
+  const savePanels = () =>
+    setPanels((p) => {
+      try {
+        localStorage.setItem(PANELS_KEY, JSON.stringify(p));
+      } catch {}
+      return p;
+    });
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        const p = JSON.parse(localStorage.getItem(PANELS_KEY) ?? "null") as typeof PANELS | null;
+        if (p?.left && p?.right) setPanels({ left: Math.min(PANEL_RANGE[1], Math.max(PANEL_RANGE[0], p.left)), right: Math.min(PANEL_RANGE[1], Math.max(PANEL_RANGE[0], p.right)) });
+      } catch {}
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
   const running = !!job?.running;
   const setMany = (patch: Partial<EditorSettings>) => {
     setSaved(false);
@@ -373,7 +431,7 @@ export function VideoEditor({
           <Clapperboard className="size-8 text-muted-foreground" />
           <p className="text-sm font-medium">Belum ada video asli</p>
           <p className="max-w-sm text-xs text-muted-foreground">Unduh Shorts dulu di menu Unduh Shorts. Hasilnya otomatis muncul di sini untuk digabung dengan gameplay.</p>
-          <Link href="/youtube-shorts" className="mt-2 flex h-9 items-center rounded-lg bg-gradient-to-r from-orange-500 to-rose-500 text-white shadow-sm shadow-orange-500/20 hover:from-orange-400 hover:to-rose-400 px-3.5 text-[13px] font-medium">Buka Unduh Shorts</Link>
+          <Link href="/youtube-shorts" className="mt-2 flex h-9 items-center rounded-lg bg-orange-500 text-white shadow-sm hover:bg-orange-600 px-3.5 text-[13px] font-medium">Buka Unduh Shorts</Link>
         </div>
       </div>
     );
@@ -409,7 +467,7 @@ export function VideoEditor({
         {running && (
           <button type="button" onClick={() => void stopRender()} className="flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium hover:border-destructive/40 hover:text-destructive"><Square className="size-4" /> Batalkan</button>
         )}
-        <button type="button" onClick={render} disabled={running || !queue.length} title={queue.length ? undefined : "Pilih video asli dulu"} className="relative flex h-9 items-center gap-1.5 overflow-hidden rounded-lg bg-gradient-to-r from-orange-500 to-rose-500 text-white shadow-sm shadow-orange-500/20 hover:from-orange-400 hover:to-rose-400 px-4 text-[13px] font-semibold disabled:opacity-50">
+        <button type="button" onClick={render} disabled={running || !queue.length} title={queue.length ? undefined : "Pilih video asli dulu"} className="relative flex h-9 items-center gap-1.5 overflow-hidden rounded-lg bg-orange-500 text-white shadow-sm hover:bg-orange-600 px-4 text-[13px] font-semibold disabled:opacity-50">
           {running && <span className="absolute inset-y-0 left-0 bg-white/20 transition-[width]" style={{ width: `${pct}%` }} />}
           {running ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
           <span className="relative">{running ? `Merender ${job!.done.length}/${job!.total}` : queue.length ? `Render ${queue.length} video` : "Render"}</span>
@@ -417,7 +475,7 @@ export function VideoEditor({
       </div>
 
       {/* ── media | monitor | settings ──────────────────────────────────────────────────────────────────────────── */}
-      <div className="grid min-h-0 flex-1 grid-cols-[300px_minmax(0,1fr)_300px] gap-3 p-3 xl:grid-cols-[340px_minmax(0,1fr)_330px]">
+      <div className="grid min-h-0 flex-1 p-3" style={{ gridTemplateColumns: `${panels.left}px 12px minmax(0,1fr) 12px ${panels.right}px` }}>
         {/* media */}
         <section className={`${card} flex min-h-0 flex-col overflow-hidden`}>
           <div className="grid grid-cols-3 gap-1 border-b p-1.5 text-xs font-medium">
@@ -451,7 +509,7 @@ export function VideoEditor({
                 <button type="button" onClick={() => setQueue((qq) => [...qq, ...shown.map((f) => f.rel).filter((r) => !qq.includes(r))])} className="flex h-7 items-center gap-1 rounded-md px-2 hover:bg-accent"><Plus className="size-3" /> Pilih halaman</button>
                 {queue.length > 0 && <button type="button" onClick={() => setQueue([])} className="flex h-7 items-center gap-1 rounded-md px-2 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-3" /> Hapus</button>}
               </div>
-              <div className="no-scrollbar -mx-1 grid min-h-0 flex-1 auto-rows-min grid-cols-3 gap-2 overflow-y-auto p-1">
+              <div className="no-scrollbar -mx-1 grid min-h-0 flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-2 overflow-y-auto p-1">
                 {shown.map((f) => {
                   const on = inQueue.has(f.rel);
                   const n = queue.indexOf(f.rel) + 1;
@@ -461,14 +519,14 @@ export function VideoEditor({
                         <video src={`${mediaUrl(f.rel)}#t=1`} preload="metadata" muted className="aspect-[9/16] w-full object-cover" />
                         <span className="absolute inset-x-0 bottom-0 line-clamp-2 bg-gradient-to-t from-black/85 to-transparent p-1.5 pt-5 text-[9px] leading-tight text-white">{f.name}</span>
                       </button>
-                      <span className={`pointer-events-none absolute top-1 left-1 grid size-5 place-items-center rounded-full text-[10px] font-bold ${on ? "bg-gradient-to-br from-amber-400 to-orange-500 text-white" : "border border-white/70 bg-black/30 text-white opacity-0 group-hover:opacity-100"}`}>{on ? n : <Plus className="size-3" />}</span>
+                      <span className={`pointer-events-none absolute top-1 left-1 grid size-5 place-items-center rounded-full text-[10px] font-bold ${on ? "bg-amber-400 text-black" : "border border-white/70 bg-black/30 text-white opacity-0 group-hover:opacity-100"}`}>{on ? n : <Plus className="size-3" />}</span>
                       {f.rel === clip && <span className="pointer-events-none absolute top-1 right-1 rounded bg-amber-400 px-1 text-[8px] font-semibold text-black">Di layar</span>}
                       {rendered[f.rel] && f.rel !== clip && <span className="pointer-events-none absolute top-1 right-1 rounded bg-black/60 px-1 text-[8px] font-semibold text-emerald-300">✓ Sudah</span>}
                       <button type="button" onClick={() => setActive(f.rel)} title="Lihat di layar" className="absolute right-1 bottom-8 rounded bg-black/60 px-1.5 py-0.5 text-[9px] text-white opacity-0 group-hover:opacity-100">Lihat</button>
                     </div>
                   );
                 })}
-                {!shown.length && <p className="col-span-3 p-4 text-center text-xs text-muted-foreground">Tidak ada video yang cocok.</p>}
+                {!shown.length && <p className="col-span-full p-4 text-center text-xs text-muted-foreground">Tidak ada video yang cocok.</p>}
               </div>
               <div className="flex items-center gap-1 text-[11px]">
                 <button type="button" disabled={current === 0} onClick={() => setPage(current - 1)} aria-label="Sebelumnya" className="grid size-8 place-items-center rounded-md border hover:bg-accent disabled:opacity-40"><ChevronLeft className="size-4" /></button>
@@ -485,7 +543,7 @@ export function VideoEditor({
               </div>
               <Segmented value={random ? "acak" : "urut"} onChange={(v) => setRandom(v === "acak")} disabled={running} items={[{ v: "acak", label: <><Shuffle className="size-3.5" /> Acak</>, title: "Tiap video dapat overlay acak" }, { v: "urut", label: "Bergiliran", title: "Overlay dipakai bergantian sesuai urutan" }]} />
               <p className="text-[11px] text-muted-foreground">{games.size ? `${games.size} dipilih` : "Belum ada yang dipilih = semua dipakai"}</p>
-              <div className="no-scrollbar -mx-1 grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-2 overflow-y-auto p-1">
+              <div className="no-scrollbar -mx-1 grid min-h-0 flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(130px,1fr))] gap-2 overflow-y-auto p-1">
                 {gameplay.map((f) => {
                   const on = games.has(f.rel);
                   return (
@@ -496,7 +554,7 @@ export function VideoEditor({
                     </button>
                   );
                 })}
-                {!gameplay.length && <p className="col-span-2 p-3 text-center text-xs text-muted-foreground">Taruh video (mp4) di Folder overlay, lalu muat ulang.</p>}
+                {!gameplay.length && <p className="col-span-full p-3 text-center text-xs text-muted-foreground">Taruh video (mp4) di Folder overlay, lalu muat ulang.</p>}
               </div>
             </div>
           )}
@@ -504,20 +562,21 @@ export function VideoEditor({
             <div className="flex min-h-0 flex-1 flex-col gap-2 p-2.5">
               <button type="button" onClick={() => void openMediaFolder("results")} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border text-xs hover:bg-accent"><FolderOpen className="size-3.5" /> Buka folder hasil</button>
               {job?.failed.map((f) => <p key={f} className="text-[11px] text-destructive">{f}</p>)}
-              <div className="no-scrollbar -mx-1 grid min-h-0 flex-1 auto-rows-min grid-cols-3 gap-2 overflow-y-auto p-1">
+              <div className="no-scrollbar -mx-1 grid min-h-0 flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-2 overflow-y-auto p-1">
                 {results.map((r) => (
                   <a key={r.rel} href={mediaUrl(r.rel)} target="_blank" rel="noreferrer" title={r.name} className="overflow-hidden rounded-lg border bg-muted hover:ring-2 hover:ring-border">
                     <video src={`${mediaUrl(r.rel)}#t=1`} preload="metadata" muted className="aspect-[9/16] w-full object-cover" />
                   </a>
                 ))}
-                {!results.length && <p className="col-span-3 p-4 text-center text-xs text-muted-foreground">Belum ada hasil render.</p>}
+                {!results.length && <p className="col-span-full p-4 text-center text-xs text-muted-foreground">Belum ada hasil render.</p>}
               </div>
             </div>
           )}
         </section>
 
+        <Gutter onDrag={(dx) => resize("left", dx)} onDone={savePanels} onReset={() => (resize("left", PANELS.left - panels.left), savePanels())} />
         {/* monitor */}
-        <section className="flex min-h-0 flex-col items-center gap-2 rounded-xl border bg-[radial-gradient(ellipse_at_top,#2a1710,#0f0a08_70%)] p-3">
+        <section className="flex min-h-0 flex-col items-center gap-2 rounded-xl border p-3" style={CHECKER}>
           <div className="flex w-full items-center gap-2 text-[11px] text-white/70">
             <button type="button" onClick={() => step(-1)} disabled={queue.length < 2} aria-label="Video sebelumnya" className="grid size-7 place-items-center rounded-md hover:bg-white/10 disabled:opacity-30"><ChevronLeft className="size-4" /></button>
             <span className="min-w-0 flex-1 truncate text-center">
@@ -544,7 +603,7 @@ export function VideoEditor({
               {cfg.layout !== "pip" && (
                 <span className="pointer-events-none absolute" style={cfg.layout === "side" ? { left: `${line}%`, top: 0, bottom: 0 } : { top: `${line}%`, left: 0, right: 0 }}>
                   <span className={`absolute bg-white/90 shadow-[0_0_0_1px_rgba(0,0,0,.35)] ${cfg.layout === "side" ? "inset-y-0 -left-px w-0.5" : "inset-x-0 -top-px h-0.5"}`} />
-                  <span className={`absolute grid size-7 place-items-center rounded-full border-2 border-white bg-gradient-to-br from-orange-500 to-rose-500 text-white shadow-lg ${cfg.layout === "side" ? "top-1/2 -left-3.5 -translate-y-1/2" : "left-1/2 -top-3.5 -translate-x-1/2"}`}>
+                  <span className={`absolute grid size-7 place-items-center rounded-full border-2 border-white bg-orange-500 text-white shadow-lg ${cfg.layout === "side" ? "top-1/2 -left-3.5 -translate-y-1/2" : "left-1/2 -top-3.5 -translate-x-1/2"}`}>
                     {cfg.layout === "side" ? <Columns2 className="size-3.5" /> : <Rows2 className="size-3.5" />}
                   </span>
                 </span>
@@ -577,7 +636,7 @@ export function VideoEditor({
             </div>
           </div>
           <div className="flex w-full max-w-xl items-center gap-2 text-[11px] text-white/70">
-            <button type="button" onClick={playPreview} disabled={!clip || !sampleGame || vid.busy} title={`Putar ${PREVIEW_SECS} detik hasil dengan suara, mulai dari waktu ini`} className="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 px-3 text-xs font-semibold text-black hover:from-amber-300 hover:to-orange-400 disabled:opacity-50">
+            <button type="button" onClick={playPreview} disabled={!clip || !sampleGame || vid.busy} title={`Putar ${PREVIEW_SECS} detik hasil dengan suara, mulai dari waktu ini`} className="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-amber-400 px-3 text-xs font-semibold text-black hover:bg-amber-300 disabled:opacity-50">
               {vid.busy ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5 fill-current" />}
               {vid.busy ? "Menyiapkan…" : "Putar preview"}
             </button>
@@ -591,6 +650,7 @@ export function VideoEditor({
           </p>
         </section>
 
+        <Gutter onDrag={(dx) => resize("right", -dx)} onDone={savePanels} onReset={() => (resize("right", PANELS.right - panels.right), savePanels())} />
         {/* settings */}
         <section className={`${card} no-scrollbar min-h-0 overflow-y-auto`}>
           {cfg.layout === "pip" ? (
