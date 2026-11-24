@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { PlatformIcon } from "@/components/platform-icon";
 import { accountColor } from "@/lib/account-color";
 
@@ -45,6 +46,7 @@ export function JadwalCalendar({ jobs, today: todayKey }: { jobs: CalJob[]; toda
   const today = utc(y, m - 1, d);
   const [mode, setMode] = useState<"bulan" | "minggu">("bulan");
   const [anchor, setAnchor] = useState(today); // any day inside the shown month/week
+  const router = useRouter();
 
   const byDay = useMemo(() => {
     const map = new Map<string, CalJob[]>();
@@ -84,20 +86,26 @@ export function JadwalCalendar({ jobs, today: todayKey }: { jobs: CalJob[]; toda
         <div className="grid grid-cols-7 border-b text-center text-[11px] font-medium text-muted-foreground">
           {WEEKDAYS.map((w) => <span key={w} className="py-2">{w}</span>)}
         </div>
-        <div className={`grid flex-1 grid-cols-7 ${mode === "bulan" ? "auto-rows-[minmax(92px,1fr)]" : "auto-rows-[minmax(320px,1fr)]"}`}>
+        <div className={`grid grid-cols-7 ${mode === "bulan" ? "auto-rows-[minmax(92px,auto)]" : "auto-rows-[minmax(160px,auto)]"}`}>
           {days.map((day, i) => {
             const k = keyOf(day);
             const list = byDay.get(k) ?? [];
             const isToday = k === todayKey;
+            const past = k < todayKey;
             return (
               <button
                 key={k}
                 type="button"
-                onClick={() => mode === "bulan" && (setAnchor(day), setMode("minggu"))}
-                title={mode === "bulan" ? "Lihat minggu ini" : undefined}
-                className={`flex min-w-0 flex-col gap-1 border-b p-1.5 text-left transition-colors hover:bg-accent/40 ${i % 7 !== 6 ? "border-r" : ""} ${isToday ? "bg-primary/[0.04]" : ""} ${inMonth(day) ? "" : "opacity-40"}`}
+                disabled={past}
+                // a day from today on: schedule a video on that date (the form opens with the date filled in)
+                onClick={() => !past && router.push(`/jadwal?tampilan=daftar&tanggal=${k}`)}
+                title={past ? undefined : "Jadwalkan video di tanggal ini"}
+                className={`group flex min-w-0 flex-col gap-1 border-b p-1.5 text-left transition-colors ${past ? "cursor-default" : "hover:bg-accent/40"} ${i % 7 !== 6 ? "border-r" : ""} ${isToday ? "bg-primary/[0.04]" : ""} ${inMonth(day) ? "" : "opacity-40"}`}
               >
-                <span className={`grid size-6 shrink-0 place-items-center rounded-full text-xs tabular-nums ${isToday ? "bg-primary font-semibold text-primary-foreground" : "text-muted-foreground"}`}>{day.getUTCDate()}</span>
+                <span className="flex items-center justify-between">
+                  <span className={`grid size-6 shrink-0 place-items-center rounded-full text-xs tabular-nums ${isToday ? "bg-primary font-semibold text-primary-foreground" : "text-muted-foreground"}`}>{day.getUTCDate()}</span>
+                  {!past && <Plus className="size-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />}
+                </span>
                 {list.slice(0, limit).map((j) => <Chip key={j.id} j={j} />)}
                 {list.length > limit && <span className="px-1 text-[10px] text-muted-foreground">+{list.length - limit} lainnya</span>}
               </button>

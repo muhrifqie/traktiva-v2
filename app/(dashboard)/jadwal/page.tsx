@@ -23,10 +23,11 @@ function inQueue(j: { status: string; postedAt: Date | null }) {
   return j.status === "queued" || j.status === "uploading" || (j.status === "done" && !!j.postedAt && j.postedAt.getTime() > Date.now());
 }
 
-export default async function JadwalPage({ searchParams }: { searchParams: Promise<{ project?: string; tampilan?: string; akun?: string }> }) {
-  const { project, tampilan, akun } = await searchParams;
+export default async function JadwalPage({ searchParams }: { searchParams: Promise<{ project?: string; tampilan?: string; akun?: string; tanggal?: string }> }) {
+  const { project, tampilan, akun, tanggal } = await searchParams;
+  const date = tanggal && /^\d{4}-\d{2}-\d{2}$/.test(tanggal) ? tanggal : null; // a day clicked in the calendar
   // Kalender by default; the list (with the scheduling form) when asked, or when coming from a project to schedule it
-  const view = tampilan === "daftar" || project || akun ? "daftar" : "kalender";
+  const view = tampilan === "daftar" || project || akun || date ? "daftar" : "kalender";
   await hookInsights().catch(() => null); // links finished jobs to the TikTok post the profile sync found (postId)
   const [jobs, social, videos, etalase] = await Promise.all([
     db
@@ -89,6 +90,7 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
         banned={writingRules().replace}
         maxPerDay={MAX_PER_DAY}
         initialProject={project ? Number(project) : null}
+        initialDate={date}
         selectedAccountId={pickActive(social.filter((a) => a.status === "active"), akun)?.id ?? null}
         provenTags={provenTags}
       />

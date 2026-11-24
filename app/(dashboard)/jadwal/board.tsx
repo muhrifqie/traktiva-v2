@@ -138,7 +138,7 @@ type Account = { id: number; username: string; status: string; platform: string;
 const accName = (a: Account) => (a.platform === "youtube" ? `${a.displayName || a.username} (YouTube)` : `@${a.username}`);
 
 export function JadwalBoard({
-  jobs, accounts, videos, etalase, minGap, initialProject, tips, banned, maxPerDay, selectedAccountId, provenTags, ytDefaults, ytLimited,
+  jobs, accounts, videos, etalase, minGap, initialProject, initialDate, tips, banned, maxPerDay, selectedAccountId, provenTags, ytDefaults, ytLimited,
 }: {
   ytDefaults: YouTubeUploadDefaults; // menu YouTube → Pengaturan upload
   ytLimited: Record<number, number>; // channels capped by YouTube's daily upload limit → until (ms)
@@ -147,6 +147,7 @@ export function JadwalBoard({
   provenTags: Record<number, string[]>; // general hashtags that did best on each account (lib/hashtags.ts)
   etalase: EtalaseItem[];
   jobs: Job[]; accounts: Account[]; videos: Uploadable[]; minGap: number; initialProject: number | null;
+  initialDate?: string | null; // YYYY-MM-DD picked in the calendar: the start time goes on that day
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -175,7 +176,13 @@ export function JadwalBoard({
   const [musicVolume, setMusicVolume] = useState(-20); // under the voice-over; 0 dB = as loud as the video's own audio
   const [volDraft, setVolDraft] = useState<string | null>(null); // what is being typed in the dB box ("-", "-1" …)
   const [titleIdea, setTitleIdea] = useState(0); // which curiousTitles() idea is shown
-  const [at, setAt] = useState("");
+  // a day picked in the calendar: that date at the account's best hour (else 19.00)
+  const [at, setAt] = useState(() => {
+    if (!initialDate) return "";
+    const first = active.find((a) => a.id === selectedAccountId) ?? active[0];
+    const hour = (first && tips[first.id]?.hours[0]?.hour) ?? 19;
+    return `${initialDate}T${String(hour).padStart(2, "0")}:00`;
+  });
   const gap = 180; // spacing between a project's videos (main + A/B variants), 3 h
   // YouTube channel picked: title + tags/visibility/audience/AI label from the templates; the caption is its description
   const hasTt = ttTargets.length > 0;
