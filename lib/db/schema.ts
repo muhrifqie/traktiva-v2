@@ -2,7 +2,7 @@ import type { ProjectEdit } from "@/lib/edit";
 import { sql } from "drizzle-orm";
 import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-export const PLATFORMS = ["tiktok", "instagram", "facebook", "youtube", "pinterest", "shopee"] as const;
+export const PLATFORMS = ["tiktok", "instagram", "facebook", "youtube", "shopee"] as const;
 
 export const accounts = sqliteTable(
   "accounts",
@@ -263,6 +263,8 @@ export const uploadJobs = sqliteTable("upload_jobs", {
   productId: text("product_id"), // TikTok Shop product to link (keranjang); null = no product link
   productTitle: text("product_title"),
   hook: text("hook"), // opening line of the video (for the performance stats)
+  music: integer("music", { mode: "boolean" }).notNull().default(false), // add a random trending "JJ" sound in TikTok's editor
+  musicVolume: integer("music_volume").notNull().default(0), // dB of that sound in TikTok's editor (-60…20)
   scheduledAt: integer("scheduled_at", { mode: "timestamp" }).notNull(),
   status: text("status", { enum: ["queued", "uploading", "done", "failed", "cancelled"] }).notNull().default("queued"),
   progress: text("progress"),
@@ -270,6 +272,9 @@ export const uploadJobs = sqliteTable("upload_jobs", {
   attempts: integer("attempts").notNull().default(0),
   postedAt: integer("posted_at", { mode: "timestamp" }),
   postId: text("post_id"), // TikTok video id once matched from the profile sync
+  // YouTube jobs: the video title, and tags/visibility/audience/AI label (TikTok jobs leave both empty)
+  videoTitle: text("video_title"),
+  meta: text("meta", { mode: "json" }).$type<{ tags?: string[]; visibility?: "public" | "unlisted" | "private"; madeForKids?: boolean; aiContent?: boolean }>(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
 });
 

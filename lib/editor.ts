@@ -34,7 +34,19 @@ export function withChapters(p: VideoProject, e: ProjectEdit): ProjectEdit {
   return { ...e, overlays: [...e.overlays.filter((o) => !o.id.startsWith("bab-")), ...titles] };
 }
 
-export async function prepareEdit(p: VideoProject): Promise<ProjectEdit> {
+const building = (globalThis as unknown as { __editBuild?: Map<number, Promise<ProjectEdit>> }).__editBuild ??
+  ((globalThis as unknown as { __editBuild: Map<number, Promise<ProjectEdit>> }).__editBuild = new Map());
+
+/** Editor state for a rendered project; a second caller for the same project waits for the build already running. */
+export function prepareEdit(p: VideoProject): Promise<ProjectEdit> {
+  const running = building.get(p.id);
+  if (running) return running;
+  const job = buildEdit(p).finally(() => building.delete(p.id));
+  building.set(p.id, job);
+  return job;
+}
+
+async function buildEdit(p: VideoProject): Promise<ProjectEdit> {
   if (p.scenes.some((s) => !s.clip)) throw new Error("Render semua klip dulu.");
   // a Cartesia clip is "<raw>-vo.mp4"; its raw clip and voice WAV (suara/<raw>.wav) are kept next to it
   const parts = await Promise.all(
@@ -116,8 +128,24 @@ function fxFilter(e: ProjectEdit) {
   return chain.join(",");
 }
 
-/** Burn captions (PNG overlays drawn by the editor) + mix clip sound, voice-over and music → final.mp4 at -15 LUFS (best sellers sit around -17..-12). */
+/**
+ * Burn captions (PNG overlays drawn by the editor) + mix clip sound, voice-over and music → final.mp4 at -15 LUFS
+ * (best sellers sit around -17..-12). A base video that decodes to no frames (left corrupt by an older build that
+ * wrote it twice at once) is rebuilt from the clips once and the export retried.
+ */
 export async function exportEdit(p: VideoProject, src: ProjectEdit, overlays: CaptionOverlay[], name = "final") {
+  try {
+    return await exportOnce(p, src, overlays, name);
+  } catch (e) {
+    const brokenBase = /video:0kB/.test(String(e)) && src.base === `${p.folder}/edit/base.mp4`;
+    if (!brokenBase) throw e;
+    await fs.rm(resolveMedia(src.base), { force: true });
+    await prepareEdit({ ...p, edit: null }); // writes a fresh base.mp4 at the same path (same clips, same timing)
+    return exportOnce(p, src, overlays, name);
+  }
+}
+
+async function exportOnce(p: VideoProject, src: ProjectEdit, overlays: CaptionOverlay[], name: string) {
   if (!ffmpegPath) throw new Error("ffmpeg tidak tersedia di perangkat ini.");
   // everything below works at the export size (1080p); the base video is upscaled once, captions arrive drawn at it
   const size = exportSize(src);
@@ -412,7 +440,7 @@ export async function fullVoiceOver(p: VideoProject, e: ProjectEdit, script: str
   const { synthesizeTimed } = await import("@/lib/cartesia");
   const defaults = getSettings().voice ?? { provider: "flow" };
   const pv = projectVoice(p.options, defaults);
-  if (!defaults.cartesiaKey || !pv.voiceId) throw new Error("Pilih suara Cartesia dulu (Pengaturan AI → Suara).");
+  if (!defaults.cartesiaKey || !pv.voiceId) throw new Error("Pilih suara Cartesia dulu (Pengaturan → Suara).");
   const { wav, words: timed } = await synthesizeTimed(defaults.cartesiaKey, spoken(applyRules(script, writingRules())), pv.voiceId, { speed: pv.speed });
   const src = await writeMedia(`${p.folder}/suara/vo-utuh-${Date.now().toString(36)}.wav`, wav);
   const dur = (await probeMedia(src)).seconds;

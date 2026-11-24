@@ -1,12 +1,14 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, gte, inArray, notInArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { accountPosts, accounts, accountStats } from "@/lib/db/schema";
 import { deleteProfile, isProfileKey } from "@/lib/browser/chrome";
+import { removeMedia } from "@/lib/media";
 import * as tiktok from "@/lib/platforms/tiktok";
+import * as youtube from "@/lib/platforms/youtube";
 
 // Accounts are only created by a real platform login (username/uid read from the session), never typed in by hand.
 
@@ -34,10 +36,10 @@ export async function deleteAccount(id: number) {
 }
 
 /**
- * Upsert a TikTok account after a successful login.
- * Match order: same TikTok uid (username may have changed) → same username → new row.
+ * Upsert an account after a successful login.
+ * Match order: same platform id (username may have changed) → same username → new row.
  */
-async function saveTikTokLogin(sessionKey: string, who: tiktok.TikTokIdentity) {
+async function saveLogin(platform: "tiktok" | "youtube", sessionKey: string, who: tiktok.TikTokIdentity) {
   const now = new Date();
   const values = {
     username: who.username,
@@ -50,13 +52,13 @@ async function saveTikTokLogin(sessionKey: string, who: tiktok.TikTokIdentity) {
     ...(who.avatar ? { avatarUrl: who.avatar } : {}),
   };
   const existing =
-    (who.uid && (await db.select().from(accounts).where(and(eq(accounts.platform, "tiktok"), eq(accounts.externalId, who.uid))).get())) ||
-    (await db.select().from(accounts).where(and(eq(accounts.platform, "tiktok"), eq(accounts.username, who.username))).get());
+    (who.uid && (await db.select().from(accounts).where(and(eq(accounts.platform, platform), eq(accounts.externalId, who.uid))).get())) ||
+    (await db.select().from(accounts).where(and(eq(accounts.platform, platform), eq(accounts.username, who.username))).get());
 
   if (existing) {
     if (existing.username !== who.username) {
       // uid matched but the user renamed; drop a stale row holding the new name so the unique index holds
-      await db.delete(accounts).where(and(eq(accounts.platform, "tiktok"), eq(accounts.username, who.username)));
+      await db.delete(accounts).where(and(eq(accounts.platform, platform), eq(accounts.username, who.username)));
     }
     await db.update(accounts).set(values).where(eq(accounts.id, existing.id));
     // the old browser profile is replaced by the one that just logged in
@@ -65,7 +67,7 @@ async function saveTikTokLogin(sessionKey: string, who: tiktok.TikTokIdentity) {
     }
     return { id: existing.id, created: false };
   }
-  const [{ id }] = await db.insert(accounts).values({ platform: "tiktok", ...values }).returning({ id: accounts.id });
+  const [{ id }] = await db.insert(accounts).values({ platform, ...values }).returning({ id: accounts.id });
   return { id, created: true };
 }
 
@@ -88,7 +90,7 @@ export async function pollTikTokLogin(loginId: string): Promise<LoginPoll> {
   const s = tiktok.getLogin(z.string().uuid().parse(loginId));
   if (!s) return { status: "failed", error: "Sesi login tidak ditemukan. Coba lagi." };
   if (s.status !== "done" || !s.result) return { status: s.status === "done" ? "identifying" : s.status, error: s.error };
-  const saved = await saveTikTokLogin(s.sessionKey, s.result);
+  const saved = await saveLogin("tiktok", s.sessionKey, s.result);
   refresh();
   return { status: "done" as const, accountId: saved.id, created: saved.created, username: s.result.username };
 }
@@ -108,6 +110,28 @@ export async function checkTikTokSession(id: number) {
   await db.update(accounts).set({ status: res.valid ? "active" : "need_login", lastCheckAt: new Date() }).where(eq(accounts.id, a.id));
   refresh();
   return { valid: res.valid };
+}
+
+/**
+ * Drop stored posts that are gone from TikTok (deleted, or made private by TikTok) and their saved covers.
+ * Whole list loaded: everything missing goes. Partial list (very long profiles): only posts inside the loaded
+ * date range, so older posts that simply weren't scrolled to are kept.
+ */
+async function pruneDeletedPosts(accountId: number, videos: tiktok.TikTokVideo[], allVideos: boolean) {
+  if (!videos.length) return 0; // an empty answer is more likely a failed load than a wiped account
+  const seen = videos.map((v) => v.id);
+  const dated = videos.filter((v) => !v.isPinned && v.postedAt).map((v) => v.postedAt!);
+  if (!allVideos && !dated.length) return 0;
+  const where = and(
+    eq(accountPosts.accountId, accountId),
+    notInArray(accountPosts.externalId, seen),
+    ...(allVideos ? [] : [gte(accountPosts.postedAt, new Date(Math.min(...dated) * 1000))]),
+  );
+  const gone = await db.select({ id: accountPosts.id, cover: accountPosts.coverUrl }).from(accountPosts).where(where);
+  if (!gone.length) return 0;
+  await db.delete(accountPosts).where(inArray(accountPosts.id, gone.map((g) => g.id)));
+  for (const g of gone) if (g.cover && !g.cover.startsWith("http")) await removeMedia(g.cover).catch(() => {});
+  return gone.length;
 }
 
 /** Pull profile, stats and videos from TikTok and store them (stats as a new snapshot, videos upserted). */
@@ -162,7 +186,49 @@ export async function syncTikTokAccount(id: number) {
       .values({ accountId: a.id, externalId: v.id, ...row })
       .onConflictDoUpdate({ target: [accountPosts.accountId, accountPosts.externalId], set: row });
   }
+  // a post-list page that could not be read leaves holes: prune nothing this time (the next sync retries)
+  const removed = p.pagesFailed ? 0 : await pruneDeletedPosts(a.id, p.videos, p.allVideos);
 
   refresh();
-  return { videos: p.videos.length, followers: p.followers, playlists: p.playlists.length };
+  return { videos: p.videos.length, removed, followers: p.followers, playlists: p.playlists.length };
+}
+
+// ---------- YouTube: login + stored session (a Chrome profile per channel) ----------
+
+const ytWho = (r: youtube.YouTubeIdentity): tiktok.TikTokIdentity => ({ username: r.username, uid: r.channelId ?? r.email, nickname: r.name, avatar: r.avatar });
+
+export async function startYouTubeLogin(accountId?: number) {
+  const a = accountId ? await getAccount(accountId) : null;
+  return youtube.startLogin(a && isProfileKey(a.sessionKey) ? a.sessionKey : undefined);
+}
+
+export async function pollYouTubeLogin(loginId: string): Promise<LoginPoll> {
+  const s = youtube.getLogin(z.string().uuid().parse(loginId));
+  if (!s) return { status: "failed", error: "Sesi login tidak ditemukan. Coba lagi." };
+  if (s.status !== "done" || !s.result) return { status: s.status === "done" ? "identifying" : s.status, error: s.error };
+  const saved = await saveLogin("youtube", s.sessionKey, ytWho(s.result));
+  refresh();
+  revalidatePath("/youtube");
+  return { status: "done" as const, accountId: saved.id, created: saved.created, username: s.result.username };
+}
+
+export async function cancelYouTubeLogin(loginId: string) {
+  await youtube.cancelLogin(z.string().uuid().parse(loginId));
+}
+
+export async function checkYouTubeSession(id: number) {
+  const a = await getAccount(id);
+  const res = isProfileKey(a.sessionKey) ? await youtube.checkSession(a.sessionKey) : { valid: false as const };
+  // never lose a known channel id: a slow Studio redirect gives no id (only the email), and a profile switched to
+  // another channel (brand account) must not silently move this row (uploads would land on the wrong channel)
+  const known = a.externalId?.startsWith("UC") ? a.externalId : null;
+  const sameChannel = res.valid && res.channelId?.startsWith("UC") && (!known || res.channelId === known);
+  const identity = sameChannel ? { username: res.username, externalId: res.channelId, displayName: res.name, ...(res.avatar ? { avatarUrl: res.avatar } : {}) } : {};
+  await db
+    .update(accounts)
+    .set({ status: res.valid ? "active" : "need_login", lastCheckAt: new Date(), ...identity })
+    .where(eq(accounts.id, a.id));
+  refresh();
+  revalidatePath("/youtube");
+  return { valid: res.valid };
 }

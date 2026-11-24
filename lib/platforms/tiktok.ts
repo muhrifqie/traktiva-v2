@@ -1,6 +1,8 @@
 import "server-only";
+import fs from "node:fs/promises";
 import type { BrowserContext, Page } from "playwright-core";
 import { launchProfile, newProfileKey, withProfile } from "@/lib/browser/chrome";
+import { resolveMedia, writeMedia } from "@/lib/media";
 
 // TikTok automation on Chrome profiles: login, session check, profile + video sync.
 // ⚠️ Every action here touches a real TikTok account: keep it human-paced, one profile per account.
@@ -129,7 +131,9 @@ export async function checkSession(sessionKey: string) {
 export type TikTokVideo = {
   id: string;
   caption: string;
-  cover: string | null;
+  cover: string | null; // MEDIA_DIR-relative once cached by the sync (TikTok link if that failed)
+  covers?: string[]; // every cover link TikTok gave (tried in order while caching; not stored)
+  removed?: boolean; // TikTok deleted it (its media is gone) though it still lists it for the owner
   views: number;
   likes: number;
   comments: number;
@@ -155,18 +159,43 @@ export type TikTokProfile = {
   likes: number;
   videoCount: number;
   videos: TikTokVideo[];
+  allVideos: boolean; // TikTok said there are no more posts: `videos` is the account's whole public list
+  pagesFailed: number; // post-list answers that could not be read: the list may have holes, so nothing is pruned
   playlists: { id: string; name: string; videoCount: number; cover: string | null }[];
 };
 
 const num = (v: unknown) => (typeof v === "number" ? v : Number(v) || 0);
 
+/**
+ * All cover links of a post, loadable ones first: photo posts carry their own image lists, and
+ * image-va.tiktok.com links (US-region posts) are refused even to the logged-in browser.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw TikTok payloads
+function coverCandidates(it: any): string[] {
+  const v = it.video ?? {};
+  const ip = it.imagePost ?? {};
+  const all: unknown[] = [
+    ...(ip.cover?.imageURL?.urlList ?? []),
+    ...(ip.images?.[0]?.imageURL?.urlList ?? []),
+    ...(ip.shareCover?.imageURL?.urlList ?? []),
+    v.cover,
+    v.originCover,
+    v.dynamicCover,
+    ...Object.values(v.zoomCover ?? {}),
+  ];
+  const urls = [...new Set(all.filter((u): u is string => typeof u === "string" && u.startsWith("http")))];
+  return [...urls.filter((u) => !u.includes("image-va.")), ...urls.filter((u) => u.includes("image-va."))];
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw TikTok payloads
 function mapVideo(it: any): TikTokVideo {
   const s = it.statsV2 ?? it.stats ?? {};
+  const covers = coverCandidates(it);
   return {
     id: String(it.id),
     caption: it.desc ?? "",
-    cover: it.video?.cover || it.video?.originCover || null,
+    cover: covers[0] ?? null,
+    covers,
     views: num(s.playCount),
     likes: num(s.diggCount),
     comments: num(s.commentCount),
@@ -177,6 +206,57 @@ function mapVideo(it: any): TikTokVideo {
     isPinned: !!it.isPinnedItem,
     isPrivate: !!it.privateItem || !!it.secret,
   };
+}
+
+const POST_COVERS = "Postingan"; // MEDIA_DIR/Postingan/<videoId>.<ext>
+const IMG_EXT: Record<string, string> = { "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/avif": ".avif" };
+
+/**
+ * Download the first loadable link through the account's browser (tiktok.com referer).
+ * `gone`: every link answered 404, i.e. TikTok deleted the post's media (a post TikTok removed still shows up,
+ * unchanged, in the owner's own post list, so this is the only sign of it).
+ */
+async function saveCover(ctx: BrowserContext, id: string, urls: string[]) {
+  if (!/^d{1,30}$/.test(id)) return { rel: null, gone: false }; // TikTok ids are digits; never let one shape a file path
+  let notFound = 0;
+  for (const url of urls) {
+    try {
+      const res = await ctx.request.get(url, { headers: { referer: "https://www.tiktok.com/" }, timeout: 20_000 });
+      const type = (res.headers()["content-type"] ?? "").split(";")[0].trim();
+      if (res.ok() && type.startsWith("image/")) return { rel: await writeMedia(`${POST_COVERS}/${id}${IMG_EXT[type] ?? ".jpg"}`, await res.body()), gone: false };
+      if (res.status() === 404) notFound++;
+    } catch {
+      // next link
+    }
+  }
+  // gone only when 2+ different links agree: a single 404 can be a CDN hiccup, and "gone" deletes the stored post
+  return { rel: null, gone: notFound >= 2 && notFound === urls.length };
+}
+
+/**
+ * Save post covers locally, fetched through the account's own browser with tiktok.com as referer.
+ * Some covers (image-va.tiktok.com: US-region videos, photo posts) answer 403 to anyone else, and the
+ * tiktokcdn links expire after a day or two, so linking to TikTok directly leaves blank cards.
+ * Already-saved covers are kept (no request). A post whose links all answer 404 was removed by TikTok and is
+ * flagged `removed`; one that fails otherwise keeps its TikTok link (placeholder card) and the next sync retries.
+ */
+async function cacheCovers(ctx: BrowserContext, videos: TikTokVideo[]) {
+  const saved = new Map((await fs.readdir(resolveMedia(POST_COVERS)).catch(() => [] as string[])).map((f) => [f.replace(/\.[^.]+$/, ""), f]));
+  const queue = videos.filter((v) => v.cover?.startsWith("http"));
+  await Promise.all(
+    Array.from({ length: 6 }, async () => {
+      for (let v = queue.shift(); v; v = queue.shift()) {
+        const have = saved.get(v.id);
+        if (have) {
+          v.cover = `${POST_COVERS}/${have}`;
+          continue;
+        }
+        const { rel, gone } = await saveCover(ctx, v.id, v.covers ?? [v.cover!]);
+        if (rel) v.cover = rel;
+        if (gone) v.removed = true;
+      }
+    }),
+  );
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -207,6 +287,7 @@ export async function syncProfile(sessionKey: string, username: string, { maxVid
     const videos = new Map<string, TikTokVideo>();
     let hasMore = true;
     let pages = 0;
+    let pagesFailed = 0;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw TikTok payloads
     let playlists: any[] = [];
 
@@ -214,7 +295,10 @@ export async function syncProfile(sessionKey: string, username: string, { maxVid
       const url = res.url();
       if (!/\/api\/(post\/item_list|user\/playlist)\//.test(url)) return;
       const j = await res.json().catch(() => null);
-      if (!j) return;
+      if (!j) {
+        if (url.includes("/post/item_list/")) pagesFailed++;
+        return;
+      }
       if (url.includes("/post/item_list/")) {
         for (const it of j.itemList ?? []) videos.set(String(it.id), mapVideo(it));
         hasMore = !!j.hasMore;
@@ -238,6 +322,9 @@ export async function syncProfile(sessionKey: string, username: string, { maxVid
       if (pages === before) break; // nothing new loaded
     }
 
+    const list = [...videos.values()];
+    await cacheCovers(ctx, list);
+
     const u = info.user;
     const st = info.statsV2 ?? info.stats ?? {};
     return {
@@ -253,7 +340,9 @@ export async function syncProfile(sessionKey: string, username: string, { maxVid
       following: num(st.followingCount),
       likes: num(st.heartCount ?? st.heart),
       videoCount: num(st.videoCount),
-      videos: [...videos.values()],
+      videos: list.filter((v) => !v.removed), // removed posts are left out, so the app drops them too
+      allVideos: pages > 0 && !hasMore,
+      pagesFailed,
       playlists: playlists.map((p) => ({
         id: String(p.mixId ?? p.id ?? ""),
         name: String(p.name ?? p.mixName ?? ""),

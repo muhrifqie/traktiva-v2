@@ -10,7 +10,10 @@ Dikerjakan berdua (Rifq & Azzam): baca **Kerja tim** sebelum membuat branch, mig
 - Electron 45 (`electron/main.js`). Dev: buka `localhost:3000`. Paket: `.next/standalone/server.js` lewat `utilityProcess` di `127.0.0.1:<port acak>`
 - UI: Tailwind v4 + shadcn/ui (style base-nova, Base UI: pakai prop `render`, bukan `asChild`), lucide, sonner
 - DB: SQLite (libsql) + Drizzle. File: `TRAKTIVA_DATA_DIR` (Electron = `%APPDATA%\Traktiva`) atau `./data` saat dev. Migrasi jalan otomatis saat server start (`instrumentation-node.ts`); tanpa restart: `npx tsx --conditions=react-server scripts/migrate.mts`
+- Mesin video = flow2api (Python) sebagai **sidecar**: build dengan `./sidecar/flow2api/build.ps1` (butuh source flow2api + venv-nya, default `C:\BOTlow2api`) sebelum `npm run dist`; hasil di `dist-sidecar/` (tidak di-commit). Saat jalan, bundle disalin ke `DATA_DIR/flow2api` dan dinyalakan otomatis di `127.0.0.1:38127`. Cek: `npx tsx --conditions=react-server scripts/try-flow2api.mts`
 - Perintah lain: lihat `package.json`
+- `web/` = app Next.js terpisah (panel admin lisensi, nanti situs pembeli): `package.json`, lint & tsconfig sendiri, dikecualikan dari root. Tidak menyentuh DB lisensi; semua lewat `server/license/internal-api.mjs`. Deploy & operasional: `server/license/OPS.md`
+- "Pusat informasi": pengumuman, rilis terbaru, dan flag jarak jauh dari server lisensi sampai ke app lewat heartbeat → `DATA_DIR/server-info.json`; baca dengan `serverInfo()` / `remoteFlag(nama, default)` di `lib/server-info.ts` (kosong saat dev).
 
 ## Kerja tim
 - Branch: `main` = rilis, `dev` = integrasi. Kerja di branch sendiri dari `dev` terbaru (`rifq/<fitur>`, `azzam/<fitur>`), PR ke `dev`, di-review satu orang lain. `main` hanya diisi dari `dev`.
@@ -36,6 +39,7 @@ Dikerjakan berdua (Rifq & Azzam): baca **Kerja tim** sebelum membuat branch, mig
 - `page.evaluate` yang dijalankan lewat `tsx` (scripts/): esbuild menyisipkan `__name` ke fungsi bernama → pakai arrow function anonim di dalam evaluate.
 - Browser otomasi = Chrome yang terpasang di PC (fallback Edge), satu profil per akun, disambung lewat CDP (`lib/browser/chrome.ts`). Profil dikunci lintas proses (`withProfile`); membuka profil yang sama paralel membuat panggilannya antre. Cek cepat: `npx tsx --conditions=react-server scripts/try-chrome.mts`.
 - Baca DOM di headless lewat `locator(...).textContent()` (lebih andal dari `waitForFunction`).
+- `npm run dist` dari **PowerShell**, bukan Git Bash: di Git Bash proses PostCSS Turbopack gagal start (`0xc0000142`). `scripts/after-pack.js` menggagalkan build kalau paket server rusak (symlink, `data/`, `chunks/ssr` hilang); rilis: naikkan `version`, `npm run dist`, unggah `Traktiva-Setup-x.y.z.exe` + `.blockmap` ke `/srv/traktiva-download/` lalu **`latest.yml` terakhir** (app membacanya untuk update di dalam app, `electron/updater.js`, cek SHA-512), lalu catat di Panel admin → Rilis (banner + catatan rilis).
 - Lint react-hooks: tanpa `Date.now()` saat render (`useState(() => Date.now())`), tanpa `setState` sinkron di effect (pakai `useSyncExternalStore` / reset saat render), fungsi bernama `use…` dianggap hook.
 - Nomor langkah proyek di DB tetap 1–6 (runner menulis 4/5/6); UI memetakannya ke 3 tab (`viewOf` di `wizard.tsx`).
 - `video_projects.options` = map string (maks 3000 karakter per nilai). Kunci penting: `format`, `clips`, `finals`, `versions`/`versionOf`, `written`, `outline`, `showcaseId`.

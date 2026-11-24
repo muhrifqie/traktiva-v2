@@ -1,0 +1,225 @@
+"use server";
+
+import { cookies, headers } from "next/headers";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { z } from "zod";
+import { asMember, licenseApi, MEMBER_COOKIE } from "@/lib/license-api";
+import { safeNext } from "@/lib/google";
+import { clearMemberCookie, finishSignIn } from "@/lib/member-session";
+import { requireHuman } from "@/lib/turnstile";
+
+export type FormResult = { ok: false; message: string } | { ok: true; message?: string } | null;
+const fail = (e: unknown): FormResult => {
+  if (e instanceof Error && "digest" in e) throw e; // let redirect() through
+  return { ok: false, message: e instanceof Error ? e.message : "Gagal" };
+};
+const ip = async () => (await headers()).get("x-real-ip") ?? "local";
+const ua = async () => ((await headers()).get("user-agent") ?? "").slice(0, 300);
+const str = (f: FormData, k: string, max = 200) => String(f.get(k) ?? "").slice(0, max);
+
+type SignIn = { session?: string; maxAge?: number };
+
+export type RegisterResult = { ok: false; message: string } | { ok: true; step: "code"; email: string; message: string; retryAfter: number } | null;
+
+/** Sign-up, two steps: details (+ Turnstile) → code mailed to the address; then the code → account + signed in. */
+export async function register(_prev: RegisterResult, form: FormData): Promise<RegisterResult> {
+  const email = str(form, "email", 254).trim();
+  const resend = !!form.get("resend");
+  const otp = resend ? "" : str(form, "otp", 10).replace(/\D/g, "");
+  if (!otp) {
+    try {
+      await requireHuman(form, await ip());
+      const r = await licenseApi<{ message: string; retry_after?: number }>("/internal/member/register", {
+        method: "POST",
+        body: { name: str(form, "name", 80), email, password: str(form, "password"), resend, ip: await ip(), ua: await ua() },
+      });
+      return { ok: true, step: "code", email, message: r.message, retryAfter: r.retry_after ?? 60 };
+    } catch (e) {
+      return fail(e) as RegisterResult;
+    }
+  }
+  let to: string;
+  try {
+    const r = await licenseApi<SignIn>("/internal/member/register", { method: "POST", body: { email, otp, ip: await ip(), ua: await ua() } });
+    to = await finishSignIn(r, safeNext(form.get("next")));
+  } catch (e) {
+    return fail(e) as RegisterResult;
+  }
+  redirect(to);
+}
+
+export async function login(_prev: FormResult, form: FormData): Promise<FormResult> {
+  let to: string;
+  try {
+    await requireHuman(form, await ip());
+    const r = await licenseApi<SignIn>("/internal/member/login", {
+      method: "POST",
+      body: { email: str(form, "email", 254), password: str(form, "password"), ip: await ip(), ua: await ua() },
+    });
+    to = await finishSignIn(r, safeNext(form.get("next")));
+  } catch (e) {
+    return fail(e);
+  }
+  redirect(to);
+}
+
+/** "Atur password" link: set the password, then signed in. */
+export async function setPasswordFromLink(_prev: FormResult, form: FormData): Promise<FormResult> {
+  const password = str(form, "password");
+  if (password !== str(form, "again")) return { ok: false, message: "Ulangi password dengan sama persis." };
+  let to: string;
+  try {
+    const r = await licenseApi<SignIn>("/internal/member/password-token", { method: "POST", body: { token: str(form, "token", 100), password, ip: await ip(), ua: await ua() } });
+    to = await finishSignIn(r, "/akun");
+  } catch (e) {
+    return fail(e);
+  }
+  redirect(to);
+}
+
+export async function logout() {
+  const jar = await cookies();
+  if (jar.get(MEMBER_COOKIE)) await asMember("/internal/member/logout", { method: "POST", body: {} }).catch(() => {});
+  await clearMemberCookie();
+  redirect("/masuk");
+}
+
+/** Add a license to this account with its key. */
+export async function claimKey(_prev: FormResult, form: FormData): Promise<FormResult> {
+  try {
+    const key = str(form, "key", 40);
+    if (key.replace(/[^a-z0-9]/gi, "").length < 16) return { ok: false, message: "Masukkan key lengkap, contoh TRK-XXXX-XXXX-XXXX-XXXX." };
+    const r = await asMember<{ already: boolean }>("/internal/member/claim", { method: "POST", body: { key, ip: await ip() } });
+    revalidatePath("/", "layout");
+    return { ok: true, message: r.already ? "Key ini sudah ada di akunmu." : "Lisensi ditambahkan ke akunmu." };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Free one PC of a license (self-service, once per 7 days per license). */
+export async function resetMyDevice(deviceId: string): Promise<FormResult> {
+  try {
+    await asMember(`/internal/member/devices/${encodeURIComponent(z.string().regex(/^[0-9a-f]{32}$/).parse(deviceId))}/reset`, { method: "POST", body: { ip: await ip() } });
+    revalidatePath("/", "layout");
+    return { ok: true };
+  } catch (e) {
+    return fail(e instanceof z.ZodError ? new Error("Perangkat tidak valid.") : e);
+  }
+}
+
+export async function saveProfile(_prev: FormResult, form: FormData): Promise<FormResult> {
+  try {
+    await asMember("/internal/member/profile", { method: "POST", body: { name: str(form, "name", 80), phone: str(form, "phone", 30) } });
+    revalidatePath("/", "layout");
+    return { ok: true, message: "Profil disimpan." };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function changePassword(_prev: FormResult, form: FormData): Promise<FormResult> {
+  try {
+    const next = str(form, "next");
+    if (next !== str(form, "again")) return { ok: false, message: "Ulangi password baru dengan sama persis." };
+    await asMember("/internal/member/password", { method: "POST", body: { current: str(form, "current"), next } });
+    revalidatePath("/", "layout");
+    return { ok: true, message: "Password disimpan. Perangkat lain otomatis keluar." };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+
+// ---- beli / perpanjang online (WaroengPay QRIS)
+
+/** Create the order on the license server, then send the buyer to WaroengPay's payment page. */
+export async function buyPlan(_prev: FormResult, form: FormData): Promise<FormResult> {
+  let payUrl: string;
+  try {
+    const renew = Number(form.get("renew")) || undefined;
+    const r = await asMember<{ id: string; payUrl: string }>("/internal/member/orders", { method: "POST", body: { plan: str(form, "plan", 20), renew } });
+    payUrl = r.payUrl;
+  } catch (e) {
+    return fail(e);
+  }
+  if (!/^https:\/\//.test(payUrl)) return { ok: false, message: "Halaman bayar tidak valid. Coba lagi." };
+  redirect(payUrl);
+}
+
+// ---- lupa password (kode 6 angka lewat email, Waroengku Verify)
+
+export type ForgotResult = { ok: false; message: string } | { ok: true; step: "code"; email: string; message: string; retryAfter: number } | null;
+
+/** Step 1 (and "kirim ulang"): email → code. Step 2: email + code + new password → signed in. */
+export async function forgotPassword(prev: ForgotResult, form: FormData): Promise<ForgotResult> {
+  const email = str(form, "email", 254).trim();
+  const otp = form.get("resend") ? "" : str(form, "otp", 10).replace(/\D/g, "");
+  if (!otp) {
+    try {
+      await requireHuman(form, await ip()); // sending an email is the abusable step; the code step is protected by the code
+      const r = await licenseApi<{ message: string; retry_after?: number }>("/internal/member/forgot", { method: "POST", body: { email, ip: await ip() } });
+      return { ok: true, step: "code", email, message: r.message, retryAfter: r.retry_after ?? 60 };
+    } catch (e) {
+      return fail(e) as ForgotResult;
+    }
+  }
+  const password = str(form, "password");
+  if (password !== str(form, "again")) return { ok: false, message: "Ulangi password baru dengan sama persis." };
+  let to: string;
+  try {
+    const r = await licenseApi<SignIn>("/internal/member/forgot", { method: "POST", body: { email, otp, password, ip: await ip(), ua: await ua() } });
+    to = await finishSignIn(r, "/akun");
+  } catch (e) {
+    return fail(e) as ForgotResult;
+  }
+  redirect(to);
+}
+
+// ---- perangkat & sesi
+
+export async function revokeSessions(input: { id?: number; all?: boolean }): Promise<FormResult> {
+  try {
+    const body = input.all ? { all: true } : { id: z.number().int().positive().parse(input.id) };
+    const r = await asMember<{ removed: number }>("/internal/member/sessions/revoke", { method: "POST", body });
+    revalidatePath("/", "layout");
+    return { ok: true, message: r.removed ? `${r.removed} perangkat dikeluarkan.` : "Tidak ada perangkat lain." };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Reset HWID: every PC on this license is released so the key activates on a new PC (once a day per license). */
+export async function resetHwid(licenseId: number): Promise<FormResult> {
+  try {
+    const r = await asMember<{ released: number }>(`/internal/member/licenses/${z.number().int().positive().parse(licenseId)}/reset-hwid`, { method: "POST", body: { ip: await ip() } });
+    revalidatePath("/", "layout");
+    return { ok: true, message: `${r.released} PC dilepas. Sekarang aktifkan key di PC baru.` };
+  } catch (e) {
+    return fail(e instanceof z.ZodError ? new Error("Lisensi tidak valid.") : e);
+  }
+}
+
+// ---- email preferences & unsubscribe
+
+/** Info & promo emails on/off (codes, payments, reminders and security notices always arrive). */
+export async function saveEmailNews(news: boolean): Promise<FormResult> {
+  try {
+    await asMember("/internal/member/email-prefs", { method: "POST", body: { news: !!news } });
+    revalidatePath("/pengaturan");
+    return { ok: true, message: news ? "Info & promo lewat email dinyalakan." : "Kamu tidak akan menerima info & promo lagi." };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** "Berhenti berlangganan" link (signed, no sign-in needed). */
+export async function unsubscribe(u: string, t: string, resubscribe = false): Promise<{ ok: true; email: string } | { ok: false; message: string }> {
+  try {
+    const r = await licenseApi<{ email: string }>("/internal/email/unsubscribe", { method: "POST", body: { u: String(u).slice(0, 12), t: String(t).slice(0, 40), resubscribe } });
+    return { ok: true, email: r.email };
+  } catch (e) {
+    return fail(e) as { ok: false; message: string };
+  }
+}

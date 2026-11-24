@@ -85,7 +85,7 @@ ${p.product.look ? `- LOOK (read from the product photos; follow it exactly, it 
 - The product photos are given to the image model as references, so always say the product must look exactly like the reference photos (shape, color, logo, packaging).
 
 VIDEO CONCEPT: ${preset?.title ?? p.presetId} — ${preset?.summary ?? ""}
-Audience: Indonesian TikTok shoppers. Final video = all scenes joined in order.
+${p.options.concept ? `OWNER'S OWN CONCEPT "${p.options.conceptName ?? ""}" (written by the seller in Indonesian; it decides the story, shots and mood, follow it closely): ${p.options.concept}\n` : ""}Audience: Indonesian TikTok shoppers. Final video = all scenes joined in order.
 ${longBrief(p)}${p.scenes.length === 1 ? `ONE-CLIP VIDEO (${p.clipSec} s, this single clip IS the whole final video): the product is visible from frame 0; in ${p.clipSec} seconds show the hook, one strong benefit in use, and end on the spoken CTA. Max ${Math.round(p.clipSec * 2.5)} spoken words.` : ""}
 ${p.options.angle ? `STORY ANGLE of this version (other versions of this product use other angles, so this one must feel clearly different): ${p.options.angle}` : ""}
 ${p.options.refCaption ? `Caption of the best-selling reference video (match its vibe, never copy it word for word): "${p.options.refCaption}"` : ""}
@@ -199,7 +199,7 @@ Return ONLY a JSON array of exactly ${n} strings in casual Indonesian, each "Jud
 /** First logged-in Google account (its Chrome profile carries the Gemini session). */
 export async function geminiAccount() {
   const g = await db.select().from(googleAccounts).where(and(eq(googleAccounts.status, "active"))).get();
-  if (!g) throw new Error("Tambahkan akun Google di Pengaturan AI dulu (dipakai untuk Gemini).");
+  if (!g) throw new Error("Tambahkan akun Google di Pengaturan dulu (dipakai untuk Gemini).");
   return g;
 }
 

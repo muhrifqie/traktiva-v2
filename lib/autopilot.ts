@@ -95,6 +95,15 @@ export async function autoFinish(id: number, step: (stage: string) => Promise<un
   if (p.status !== "done") throw new Error(p.error ?? "Render klip gagal.");
 
   await step("Menyusun timeline, suara & caption...");
+  const edit = await autoEdit(p);
+  await db.update(videoProjects).set({ edit, step: 6, status: "done", progress: null, error: null, updatedAt: new Date() }).where(eq(videoProjects.id, id));
+}
+
+/**
+ * Ready-to-post edit of a rendered project: one-take Cartesia voice-over (if a key is set) fitted to the clips,
+ * then the format most best sellers use: small 1–2 word subtitles, karaoke, spoken CTA, no stickers.
+ */
+export async function autoEdit(p: VideoProject) {
   let edit = await prepareEdit(p);
   if (getSettings().voice?.cartesiaKey) {
     const script = await writeFullScript(p, edit).catch(() => null);
@@ -103,15 +112,13 @@ export async function autoFinish(id: number, step: (stage: string) => Promise<un
       edit = await fitClipsToVoice(p, edit).catch(() => edit);
     }
   }
-  // the format most best sellers use: small 1–2 word subtitles, karaoke, spoken CTA, no stickers
-  edit = withChapters(p, applyTemplate(edit, RESEARCH_TEMPLATES[0]));
-  await db.update(videoProjects).set({ edit, step: 6, status: "done", progress: null, error: null, updatedAt: new Date() }).where(eq(videoProjects.id, id));
+  return withChapters(p, applyTemplate(edit, RESEARCH_TEMPLATES[0]));
 }
 
 /** Start a run for these products (no-op while one runs). Returns at once; progress is read with autopilotState(). */
 export async function startAutopilot(products: { productId: string; title: string }[]) {
   if (g.__autopilot) throw new Error("Autopilot masih berjalan.");
-  if (!(await db.select().from(googleAccounts).where(eq(googleAccounts.status, "active")).get())) throw new Error("Belum ada akun Google aktif untuk Flow (Pengaturan AI).");
+  if (!(await db.select().from(googleAccounts).where(eq(googleAccounts.status, "active")).get())) throw new Error("Belum ada akun Google aktif untuk Flow (Pengaturan).");
   const prev = await autopilotState();
   const s: AutoState = {
     running: true,

@@ -1,5 +1,5 @@
 // Global writing rules for everything the AI writes or says (scripts, scene voice lines, captions, stickers).
-// Set in Pengaturan AI → Aturan naskah; stored in settings.json (lib/settings.ts → writingRules()).
+// Set in Pengaturan → Aturan naskah; stored in settings.json (lib/settings.ts → writingRules()).
 // No imports: used by the server and the browser.
 
 export type WritingRules = {

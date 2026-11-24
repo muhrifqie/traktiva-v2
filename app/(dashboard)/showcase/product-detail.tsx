@@ -13,6 +13,8 @@ const num = new Intl.NumberFormat("id-ID");
 const when = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
 
 /** Full product page of a showcase product: read from TikTok on first open, saved in the database for the AI. */
+const FRESH_MS = 5 * 60_000; // a detail read in the last 5 minutes is current enough
+
 export function ProductDetailDialog({ product, onClose, onMakeVideo }: {
   product: { id: number; productId: string; title: string; cover: string | null } | null;
   onClose: () => void;
@@ -46,6 +48,11 @@ export function ProductDetailDialog({ product, onClose, onMakeVideo }: {
         setData(d);
         setError(null);
         setImg(0);
+        // shown from the database first; then re-read from TikTok (price, stock, commission) when not just read
+        if (Date.now() - d.detailAt > FRESH_MS) {
+          const fresh = await getShowcaseDetail(id, true);
+          if (live) setData(fresh);
+        }
       } catch (e) {
         if (live) setError(e instanceof Error ? e.message : "Gagal mengambil detail");
       }
@@ -135,7 +142,7 @@ export function ProductDetailDialog({ product, onClose, onMakeVideo }: {
         )}
         {data?.facts && (
           <details className="rounded-lg border">
-            <summary className="flex cursor-pointer items-center gap-1.5 px-3 py-2 text-xs font-medium"><Sparkles className="size-3.5 text-[#a99bff]" /> Bahan untuk AI</summary>
+            <summary className="flex cursor-pointer items-center gap-1.5 px-3 py-2 text-xs font-medium"><Sparkles className="size-3.5 text-black dark:text-white" /> Bahan untuk AI</summary>
             <p className="border-t px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">{data.facts}</p>
           </details>
         )}

@@ -1,10 +1,11 @@
 {
   "name": "traktiva",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "dev:electron": "concurrently -k -n next,electron \"next dev\" \"electron .\"",
+    "dev:electron:license": "concurrently -k -n next,electron \"next dev\" \"electron . --license\"",
     "build": "next build && node -e \"const fs=require('fs');fs.rmSync('.next/standalone/data',{recursive:true,force:true});fs.cpSync('.next/static','.next/standalone/.next/static',{recursive:true});fs.cpSync('public','.next/standalone/public',{recursive:true});fs.cpSync('drizzle','.next/standalone/drizzle',{recursive:true})\"",
     "start": "node .next/standalone/server.js",
     "dist": "npm run build && electron-builder --win --x64",
@@ -83,7 +84,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "Traktiva"
+      "shortcutName": "Traktiva",
+      "artifactName": "Traktiva-Setup-${version}.${ext}"
     },
     "afterPack": "scripts/after-pack.js",
     "icon": "resources/icon.png"

@@ -15,6 +15,12 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "dist/**",
+    // PyInstaller build of the flow2api sidecar (vendored Python packages + their JS); never committed
+    "dist-sidecar/**",
+    // Separate Next.js app (admin + public site) with its own lint config.
+    "web/**",
+    // local runtime data (DB, browser profiles with Chrome's own JS); never committed
+    "data/**",
   ]),
 ]);
 

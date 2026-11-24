@@ -6,7 +6,8 @@ import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { googleAccounts, videoProjects } from "@/lib/db/schema";
 import { loadFlow2ApiConfig } from "@/lib/flow2api";
-import { PresetGallery } from "./presets";
+import { getSettings } from "@/lib/settings";
+import { NewConceptButton, PresetGallery } from "./presets";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ export default async function VideoPage() {
       <PageHeader slug="video">
         <Link href="/pengaturan" title="Akun Google aktif dan kredit Flow" className="flex h-9 items-center gap-2 rounded-lg border bg-card px-3 text-xs font-medium hover:bg-accent">
           <GoogleIcon className="size-4" /> {active.length} akun
-          <span className="flex items-center gap-1 text-muted-foreground"><Coins className="size-3.5 text-[#f2c94c]" />{compact.format(credits)}</span>
+          <span className="flex items-center gap-1 text-muted-foreground"><Coins className="size-3.5 text-black dark:text-white" />{compact.format(credits)}</span>
         </Link>
         <Link href="/proyek" className="flex h-9 items-center gap-1.5 rounded-lg border bg-card px-3 text-xs font-medium hover:bg-accent">
           <FolderKanban className="size-4" /> Proyek saya
@@ -38,14 +39,17 @@ export default async function VideoPage() {
         {!flow ? (
           <Banner>Mesin video belum terpasang di perangkat ini. Hubungi penjual untuk aktivasi.</Banner>
         ) : active.length === 0 ? (
-          <Banner href="/pengaturan">Tambahkan akun Google di Pengaturan AI dulu supaya AI bisa membuat gambar &amp; video.</Banner>
+          <Banner href="/pengaturan">Tambahkan akun Google di Pengaturan dulu supaya AI bisa membuat gambar &amp; video.</Banner>
         ) : null}
 
-        <div>
-          <h2 className="text-sm font-semibold">Pilih konsep video</h2>
-          <p className="text-xs text-muted-foreground">Lihat contoh hasilnya, pilih yang cocok dengan produkmu. Semua langkah bisa diubah nanti.</p>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold">Pilih konsep video</h2>
+            <p className="text-xs text-muted-foreground">Lihat contoh hasilnya, pilih yang cocok dengan produkmu. Semua langkah bisa diubah nanti.</p>
+          </div>
+          <NewConceptButton />
         </div>
-        <PresetGallery />
+        <PresetGallery mine={getSettings().myConcepts ?? []} />
       </div>
     </>
   );

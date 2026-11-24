@@ -20,6 +20,7 @@ import { LibraryPicker } from "@/components/library-picker";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import { TimelineEditor } from "./editor";
+import { QuickResult } from "./quick-result";
 import { openLightbox, type LightboxItem } from "@/components/media-lightbox";
 import { voiceLine } from "@/lib/voice";
 import { SceneVoiceLine, usePlayer, VoicePanel, type ProjectVoiceState, type VoiceOption } from "./voice-panel";
@@ -35,6 +36,11 @@ const STEPS: { label: string; icon: Icon }[] = [
 ];
 const viewOf = (dbStep: number) => (dbStep <= 3 ? 1 : dbStep <= 5 ? 2 : 3);
 const DB_STEP = [0, 1, 4, 6];
+// Flow (Omni 1.2 Flash) video resolutions; 720p is the default (exported at 1080p either way)
+const RESOLUTIONS = [
+  { id: "360p", label: "360p", hint: "Lebih ringan, hasil di TikTok kurang tajam" },
+  { id: "720p", label: "720p", hint: "Disarankan · di-export 1080p, tajam di TikTok" },
+] as const;
 // Gaya → "Video Pendek" / "Video Panjang": each tab has its own quick picks, scene range and clip lengths
 const FORMATS = {
   short: {
@@ -62,7 +68,7 @@ const pick = (on: boolean) => `relative rounded-lg border p-2.5 text-left transi
 function SectionTitle({ n, icon: Icon, title, hint }: { n?: number; icon: Icon; title: string; hint?: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="grid size-6 place-items-center rounded-md bg-primary/15 text-brand-light"><Icon className="size-3.5" /></span>
+      <span className="grid size-6 place-items-center rounded-md bg-muted text-black dark:text-white"><Icon className="size-3.5" /></span>
       <h3 className="text-[13px] font-semibold">{n != null && <span className="text-muted-foreground">{n}.</span>} {title}</h3>
       {hint && <span className="ml-auto text-[11px] text-muted-foreground">{hint}</span>}
     </div>
@@ -207,7 +213,7 @@ export function Wizard({
       )}
       {!hasGoogle && (
         <Link href="/pengaturan" className="flex items-center gap-2 rounded-xl border border-status-progress/40 bg-status-progress/10 px-4 py-3 text-[13px]">
-          <CircleAlert className="size-4 shrink-0 text-status-progress" /> Tambahkan akun Google di Pengaturan AI supaya bisa membuat gambar & video.
+          <CircleAlert className="size-4 shrink-0 text-status-progress" /> Tambahkan akun Google di Pengaturan supaya bisa membuat gambar & video.
         </Link>
       )}
 
@@ -273,7 +279,7 @@ function Card({ title, desc, icon: Icon, children, footer }: { title: string; de
     <div className="rounded-xl border bg-card">
       <div className="space-y-5 p-4 sm:p-5">
         <div className="flex items-start gap-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/15 text-brand-light"><Icon className="size-4.5" /></span>
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-black dark:text-white"><Icon className="size-4.5" /></span>
           <div className="min-w-0">
             <h2 className="text-[15px] font-semibold">{title}</h2>
             {desc && <p className="text-xs text-muted-foreground">{desc}</p>}
@@ -722,6 +728,24 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
         )}
       </div>
 
+      {/* Flow video resolution (Omni 1.2 Flash offers 360p / 720p), saved as options.resolution.
+          ponytail: UI only for now — flow2api doesn't forward a resolution to Omni yet, so clips still come back
+          720p; wiring it (flow2api + lib/projects.ts render) is Rifq's backend task. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`${label} w-20`}>Resolusi</span>
+        <div className="inline-flex rounded-lg bg-muted p-0.5" role="radiogroup" aria-label="Resolusi video Flow">
+          {RESOLUTIONS.map((r) => {
+            const on = (options.resolution ?? "720p") === r.id;
+            return (
+              <button key={r.id} type="button" role="radio" aria-checked={on} title={r.hint} onClick={() => setOptions({ ...options, resolution: r.id })} className={`${chip(on)} px-3`}>
+                {r.label}
+              </button>
+            );
+          })}
+        </div>
+        <span className="text-[11px] text-muted-foreground">{RESOLUTIONS.find((r) => r.id === (options.resolution ?? "720p"))?.hint}</span>
+      </div>
+
       {/* short = one clip: just pick how many seconds; long = three length picks */}
       {format === "short" ? (
         <div className="flex flex-wrap items-center gap-2">
@@ -801,7 +825,7 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
           />
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" disabled={busy} onClick={outline} className="flex h-8 items-center gap-1.5 rounded-lg border bg-background px-3 text-xs font-medium hover:bg-accent disabled:opacity-60">
-              {outlining ? <Loader2 className="size-3.5 animate-spin" /> : <Wand2 className="size-3.5 text-[#a99bff]" />} {outlineLines.length ? "Susun ulang dengan AI" : "Susun kerangka dengan AI"}
+              {outlining ? <Loader2 className="size-3.5 animate-spin" /> : <Wand2 className="size-3.5 text-black dark:text-white" />} {outlineLines.length ? "Susun ulang dengan AI" : "Susun kerangka dengan AI"}
             </button>
             <span className="text-[11px] text-muted-foreground">{outlineLines.length ? `${outlineLines.length}/${clips} bab` : "Wajib untuk video panjang"}</span>
           </div>
@@ -1281,7 +1305,7 @@ function StepStoryboard({
                     title="Tulis ulang prompt adegan ini dengan AI"
                     disabled={busy}
                     onClick={() => aiWrite(i)}
-                    className="grid size-6 place-items-center rounded-md text-[#a99bff] hover:bg-accent disabled:opacity-30"
+                    className="grid size-6 place-items-center rounded-md text-black dark:text-white hover:bg-accent disabled:opacity-30"
                   >
                     {writing === i ? <Loader2 className="size-3.5 animate-spin" /> : <Wand2 className="size-3.5" />}
                   </button>
@@ -1397,6 +1421,8 @@ function StepRender({ p, busy, act, ready, onBack, voiceLabel }: { p: Project; b
 }
 
 function StepResult({ p, onBack }: { p: Project; onBack: () => void }) {
+  // Video Pendek: straight to the finished video (no timeline); the editor only on request. Video Panjang: editor.
+  const [manual, setManual] = useState(false);
   if (!p.finalPath) {
     return (
       <Card icon={Film} title="Hasil" desc="Edit, caption, dan export video final.">
@@ -1404,5 +1430,6 @@ function StepResult({ p, onBack }: { p: Project; onBack: () => void }) {
       </Card>
     );
   }
+  if (p.options.format !== "long" && !manual) return <QuickResult p={p} onEdit={() => setManual(true)} />;
   return <TimelineEditor p={p} />;
 }

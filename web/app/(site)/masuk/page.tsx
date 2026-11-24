@@ -1,0 +1,24 @@
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { googleEnabled, safeNext } from "@/lib/google";
+import { memberSignedIn } from "@/lib/license-api";
+import { turnstileSiteKey } from "@/lib/turnstile";
+import { AuthForm } from "./form";
+import { AuthShell } from "./shell";
+
+export const metadata: Metadata = { title: "Masuk", robots: { index: false, follow: false } };
+
+const ERRORS: Record<string, string> = { "google-off": "Masuk dengan Google belum tersedia. Pakai email dulu." };
+
+export default async function Login({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
+  const { next: n, error } = await searchParams;
+  const next = safeNext(n);
+  if (await memberSignedIn()) redirect(next); // a stale cookie must not bounce between /masuk and /akun
+  const message = error ? (ERRORS[error] ?? error).slice(0, 200) : null;
+  return (
+    <AuthShell card="Masuk" eyebrow="Area member" title="Masuk ke akun Traktiva kamu." points={["Semua lisensi kamu di satu tempat", "Pindah PC sendiri tanpa chat admin", "Download installer versi terbaru"]}>
+      {message && <p className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-sm text-red-600 dark:text-red-300" role="alert">{message}</p>}
+      <AuthForm mode="login" next={next} google={googleEnabled()} turnstile={turnstileSiteKey()} />
+    </AuthShell>
+  );
+}
