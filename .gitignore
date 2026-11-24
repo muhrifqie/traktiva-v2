@@ -53,3 +53,4 @@ next-env.d.ts
 /dist-sidecar
 # license server secrets + DB when run locally (server/license)
 /server/license/data
+.yt-probe/
