@@ -27,6 +27,11 @@ exports.default = async ({ appOutDir }) => {
     fs.cpSync(target, link, { recursive: true, dereference: true });
   }
 
+  // the electron npm package (with its 350 MB dist/) is the desktop runtime, never loaded by the server. The trace of
+  // instrumentation.js pulls it in anyway (a dynamic fs path in lib/flow2api.ts traces the whole project), which
+  // doubled Electron inside the installer: drop it from the server copy.
+  fs.rmSync(path.join(dest, "node_modules", "electron"), { recursive: true, force: true });
+
   // the standalone trace (Next 16 + Turbopack on Windows) leaves out .next/server/chunks/ssr: every page then fails
   // with "Cannot find module ../../chunks/ssr/[turbopack]_runtime.js". Ship the whole compiled server instead.
   fs.cpSync(path.join(root, ".next", "server"), path.join(dest, ".next", "server"), { recursive: true, filter: (src) => !src.endsWith(".map") });
@@ -35,6 +40,15 @@ exports.default = async ({ appOutDir }) => {
   for (const rel of ["node_modules/playwright-core/browsers.json"]) {
     const to = path.join(dest, rel);
     if (!fs.existsSync(to)) fs.copyFileSync(path.join(root, rel), to);
+  }
+  // Next's production runtimes are picked per route type at runtime; the trace only keeps the page ones, so every
+  // route handler (/api/media images & videos, /api/status, ...) failed with "Cannot find module
+  // next/dist/compiled/next-server/app-route-turbo.runtime.prod.js" (0.2.2). Ship all of them.
+  const runtimes = path.join("node_modules", "next", "dist", "compiled", "next-server");
+  for (const f of fs.readdirSync(path.join(root, runtimes))) {
+    if (!f.endsWith(".runtime.prod.js")) continue;
+    const to = path.join(dest, runtimes, f);
+    if (!fs.existsSync(to)) fs.copyFileSync(path.join(root, runtimes, f), to);
   }
   for (const dir of fs.readdirSync(path.join(dest, ".next", "node_modules"), { withFileTypes: true })) {
     if (dir.name.startsWith("playwright-core-")) {
@@ -47,6 +61,8 @@ exports.default = async ({ appOutDir }) => {
   const links = symlinks(dest);
   if (links.length) throw new Error(`app-server masih berisi symlink (akan rusak di PC lain):\n${links.join("\n")}`);
   if (fs.existsSync(path.join(dest, "data"))) throw new Error("app-server berisi folder data/ (DB dev): build ulang dengan npm run build");
+  if (!fs.existsSync(path.join(dest, runtimes, "app-route-turbo.runtime.prod.js"))) throw new Error("app-server tanpa runtime route handler Next: /api/* (gambar, video) akan error 500");
+
   if (!fs.existsSync(path.join(dest, ".next", "server", "chunks", "ssr", "[turbopack]_runtime.js"))) throw new Error("app-server tanpa .next/server/chunks/ssr: halaman tidak akan jalan");
 
   // video engine: the flow2api sidecar built by sidecar/flow2api/build.ps1

@@ -14,17 +14,26 @@ const mb = (n = 0) => (n / 1048576).toFixed(0);
 
 /**
  * "Update sekarang": the desktop app downloads, verifies and installs the new version itself. Without the bridge
- * (web mode, or an app build before in-app updates) it falls back to the download link.
+ * (web mode, or an app build before in-app updates) it falls back to the download link. When the app already
+ * downloaded the update in the background, the button installs it at once ("Pasang sekarang"); otherwise it is
+ * installed by itself the next time the app is closed.
  */
 export function UpdateButton({ url, className = "", big = false }: { url: string; className?: string; big?: boolean }) {
   const [p, setP] = useState<DesktopUpdateProgress | null>(null);
   const [busy, setBusy] = useState(false);
   const [inApp, setInApp] = useState(false);
+  const [ready, setReady] = useState<string | null>(null); // version downloaded in the background
   useEffect(() => {
     const u = window.desktop?.update;
     if (!u) return;
     setInApp(true); // eslint-disable-line react-hooks/set-state-in-effect -- the bridge only exists in the browser
-    return u.onProgress(setP);
+    void u.status?.().then((s) => setReady(s.ready)).catch(() => {});
+    const offReady = u.onReady?.((s) => setReady(s.version));
+    const offProgress = u.onProgress(setP);
+    return () => {
+      offReady?.();
+      offProgress();
+    };
   }, []);
 
   const base = `inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-80 ${big ? "h-10 px-5 text-sm" : "px-3 py-1.5 text-xs"} ${className}`;
@@ -49,8 +58,9 @@ export function UpdateButton({ url, className = "", big = false }: { url: string
     <div className="grid gap-1.5">
       <button type="button" onClick={run} disabled={busy} className={base}>
         {busy ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-        {busy ? (p ? (pct != null ? `${STAGE.download} ${pct}%` : STAGE[p.stage]) : STAGE.check) : "Update sekarang"}
+        {busy ? (p ? (pct != null ? `${STAGE.download} ${pct}%` : STAGE[p.stage]) : STAGE.check) : ready ? "Pasang sekarang" : "Update sekarang"}
       </button>
+      {ready && !busy && <span className="text-[10px] opacity-80">Sudah diunduh, terpasang otomatis saat Traktiva ditutup.</span>}
       {busy && pct != null && (
         <div className="grid gap-1">
           <div className="h-1.5 overflow-hidden rounded-full bg-black/20 dark:bg-white/15"><div className="h-full bg-primary transition-[width]" style={{ width: `${pct}%` }} /></div>
