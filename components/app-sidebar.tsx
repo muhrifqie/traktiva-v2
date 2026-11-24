@@ -4,7 +4,6 @@ import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronRight, PanelLeftClose, PanelLeftOpen, Plus, Rocket } from "lucide-react";
-import { AccountSwitcher } from "@/components/account-switcher";
 import { PlatformIcon } from "@/components/platform-icon";
 import { UserCard, type UserInfo } from "@/components/user-card";
 import {
@@ -16,14 +15,18 @@ import { NAV, NAV_GROUPS, type NavCounts, type NavItem } from "@/lib/nav";
 type Group = (typeof NAV_GROUPS)[number];
 /** Groups that belong to one platform get its mark next to the label, and the label opens that platform's page. */
 const GROUP_PLATFORM: Partial<Record<Group, "tiktok">> = { "TikTok Shop": "tiktok" };
-const GROUP_HREF: Partial<Record<Group, string>> = { "TikTok Shop": "/showcase" };
+const GROUP_HREF: Partial<Record<Group, string>> = { "TikTok Shop": "/tiktok-shop" };
 const GROUP_ICON: Partial<Record<Group, React.ComponentType<{ className?: string }>>> = { "Segera hadir": Rocket };
 /** Groups with one menu need no folding (the label alone would hide a single link). */
 const FOLDABLE = (n: number) => n > 1;
-/** Everyday menus stay plain links (no group button); only platform groups fold. */
-const FLAT = new Set<Group>(["Utama", "Buat Konten", "Pustaka"]);
+/** Everyday menus: one plain list on top (no group button); only platform groups fold. */
+const TOP: Group[] = ["Utama", "Buat Konten", "Pustaka"];
+/** Menus that close the sidebar at the bottom, next to the user card. */
+const BOTTOM: Group[] = ["Akun", "Pengaturan"];
+/** Folded until opened (placeholders for platforms that are not live yet). */
+const START_FOLDED = new Set<Group>(["Segera hadir"]);
 
-// folded groups, remembered per PC (localStorage; the server renders everything open)
+// groups toggled away from their default (open, or folded for START_FOLDED), remembered per PC in localStorage
 const KEY = "trk-sidebar-folded";
 const read = () => {
   try {
@@ -102,22 +105,27 @@ function SubItem({ item, counts }: { item: NavItem; counts: NavCounts }) {
   );
 }
 
-function Group({ name, counts, rail, className = "" }: { name: Group; counts: NavCounts; rail: boolean; className?: string }) {
-  const pathname = usePathname();
-  const folded = useSyncExternalStore(subscribe, read, () => "").split("|").includes(name);
-  const items = NAV.filter((n) => n.group === name && !("sidebar" in n && n.sidebar === false));
-  if (!items.length) return null;
+const visible = (groups: readonly Group[]) => NAV.filter((n) => groups.includes(n.group) && !("sidebar" in n && n.sidebar === false));
 
-  // the top group, one-menu groups and the folded rail: plain menu buttons
-  if (FLAT.has(name) || !FOLDABLE(items.length) || rail) {
-    return (
-      <SidebarGroup className={`px-2 py-1 ${className}`}>
-        <SidebarGroupContent>
-          <NavItems items={items} counts={counts} rail={rail} />
-        </SidebarGroupContent>
-      </SidebarGroup>
-    );
-  }
+/** Several groups as one plain list of menu buttons (no headers). */
+function Plain({ groups, counts, rail, className = "" }: { groups: readonly Group[]; counts: NavCounts; rail: boolean; className?: string }) {
+  return (
+    <SidebarGroup className={`px-2 py-1 ${className}`}>
+      <SidebarGroupContent>
+        <NavItems items={visible(groups)} counts={counts} rail={rail} />
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+}
+
+function Group({ name, counts, rail }: { name: Group; counts: NavCounts; rail: boolean }) {
+  const pathname = usePathname();
+  const toggled = useSyncExternalStore(subscribe, read, () => "").split("|").includes(name);
+  const folded = START_FOLDED.has(name) ? !toggled : toggled;
+  const items = visible([name]);
+  if (!items.length) return null;
+  // one-menu groups and the folded rail: plain menu buttons
+  if (!FOLDABLE(items.length) || rail) return <Plain groups={[name]} counts={counts} rail={rail} />;
 
   // a group = a menu button of its own with its menus as branches underneath; the group of the current page stays open
   const platform = GROUP_PLATFORM[name];
@@ -129,14 +137,14 @@ function Group({ name, counts, rail, className = "" }: { name: Group; counts: Na
   const chevron = <ChevronRight className={`size-3.5 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />;
   const btnCls = "h-8 gap-2.5 text-[13px] text-sidebar-foreground/85";
   return (
-    <SidebarGroup className={`px-2 py-1 ${className}`}>
+    <SidebarGroup className="px-2 py-0.5">
       <SidebarGroupContent>
         <SidebarMenu className="gap-0.5">
           <SidebarMenuItem>
             {href ? (
               <>
                 {/* the platform button opens its page; the arrow folds the branches */}
-                <SidebarMenuButton isActive={false} className={btnCls} render={<Link href={href} aria-label={`Buka ${name}`} />}>
+                <SidebarMenuButton isActive={pathname === href} className={`${btnCls} data-active:font-medium`} render={<Link href={href} aria-label={`Buka ${name}`} />}>
                   {mark}
                   <span className="truncate font-medium">{name}</span>
                 </SidebarMenuButton>
@@ -184,14 +192,13 @@ export function AppSidebar({ counts = {}, user, className }: { counts?: NavCount
             <Plus className="size-4" />
             {!rail && "Buat video"}
           </Link>
-          <div className={rail ? "mt-1.5" : "mt-2"}>
-            <AccountSwitcher selected={user.social.selected} list={user.social.list} rail={rail} />
-          </div>
         </div>
-        {NAV_GROUPS.filter((g) => g !== "Pengaturan").map((g) => (
+        <Plain groups={TOP} counts={counts} rail={rail} />
+        <div className="mx-4 my-1 border-t border-sidebar-border/70" />
+        {NAV_GROUPS.filter((g) => !TOP.includes(g) && !BOTTOM.includes(g)).map((g) => (
           <Group key={g} name={g} counts={counts} rail={rail} />
         ))}
-        <Group name="Pengaturan" counts={counts} rail={rail} className="mt-auto" />
+        <Plain groups={BOTTOM} counts={counts} rail={rail} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border p-2">
         {rail ? (

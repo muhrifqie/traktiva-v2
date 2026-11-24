@@ -9,7 +9,7 @@ import { provenHashtagsFor } from "@/lib/hashtags";
 import { hookInsights } from "@/lib/insights";
 import { projectName } from "@/lib/presets";
 import { MAX_PER_DAY, scheduleTips } from "@/lib/schedule-tips";
-import { getSettings, writingRules } from "@/lib/settings";
+import { pickActive, writingRules } from "@/lib/settings";
 import { MIN_GAP_MIN } from "@/lib/uploads";
 import { listUploadable } from "./actions";
 import { JadwalBoard } from "./board";
@@ -22,10 +22,10 @@ function inQueue(j: { status: string; postedAt: Date | null }) {
   return j.status === "queued" || j.status === "uploading" || (j.status === "done" && !!j.postedAt && j.postedAt.getTime() > Date.now());
 }
 
-export default async function JadwalPage({ searchParams }: { searchParams: Promise<{ project?: string; tampilan?: string }> }) {
-  const { project, tampilan } = await searchParams;
+export default async function JadwalPage({ searchParams }: { searchParams: Promise<{ project?: string; tampilan?: string; akun?: string }> }) {
+  const { project, tampilan, akun } = await searchParams;
   // Kalender by default; the list (with the scheduling form) when asked, or when coming from a project to schedule it
-  const view = tampilan === "daftar" || project ? "daftar" : "kalender";
+  const view = tampilan === "daftar" || project || akun ? "daftar" : "kalender";
   await hookInsights().catch(() => null); // links finished jobs to the TikTok post the profile sync found (postId)
   const [jobs, tiktok, videos, etalase] = await Promise.all([
     db
@@ -79,7 +79,7 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
         banned={writingRules().replace}
         maxPerDay={MAX_PER_DAY}
         initialProject={project ? Number(project) : null}
-        selectedAccountId={getSettings().activeAccountId ?? null}
+        selectedAccountId={pickActive(tiktok.filter((a) => a.status === "active"), akun)?.id ?? null}
         provenTags={provenTags}
       />
       )}

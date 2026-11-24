@@ -15,6 +15,7 @@ export const NAV = [
   { slug: "gambar-ai", title: "Buat Gambar AI", icon: ImagePlus, group: "Buat Konten", color: "#e535ab", desc: "Bikin gambar produk dan konten dari prompt.", sidebar: false }, // ponytail: not built; AI images live in Galeri → Hasil AI
   { slug: "galeri", title: "Galeri", icon: Images, group: "Pustaka", color: "#f2c94c", desc: "Foto unggahan, gambar AI, dan video jadi di satu tempat, siap dipakai ulang." },
   { slug: "galeri-video", title: "Galeri Video", icon: Film, group: "Pustaka", color: "#4ea7fc", desc: "Semua video siap unggah dan riwayatnya.", sidebar: false }, // a tab of Galeri
+  { slug: "tiktok-shop", title: "TikTok Shop", icon: Store, group: "TikTok Shop", platform: "tiktok", color: "#ff3b6b", desc: "Ringkasan semua akun TikTok Shop: login, etalase, antrean upload, dan performa.", sidebar: false }, // the group button
   { slug: "showcase", title: "Etalase TikTok Shop", short: "Etalase", icon: Store, group: "TikTok Shop", color: "#4cb782", desc: "Etalase produk affiliate dan sinkron otomatis dari TikTok Shop." },
   { slug: "profil", title: "Profil & Postingan", short: "Performa akun", icon: UserCircle, group: "TikTok Shop", color: "#ff3b6b", desc: "Profil, poin akun, dan performa postingan tiap akun." },
   // platforms not live yet: placeholder pages until they are built (status follows the website roadmap)

@@ -19,14 +19,6 @@ function refresh() {
   revalidatePath("/profil");
 }
 
-/** The social account shown at the bottom of the sidebar (the one the user is working with). */
-export async function selectAccount(id: number) {
-  const a = await getAccount(id);
-  const { updateSettings } = await import("@/lib/settings");
-  updateSettings({ activeAccountId: a.id });
-  revalidatePath("/", "layout");
-}
-
 async function getAccount(id: number) {
   const a = await db.select().from(accounts).where(eq(accounts.id, Id.parse(id))).get();
   if (!a) throw new Error("Akun tidak ditemukan");

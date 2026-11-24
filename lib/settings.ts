@@ -102,8 +102,8 @@ export const captchaBrowsersFor = (parallel: number) =>
   // 4+ jobs share the browsers: keep a second one, so one stuck captcha window does not hold every job
   Math.min(20, Math.max(parallel >= 4 ? 2 : 1, Math.ceil(parallel / 4)));
 
-/** The account picked in the sidebar switcher; falls back to the first logged-in one (or any) when none/removed. */
-export function pickActive<T extends { id: number; status: string }>(list: T[]): T | null {
-  const chosen = getSettings().activeAccountId;
-  return list.find((a) => a.id === chosen) ?? list.find((a) => a.status === "active") ?? list[0] ?? null;
+/** The account a page shows: the one in the URL (?akun=<id>), else the first logged-in one, else any. */
+export function pickActive<T extends { id: number; status: string }>(list: T[], wanted?: string | string[] | null): T | null {
+  const id = Number(Array.isArray(wanted) ? wanted[0] : wanted);
+  return list.find((a) => a.id === id) ?? list.find((a) => a.status === "active") ?? list[0] ?? null;
 }

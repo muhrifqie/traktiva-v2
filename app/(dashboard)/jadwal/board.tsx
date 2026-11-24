@@ -136,7 +136,7 @@ export function JadwalBoard({
   jobs, accounts, videos, etalase, minGap, initialProject, tips, banned, maxPerDay, selectedAccountId, provenTags,
 }: {
   tips: Record<number, AccountTips>; banned: { from: string; to: string }[]; maxPerDay: number;
-  selectedAccountId: number | null; // social account picked in the sidebar card
+  selectedAccountId: number | null; // ?akun=<id> (from the TikTok Shop dashboard), else the first logged-in one
   provenTags: Record<number, string[]>; // general hashtags that did best on each account (lib/hashtags.ts)
   etalase: EtalaseItem[];
   jobs: Job[]; accounts: { id: number; username: string; status: string }[]; videos: Uploadable[]; minGap: number; initialProject: number | null;
@@ -149,8 +149,7 @@ export function JadwalBoard({
   const [projectId, setProjectId] = useState<number | null>(initialProject ?? projects[0]?.[0] ?? null);
   const own = videos.filter((v) => v.projectId === projectId);
   const [picked, setPicked] = useState<string[]>([]);
-  // no account picker here: videos go to the account chosen in the sidebar (or the first logged-in one)
-  const accountId = active.find((a) => a.id === selectedAccountId)?.id ?? active[0]?.id ?? null;
+  const [accountId, setAccountId] = useState<number | null>(active.find((a) => a.id === selectedAccountId)?.id ?? active[0]?.id ?? null);
   const target = active.find((a) => a.id === accountId);
   const [caption, setCaption] = useState("");
   const [productId, setProductId] = useState("");
@@ -175,8 +174,8 @@ export function JadwalBoard({
       setAt((x) => x || (accountId && tips[accountId]?.slots[0] ? toLocal(new Date(tips[accountId].slots[0])) : nextSlot()));
     }, 0);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset when the project changes
-  }, [projectId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset when the project or the account changes
+  }, [projectId, accountId]);
 
   // live progress while something uploads
   const running = jobs.some((j) => j.status === "uploading");
@@ -421,7 +420,14 @@ export function JadwalBoard({
               <div className="min-w-0 flex-1 space-y-0.5 text-[11px] text-muted-foreground">
                 {target ? (
                   <p>
-                    Diunggah ke <b className="font-medium text-foreground"><i className="mr-1 inline-block size-2 rounded-full align-middle" style={{ background: accountColor(target.id) }} />@{target.username}</b> (akun aktif di sidebar)
+                    Diunggah ke{" "}
+                    {active.length > 1 ? (
+                      <select aria-label="Akun tujuan" value={target.id} onChange={(e) => setAccountId(Number(e.target.value))} className="h-6 rounded-md border bg-background px-1.5 text-[11px] font-medium text-foreground" style={{ borderColor: accountColor(target.id) }}>
+                        {active.map((a) => <option key={a.id} value={a.id}>@{a.username}</option>)}
+                      </select>
+                    ) : (
+                      <b className="font-medium text-foreground"><i className="mr-1 inline-block size-2 rounded-full align-middle" style={{ background: accountColor(target.id) }} />@{target.username}</b>
+                    )}
                     {own.length > 1 ? ` · ${own.length} video, jarak ${gap / 60} jam` : ""}
                   </p>
                 ) : (

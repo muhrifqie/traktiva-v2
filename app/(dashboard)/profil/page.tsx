@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { Advice } from "@/components/content-advice";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { AccountTabs } from "@/components/account-avatar";
 import { PageHeader } from "@/components/page-header";
 import { PlatformIcon } from "@/components/platform-icon";
 import { PostCover } from "./post-cover";
@@ -87,7 +88,7 @@ function VideoCard({ v, username, scheduled }: { v: AccountPost; username: strin
 }
 
 export default async function ProfilPage({ searchParams }: PageProps<"/profil">) {
-  const { sort } = await searchParams;
+  const { sort, akun } = await searchParams;
   const list = await db.select().from(accounts).where(eq(accounts.platform, "tiktok")).orderBy(accounts.username);
 
   if (list.length === 0) {
@@ -105,7 +106,7 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
     );
   }
 
-  const account = pickActive(list)!;
+  const account = pickActive(list, akun)!;
   const [latest, previous] = await db.select().from(accountStats).where(eq(accountStats.accountId, account.id)).orderBy(desc(accountStats.capturedAt)).limit(2);
   const byViews = sort === "populer";
   // TikTok Shop account health points (read during the showcase sync, automatic after login)
@@ -139,6 +140,8 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
           <Link href="/akun" className="flex h-8 items-center rounded-lg bg-primary px-3 text-[13px] font-medium text-primary-foreground">Login dulu</Link>
         )}
       </PageHeader>
+
+      <AccountTabs list={list} current={account.id} href={(id) => `/profil?akun=${id}${byViews ? "&sort=populer" : ""}`} />
 
       <div className="flex-1 space-y-5">
         {/* profile header */}
@@ -271,8 +274,8 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
             <h3 className="text-sm font-semibold">Postingan</h3>
             <span className="text-xs text-muted-foreground">{posts.length}</span>
             <div className="ml-auto flex rounded-lg border p-0.5">
-              <Link href={`/profil?a=${account.id}`} className={tab(!byViews)}>Terbaru</Link>
-              <Link href={`/profil?a=${account.id}&sort=populer`} className={tab(byViews)}>Terpopuler</Link>
+              <Link href={`/profil?akun=${account.id}`} className={tab(!byViews)}>Terbaru</Link>
+              <Link href={`/profil?akun=${account.id}&sort=populer`} className={tab(byViews)}>Terpopuler</Link>
             </div>
           </div>
           {posts.length === 0 ? (

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { and, asc, eq } from "drizzle-orm";
 import { Store } from "lucide-react";
-import { accountColor } from "@/lib/account-color";
+import { AccountTabs } from "@/components/account-avatar";
 import { PageHeader } from "@/components/page-header";
 import { pickActive } from "@/lib/settings";
 import { db } from "@/lib/db";
@@ -15,9 +15,10 @@ export const dynamic = "force-dynamic";
 
 const fmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
 
-export default async function ShowcasePage() {
+export default async function ShowcasePage({ searchParams }: PageProps<"/showcase">) {
+  const { akun } = await searchParams;
   const tiktok = (await db.select().from(accounts).where(eq(accounts.platform, "tiktok"))).sort((a, b) => a.username.localeCompare(b.username));
-  const current = pickActive(tiktok)!; // null only when there is no TikTok account (the empty state below)
+  const current = pickActive(tiktok, akun)!; // null only when there is no TikTok account (the empty state below)
   const rows = current
     ? await db.select().from(showcaseProducts).where(eq(showcaseProducts.accountId, current.id)).orderBy(asc(showcaseProducts.position))
     : [];
@@ -51,11 +52,7 @@ export default async function ShowcasePage() {
       ) : (
         <div className="flex-1 space-y-4">
           <div className="flex flex-wrap items-center gap-1.5">
-            {/* the account comes from the switcher in the sidebar */}
-            <span className="flex items-center gap-1.5 text-xs font-medium">
-              <i className="size-2 rounded-full" style={{ background: accountColor(current.id) }} />@{current.username}
-              {current.status !== "active" && <span className="text-[10px] text-status-progress">perlu login</span>}
-            </span>
+            <AccountTabs list={tiktok} current={current.id} href={(id) => `/showcase?akun=${id}`} />
             <span className="ml-auto" />
             {current.status === "active" && lastSync ? (
               <LiveSync accountId={current.id} lastSync={lastSync.getTime()} count={rows.length} />
