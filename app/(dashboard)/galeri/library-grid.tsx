@@ -51,7 +51,7 @@ export function LibraryGrid({ tab, uploads, generated }: { tab: "uploads" | "ai"
 
   return (
     <div
-      className="relative flex-1 space-y-4"
+      className="relative flex flex-1 flex-col gap-4"
       onDragOver={(e) => {
         if (tab !== "uploads") return;
         e.preventDefault();
@@ -86,7 +86,7 @@ export function LibraryGrid({ tab, uploads, generated }: { tab: "uploads" | "ai"
       </p>
 
       {items.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed p-12 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-12 text-center">
           <ImageIcon className="size-7 text-muted-foreground" />
           <p className="text-sm font-medium">{k ? "Tidak ada yang cocok" : tab === "uploads" ? "Pustaka masih kosong" : "Belum ada gambar AI"}</p>
           <p className="max-w-sm text-xs text-muted-foreground">

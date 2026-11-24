@@ -92,11 +92,10 @@ function NavItems({ items, counts, rail }: { items: readonly NavItem[]; counts: 
 function SubItem({ item, counts }: { item: NavItem; counts: NavCounts }) {
   const pathname = usePathname();
   const label = "short" in item ? item.short : item.title;
-  const platform = "platform" in item ? item.platform : null;
   return (
     <SidebarMenuSubItem>
       <SidebarMenuSubButton isActive={isHere(pathname, item.slug)} className="h-8 gap-2.5 text-[13px] text-sidebar-foreground/80 data-active:font-medium" render={<Link href={`/${item.slug}`} aria-label={item.title} />}>
-        {platform ? <PlatformIcon platform={platform} className="size-4 shrink-0" /> : <item.icon className="size-4 shrink-0 text-black dark:text-white" />}
+        <item.icon className="size-4 shrink-0 text-black dark:text-white" />
         <span className="truncate">{label}</span>
         {"status" in item ? (
           <span className={`ml-auto rounded px-1.5 text-[10px] ${item.status === "Segera" ? "bg-amber-500/12 text-amber-600 dark:text-amber-300" : "bg-sidebar-accent text-muted-foreground"}`}>{item.status}</span>
@@ -132,7 +131,7 @@ function Tree({ name, counts, rail }: { name: Group; counts: NavCounts; rail: bo
             {href ? (
               <>
                 {/* the platform button opens its page; the arrow folds the branches */}
-                <SidebarMenuButton isActive={pathname === href} className={`${btnCls} data-active:font-medium`} render={<Link href={href} aria-label={`Buka ${name}`} />}>
+                <SidebarMenuButton className={btnCls} render={<Link href={href} aria-label={`Buka ${name}`} />}>
                   {mark}
                   <span className="truncate font-medium">{name}</span>
                 </SidebarMenuButton>
