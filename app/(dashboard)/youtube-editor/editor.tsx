@@ -23,13 +23,13 @@ type Saved = { channel: string; queue: string[]; games: string[]; random: boolea
 const PAGE = 24;
 const PREVIEW_SECS = 6; // length of the playable preview (lib renderPreviewClip default)
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-const ON = "border-primary bg-primary/10 font-semibold text-primary dark:border-emerald-500/60 dark:bg-emerald-500/10 dark:text-emerald-400";
+const ON = "border-orange-400/60 bg-orange-500/10 font-semibold text-orange-600 dark:text-orange-300";
 
 function Segmented<T extends string>({ value, onChange, items, disabled }: { value: T; onChange: (v: T) => void; items: { v: T; label: React.ReactNode; title?: string }[]; disabled?: boolean }) {
   return (
     <div className="grid auto-cols-fr grid-flow-col gap-0.5 rounded-lg bg-muted p-0.5">
       {items.map((it) => (
-        <button key={it.v} type="button" title={it.title} disabled={disabled} onClick={() => onChange(it.v)} aria-pressed={value === it.v} className={`flex h-8 items-center justify-center gap-1 rounded-md px-1.5 text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-50 ${value === it.v ? "bg-primary/15 text-primary shadow-sm ring-1 ring-primary/30 dark:bg-emerald-500/15 dark:text-emerald-400 dark:ring-emerald-500/30" : "text-muted-foreground hover:bg-background/60 hover:text-foreground"}`}>
+        <button key={it.v} type="button" title={it.title} disabled={disabled} onClick={() => onChange(it.v)} aria-pressed={value === it.v} className={`flex h-8 items-center justify-center gap-1 rounded-md px-1.5 text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-50 ${value === it.v ? "bg-gradient-to-b from-amber-400/25 to-orange-500/15 text-orange-700 shadow-sm ring-1 ring-orange-400/40 dark:text-amber-200" : "text-muted-foreground hover:bg-background/60 hover:text-foreground"}`}>
           {it.label}
         </button>
       ))}
@@ -38,7 +38,7 @@ function Segmented<T extends string>({ value, onChange, items, disabled }: { val
 }
 
 function Slider({ value, min, max, step = 5, onChange, disabled, label }: { value: number; min: number; max: number; step?: number; onChange: (v: number) => void; disabled?: boolean; label: string }) {
-  return <input type="range" aria-label={label} min={min} max={max} step={step} value={value} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))} className="h-1.5 w-full cursor-pointer accent-primary disabled:opacity-50" />;
+  return <input type="range" aria-label={label} min={min} max={max} step={step} value={value} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))} className="h-1.5 w-full cursor-pointer accent-orange-500 disabled:opacity-50" />;
 }
 
 /** Settings section: icon + title (+ current value), folds open/closed. */
@@ -68,8 +68,8 @@ function Row({ icon: Icon, label, children }: { icon: LucideIcon; label: string;
 /** Sketch of the frame (before a real preview frame exists): where each video goes. */
 function LayoutSketch({ cfg }: { cfg: EditorSettings }) {
   const part = "grid h-full w-full place-items-center text-[11px] font-medium";
-  const asli = <span className={`${part} bg-sky-500/20 text-sky-300`}><Video className="mb-0.5 size-5" />Asli</span>;
-  const game = <span className={`${part} bg-violet-500/20 text-violet-300`}><Layers className="mb-0.5 size-5" />Overlay</span>;
+  const asli = <span className={`${part} bg-amber-500/20 text-amber-200`}><Video className="mb-0.5 size-5" />Asli</span>;
+  const game = <span className={`${part} bg-rose-500/20 text-rose-200`}><Layers className="mb-0.5 size-5" />Overlay</span>;
   if (cfg.layout === "pip") return cfg.pipMain === "original" ? asli : game;
   const track = `${cfg.ratio}fr ${100 - cfg.ratio}fr`;
   return <div className="grid h-full w-full" style={cfg.layout === "side" ? { gridTemplateColumns: track } : { gridTemplateRows: track }}>{asli}{game}</div>;
@@ -373,7 +373,7 @@ export function VideoEditor({
           <Clapperboard className="size-8 text-muted-foreground" />
           <p className="text-sm font-medium">Belum ada video asli</p>
           <p className="max-w-sm text-xs text-muted-foreground">Unduh Shorts dulu di menu Unduh Shorts. Hasilnya otomatis muncul di sini untuk digabung dengan gameplay.</p>
-          <Link href="/youtube-shorts" className="mt-2 flex h-9 items-center rounded-lg bg-primary px-3.5 text-[13px] font-medium text-primary-foreground hover:bg-primary/90">Buka Unduh Shorts</Link>
+          <Link href="/youtube-shorts" className="mt-2 flex h-9 items-center rounded-lg bg-gradient-to-r from-orange-500 to-rose-500 text-white shadow-sm shadow-orange-500/20 hover:from-orange-400 hover:to-rose-400 px-3.5 text-[13px] font-medium">Buka Unduh Shorts</Link>
         </div>
       </div>
     );
@@ -385,7 +385,7 @@ export function VideoEditor({
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         {back}
         <div className="h-5 w-px bg-border" />
-        <span className="flex items-center gap-1.5 px-1 text-[13px] font-semibold"><Clapperboard className="size-4 text-primary dark:text-emerald-400" /> Editor Video</span>
+        <span className="flex items-center gap-1.5 px-1 text-[13px] font-semibold"><Clapperboard className="size-4 text-orange-500" /> Editor Video</span>
         <div className="mx-1 h-5 w-px bg-border" />
         <div className="flex gap-1">
           {(Object.keys(SIZES) as Size[]).map((sz) => {
@@ -393,7 +393,7 @@ export function VideoEditor({
             const on = cfg.size === sz;
             return (
               <button key={sz} type="button" disabled={running} onClick={() => set("size", sz)} aria-pressed={on} title={`${SIZES[sz].label} ${SIZES[sz].note}`} className={`flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs transition-colors disabled:opacity-50 ${on ? ON : "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground"}`}>
-                <span className={`block rounded-[2px] border-[1.5px] ${on ? "border-primary" : "border-current"}`} style={w >= h ? { width: 14, height: Math.round((14 * h) / w) } : { height: 14, width: Math.round((14 * w) / h) }} />
+                <span className={`block rounded-[2px] border-[1.5px] ${on ? "border-orange-400" : "border-current"}`} style={w >= h ? { width: 14, height: Math.round((14 * h) / w) } : { height: 14, width: Math.round((14 * w) / h) }} />
                 {SIZES[sz].label}
               </button>
             );
@@ -404,12 +404,12 @@ export function VideoEditor({
           <Segmented value={cfg.layout} onChange={(v) => set("layout", v)} disabled={running} items={[{ v: "side", label: <><Columns2 className="size-3.5" /> Samping</> }, { v: "stack", label: <><Rows2 className="size-3.5" /> Tumpuk</> }, { v: "pip", label: <><PictureInPicture2 className="size-3.5" /> Reaction</> }]} />
         </div>
         <span className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          {saved ? <Check className="size-3.5 text-primary dark:text-emerald-400" /> : <Loader2 className="size-3.5 animate-spin" />} {saved ? "Tersimpan" : "Menyimpan…"}
+          {saved ? <Check className="size-3.5 text-amber-500" /> : <Loader2 className="size-3.5 animate-spin" />} {saved ? "Tersimpan" : "Menyimpan…"}
         </span>
         {running && (
           <button type="button" onClick={() => void stopRender()} className="flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium hover:border-destructive/40 hover:text-destructive"><Square className="size-4" /> Batalkan</button>
         )}
-        <button type="button" onClick={render} disabled={running || !queue.length} title={queue.length ? undefined : "Pilih video asli dulu"} className="relative flex h-9 items-center gap-1.5 overflow-hidden rounded-lg bg-primary px-4 text-[13px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+        <button type="button" onClick={render} disabled={running || !queue.length} title={queue.length ? undefined : "Pilih video asli dulu"} className="relative flex h-9 items-center gap-1.5 overflow-hidden rounded-lg bg-gradient-to-r from-orange-500 to-rose-500 text-white shadow-sm shadow-orange-500/20 hover:from-orange-400 hover:to-rose-400 px-4 text-[13px] font-semibold disabled:opacity-50">
           {running && <span className="absolute inset-y-0 left-0 bg-white/20 transition-[width]" style={{ width: `${pct}%` }} />}
           {running ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
           <span className="relative">{running ? `Merender ${job!.done.length}/${job!.total}` : queue.length ? `Render ${queue.length} video` : "Render"}</span>
@@ -424,7 +424,7 @@ export function VideoEditor({
             {([["asli", "Video asli", Video, queue.length], ["game", "Overlay", Layers, games.size], ["hasil", "Hasil", Check, results.length]] as const).map(([t, label, Icon, n]) => (
               <button key={t} type="button" onClick={() => setTab(t)} className={`flex h-8 items-center justify-center gap-1 rounded-md transition-colors ${tab === t ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                 <Icon className="size-3.5" /> {label}
-                {n > 0 && <span className={`rounded-full px-1.5 text-[10px] tabular-nums ${tab === t ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{n}</span>}
+                {n > 0 && <span className={`rounded-full px-1.5 text-[10px] tabular-nums ${tab === t ? "bg-orange-500 text-white" : "bg-muted"}`}>{n}</span>}
               </button>
             ))}
           </div>
@@ -433,7 +433,7 @@ export function VideoEditor({
               <select value={channel} onChange={(e) => (setChannel(e.target.value), setPage(0))} aria-label="Channel" className="h-9 rounded-lg border bg-background px-2 text-xs">
                 {originals.map((c) => <option key={c.channel} value={c.channel}>{c.channel} ({c.files.length})</option>)}
               </select>
-              <label className="flex h-9 items-center gap-1.5 rounded-lg border bg-background px-2.5 text-xs focus-within:ring-2 focus-within:ring-primary/40">
+              <label className="flex h-9 items-center gap-1.5 rounded-lg border bg-background px-2.5 text-xs focus-within:ring-2 focus-within:ring-orange-400/40">
                 <Search className="size-3.5 text-muted-foreground" />
                 <input value={q} onChange={(e) => (setQ(e.target.value), setPage(0))} placeholder="Cari judul…" aria-label="Cari judul" className="min-w-0 flex-1 bg-transparent outline-none" />
                 {q && <button type="button" onClick={() => setQ("")} aria-label="Hapus pencarian"><X className="size-3.5 text-muted-foreground" /></button>}
@@ -456,13 +456,13 @@ export function VideoEditor({
                   const on = inQueue.has(f.rel);
                   const n = queue.indexOf(f.rel) + 1;
                   return (
-                    <div key={f.rel} className={`group relative overflow-hidden rounded-lg border bg-muted transition-shadow ${on ? "ring-2 ring-primary dark:ring-emerald-500" : "hover:ring-2 hover:ring-border"}`}>
+                    <div key={f.rel} className={`group relative overflow-hidden rounded-lg border bg-muted transition-shadow ${on ? "ring-2 ring-orange-400" : "hover:ring-2 hover:ring-border"}`}>
                       <button type="button" onClick={() => pick(f.rel)} title={`${on ? "Batal pilih" : "Pilih"}: ${f.name}`} className="block w-full text-left">
                         <video src={`${mediaUrl(f.rel)}#t=1`} preload="metadata" muted className="aspect-[9/16] w-full object-cover" />
                         <span className="absolute inset-x-0 bottom-0 line-clamp-2 bg-gradient-to-t from-black/85 to-transparent p-1.5 pt-5 text-[9px] leading-tight text-white">{f.name}</span>
                       </button>
-                      <span className={`pointer-events-none absolute top-1 left-1 grid size-5 place-items-center rounded-full text-[10px] font-bold ${on ? "bg-primary text-primary-foreground" : "border border-white/70 bg-black/30 text-white opacity-0 group-hover:opacity-100"}`}>{on ? n : <Plus className="size-3" />}</span>
-                      {f.rel === clip && <span className="pointer-events-none absolute top-1 right-1 rounded bg-sky-500 px-1 text-[8px] font-semibold text-white">Di layar</span>}
+                      <span className={`pointer-events-none absolute top-1 left-1 grid size-5 place-items-center rounded-full text-[10px] font-bold ${on ? "bg-gradient-to-br from-amber-400 to-orange-500 text-white" : "border border-white/70 bg-black/30 text-white opacity-0 group-hover:opacity-100"}`}>{on ? n : <Plus className="size-3" />}</span>
+                      {f.rel === clip && <span className="pointer-events-none absolute top-1 right-1 rounded bg-amber-400 px-1 text-[8px] font-semibold text-black">Di layar</span>}
                       {rendered[f.rel] && f.rel !== clip && <span className="pointer-events-none absolute top-1 right-1 rounded bg-black/60 px-1 text-[8px] font-semibold text-emerald-300">✓ Sudah</span>}
                       <button type="button" onClick={() => setActive(f.rel)} title="Lihat di layar" className="absolute right-1 bottom-8 rounded bg-black/60 px-1.5 py-0.5 text-[9px] text-white opacity-0 group-hover:opacity-100">Lihat</button>
                     </div>
@@ -489,10 +489,10 @@ export function VideoEditor({
                 {gameplay.map((f) => {
                   const on = games.has(f.rel);
                   return (
-                    <button key={f.rel} type="button" onClick={() => toggleGame(f.rel)} title={f.name} className={`relative overflow-hidden rounded-lg border bg-muted text-left transition-shadow ${on ? "ring-2 ring-primary dark:ring-emerald-500" : "hover:ring-2 hover:ring-border"}`}>
+                    <button key={f.rel} type="button" onClick={() => toggleGame(f.rel)} title={f.name} className={`relative overflow-hidden rounded-lg border bg-muted text-left transition-shadow ${on ? "ring-2 ring-rose-400" : "hover:ring-2 hover:ring-border"}`}>
                       <video src={`${mediaUrl(f.rel)}#t=2`} preload="metadata" muted className="aspect-video w-full object-cover" />
                       <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/85 to-transparent p-1 pt-3 text-[10px] text-white">{f.name}</span>
-                      {on && <span className="absolute top-1 left-1 grid size-5 place-items-center rounded-full bg-primary text-primary-foreground"><Check className="size-3" /></span>}
+                      {on && <span className="absolute top-1 left-1 grid size-5 place-items-center rounded-full bg-rose-500 text-white"><Check className="size-3" /></span>}
                     </button>
                   );
                 })}
@@ -517,7 +517,7 @@ export function VideoEditor({
         </section>
 
         {/* monitor */}
-        <section className="flex min-h-0 flex-col items-center gap-2 rounded-xl border bg-[#0b0b0b] p-3">
+        <section className="flex min-h-0 flex-col items-center gap-2 rounded-xl border bg-[radial-gradient(ellipse_at_top,#2a1710,#0f0a08_70%)] p-3">
           <div className="flex w-full items-center gap-2 text-[11px] text-white/70">
             <button type="button" onClick={() => step(-1)} disabled={queue.length < 2} aria-label="Video sebelumnya" className="grid size-7 place-items-center rounded-md hover:bg-white/10 disabled:opacity-30"><ChevronLeft className="size-4" /></button>
             <span className="min-w-0 flex-1 truncate text-center">
@@ -544,7 +544,7 @@ export function VideoEditor({
               {cfg.layout !== "pip" && (
                 <span className="pointer-events-none absolute" style={cfg.layout === "side" ? { left: `${line}%`, top: 0, bottom: 0 } : { top: `${line}%`, left: 0, right: 0 }}>
                   <span className={`absolute bg-white/90 shadow-[0_0_0_1px_rgba(0,0,0,.35)] ${cfg.layout === "side" ? "inset-y-0 -left-px w-0.5" : "inset-x-0 -top-px h-0.5"}`} />
-                  <span className={`absolute grid size-7 place-items-center rounded-full border-2 border-white bg-primary text-primary-foreground shadow-lg ${cfg.layout === "side" ? "top-1/2 -left-3.5 -translate-y-1/2" : "left-1/2 -top-3.5 -translate-x-1/2"}`}>
+                  <span className={`absolute grid size-7 place-items-center rounded-full border-2 border-white bg-gradient-to-br from-orange-500 to-rose-500 text-white shadow-lg ${cfg.layout === "side" ? "top-1/2 -left-3.5 -translate-y-1/2" : "left-1/2 -top-3.5 -translate-x-1/2"}`}>
                     {cfg.layout === "side" ? <Columns2 className="size-3.5" /> : <Rows2 className="size-3.5" />}
                   </span>
                 </span>
@@ -555,14 +555,14 @@ export function VideoEditor({
                   onPointerMove={ovMove}
                   onPointerUp={ovUp}
                   title="Geser untuk memindah overlay"
-                  className={`group/ov absolute cursor-move border-2 border-dashed ${ov ? "border-primary bg-primary/10" : "border-white/70 hover:border-primary"}`}
+                  className={`group/ov absolute cursor-move border-2 border-dashed ${ov ? "border-rose-400 bg-rose-400/10" : "border-white/70 hover:border-rose-400"}`}
                   style={{
                     left: `${(pb.x / W) * 100}%`, top: `${(pb.y / H) * 100}%`, width: `${(pb.tw / W) * 100}%`, height: `${(pb.th / H) * 100}%`,
                     borderRadius: cfg.pipShape === "circle" ? "50%" : `${((pb.r + pb.b) / pb.tw) * 100}% / ${((pb.r + pb.b) / pb.th) * 100}%`,
                   }}
                 >
                   <span className="pointer-events-none absolute top-1/2 left-1/2 grid size-7 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/60 text-white opacity-0 group-hover/ov:opacity-100"><Move className="size-3.5" /></span>
-                  <span onPointerDown={(e) => ovDown(e, "size")} onPointerMove={ovMove} onPointerUp={ovUp} title="Tarik untuk mengubah ukuran" className="absolute -right-2 -bottom-2 size-4 cursor-nwse-resize rounded-full border-2 border-white bg-primary shadow" />
+                  <span onPointerDown={(e) => ovDown(e, "size")} onPointerMove={ovMove} onPointerUp={ovUp} title="Tarik untuk mengubah ukuran" className="absolute -right-2 -bottom-2 size-4 cursor-nwse-resize rounded-full border-2 border-white bg-rose-500 shadow" />
                   {ov && <span className="pointer-events-none absolute -top-6 left-0 rounded bg-black/70 px-1.5 py-0.5 text-[10px] whitespace-nowrap text-white tabular-nums">{ov.size}% lebar</span>}
                 </div>
               )}
@@ -577,17 +577,17 @@ export function VideoEditor({
             </div>
           </div>
           <div className="flex w-full max-w-xl items-center gap-2 text-[11px] text-white/70">
-            <button type="button" onClick={playPreview} disabled={!clip || !sampleGame || vid.busy} title={`Putar ${PREVIEW_SECS} detik hasil dengan suara, mulai dari waktu ini`} className="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button type="button" onClick={playPreview} disabled={!clip || !sampleGame || vid.busy} title={`Putar ${PREVIEW_SECS} detik hasil dengan suara, mulai dari waktu ini`} className="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 px-3 text-xs font-semibold text-black hover:from-amber-300 hover:to-orange-400 disabled:opacity-50">
               {vid.busy ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5 fill-current" />}
               {vid.busy ? "Menyiapkan…" : "Putar preview"}
             </button>
             <Timer className="size-3.5 shrink-0" />
             <span className="w-9 tabular-nums">{fmt(at)}</span>
-            <input type="range" aria-label="Waktu preview" min={0} max={Math.max(1, Math.floor(clipLen) - 1)} step={1} value={Math.min(at, Math.max(1, Math.floor(clipLen) - 1))} onChange={(e) => setAt(Number(e.target.value))} className="h-1 flex-1 cursor-pointer accent-primary" />
+            <input type="range" aria-label="Waktu preview" min={0} max={Math.max(1, Math.floor(clipLen) - 1)} step={1} value={Math.min(at, Math.max(1, Math.floor(clipLen) - 1))} onChange={(e) => setAt(Number(e.target.value))} className="h-1 flex-1 cursor-pointer accent-orange-500" />
             <span className="w-9 text-right tabular-nums">{fmt(clipLen)}</span>
           </div>
           <p className="text-center text-[11px] text-white/50">
-            {preview.error ? <span className="text-red-400">{preview.error}</span> : cfg.layout === "pip" ? "Geser overlay untuk memindah, tarik titik hijau untuk mengubah ukuran" : "Geser garis di layar untuk mengatur porsi"}
+            {preview.error ? <span className="text-red-400">{preview.error}</span> : cfg.layout === "pip" ? "Geser overlay untuk memindah, tarik titik merah muda untuk mengubah ukuran" : "Geser garis di layar untuk mengatur porsi"}
           </p>
         </section>
 
@@ -595,7 +595,7 @@ export function VideoEditor({
         <section className={`${card} no-scrollbar min-h-0 overflow-y-auto`}>
           {cfg.layout === "pip" ? (
             <>
-              <Section icon={PictureInPicture2} tone="bg-violet-500/15 text-violet-500" title="Overlay" value={`${cfg.pipSize}% lebar`}>
+              <Section icon={PictureInPicture2} tone="bg-rose-500/15 text-rose-400" title="Overlay" value={`${cfg.pipSize}% lebar`}>
                 <Segmented value={cfg.pipMain} onChange={(v) => set("pipMain", v)} disabled={running} items={[{ v: "original", label: "Asli di belakang" }, { v: "game", label: "Overlay di belakang" }]} />
                 <Row icon={Frame} label="Bentuk">
                   <div className="grid grid-cols-3 gap-1">
@@ -618,14 +618,14 @@ export function VideoEditor({
                       const on = cfg.pipX === x && cfg.pipY === y;
                       return (
                         <button key={`${x}-${y}`} type="button" onClick={() => setMany({ pipX: x, pipY: y })} disabled={running} aria-label={`Posisi ${x}% ${y}%`} className={`relative size-7 rounded-md border ${on ? ON : "hover:bg-accent"}`}>
-                          <span className={`absolute size-2 rounded-sm ${on ? "bg-primary" : "bg-muted-foreground/50"}`} style={{ left: `calc(${x}% * 0.55 + 3px)`, top: `calc(${y}% * 0.55 + 3px)` }} />
+                          <span className={`absolute size-2 rounded-sm ${on ? "bg-orange-500" : "bg-muted-foreground/50"}`} style={{ left: `calc(${x}% * 0.55 + 3px)`, top: `calc(${y}% * 0.55 + 3px)` }} />
                         </button>
                       );
                     })}
                   </div>
                 </Row>
               </Section>
-              <Section icon={Scissors} tone="bg-pink-500/15 text-pink-500" title="Crop overlay" value={cfg.pipShape === "circle" ? "1:1" : cfg.pipAspect}>
+              <Section icon={Scissors} tone="bg-red-500/15 text-red-400" title="Crop overlay" value={cfg.pipShape === "circle" ? "1:1" : cfg.pipAspect}>
                 <div className="grid grid-cols-5 gap-1">
                   {(Object.keys(ASPECTS) as Aspect[]).map((a) => {
                     const on = cfg.pipShape === "circle" ? a === "1:1" : cfg.pipAspect === a;
@@ -652,7 +652,7 @@ export function VideoEditor({
                   <Slider label="Fokus crop atas-bawah" value={cfg.pipFocusY} min={0} max={100} onChange={(v) => set("pipFocusY", v)} disabled={running} />
                 </Row>
               </Section>
-              <Section icon={Frame} tone="bg-slate-500/15 text-slate-400" title="Bingkai">
+              <Section icon={Frame} tone="bg-stone-500/20 text-stone-300" title="Bingkai">
                 <Segmented value={String(cfg.pipBorder) as "0" | "1" | "2" | "3"} onChange={(v) => set("pipBorder", Number(v) as 0 | 1 | 2 | 3)} disabled={running} items={[{ v: "0", label: "Tanpa" }, { v: "1", label: "Tipis" }, { v: "2", label: "Sedang" }, { v: "3", label: "Tebal" }]} />
                 <div className="grid grid-cols-2 gap-1">
                   {([["white", "Putih", "#fff"], ["black", "Hitam", "#000"]] as const).map(([v, label, bg]) => (
@@ -664,7 +664,7 @@ export function VideoEditor({
               </Section>
             </>
           ) : (
-            <Section icon={Ratio} tone="bg-violet-500/15 text-violet-500" title="Porsi asli : overlay" value={`${cfg.ratio} : ${100 - cfg.ratio}`}>
+            <Section icon={Ratio} tone="bg-rose-500/15 text-rose-400" title="Porsi asli : overlay" value={`${cfg.ratio} : ${100 - cfg.ratio}`}>
               <Slider label="Porsi video asli" value={cfg.ratio} min={RATIO_RANGE[0]} max={RATIO_RANGE[1]} onChange={(v) => set("ratio", v)} disabled={running} />
               <div className="flex gap-1">
                 {[50, 60, 70].map((r) => (
@@ -676,7 +676,7 @@ export function VideoEditor({
               </Row>
             </Section>
           )}
-          <Section icon={Play} tone="bg-cyan-500/15 text-cyan-500" title="Mulai overlay" value={cfg.gameStart < 0 ? "acak" : `detik ${fmt(cfg.gameStart)}`}>
+          <Section icon={Play} tone="bg-yellow-500/15 text-yellow-500" title="Mulai overlay" value={cfg.gameStart < 0 ? "acak" : `detik ${fmt(cfg.gameStart)}`}>
             <Segmented value={cfg.gameStart < 0 ? "acak" : "pilih"} onChange={(v) => set("gameStart", v === "acak" ? -1 : 0)} disabled={running} items={[{ v: "acak", label: <><Shuffle className="size-3.5" /> Acak</>, title: "Tiap render mulai dari titik acak" }, { v: "pilih", label: <><Timer className="size-3.5" /> Dari detik…</>, title: "Semua render mulai dari detik yang sama" }]} />
             {cfg.gameStart >= 0 && (
               <div className="flex items-center gap-2">
@@ -702,14 +702,14 @@ export function VideoEditor({
               </div>
             </Row>
           </Section>
-          <Section icon={FlipHorizontal2} tone="bg-sky-500/15 text-sky-500" title="Cermin / balik">
+          <Section icon={FlipHorizontal2} tone="bg-orange-500/15 text-orange-400" title="Cermin / balik">
             {([["flipOriginal", "Video asli", Video], ["flipGame", "Overlay", Layers]] as const).map(([k, label, Icon]) => (
               <Row key={k} icon={Icon} label={label}>
                 <Segmented value={cfg[k]} onChange={(v: Flip) => set(k, v)} disabled={running} items={FLIPS} />
               </Row>
             ))}
           </Section>
-          <Section icon={Music} tone="bg-emerald-500/15 text-emerald-500" title="Musik" value={!cfg.music ? "tanpa" : cfg.music === "*" ? "acak" : `${cfg.volMusic}%`}>
+          <Section icon={Music} tone="bg-fuchsia-500/15 text-fuchsia-400" title="Musik" value={!cfg.music ? "tanpa" : cfg.music === "*" ? "acak" : `${cfg.volMusic}%`}>
             <div className="space-y-1">
               {[{ src: "", name: "Tanpa musik", dur: 0 }, { src: "*", name: "Acak dari Pustaka", dur: 0 }, ...music].map((m) => {
                 const on = cfg.music === m.src;
