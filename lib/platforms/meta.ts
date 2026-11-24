@@ -13,7 +13,6 @@ import { deleteProfile, launchProfile, newProfileKey, withProfile } from "@/lib/
 export type MetaPlatform = "instagram" | "facebook";
 export type MetaIdentity = { username: string; uid: string; name: string | null; avatar: string | null };
 
-const IG_APP_ID = "936619743392459"; // instagram.com web app id (public, sent by the site itself)
 const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Pages where the user is still signing in / proving it's them: never interrupt them. */
@@ -31,30 +30,60 @@ async function sessionUid(ctx: BrowserContext, p: MetaPlatform) {
   return SITE[p].cookies.every((n) => names.has(n)) ? (jar.find((c) => c.name === SITE[p].uidCookie)?.value ?? null) : null;
 }
 
-/** Instagram: the web app's own user-info call, as a background request on the profile's cookies (no page). */
-async function identifyInstagram(ctx: BrowserContext, uid: string): Promise<MetaIdentity | null> {
-  const csrf = (await ctx.cookies(SITE.instagram.home)).find((c) => c.name === "csrftoken")?.value ?? "";
-  const headers = { "X-IG-App-ID": IG_APP_ID, "X-CSRFToken": csrf, "X-Requested-With": "XMLHttpRequest", Referer: SITE.instagram.home };
-  for (const url of [`https://www.instagram.com/api/v1/users/${uid}/info/`, "https://www.instagram.com/api/v1/accounts/current_user/?edit=true"]) {
-    const res = await ctx.request.get(url, { headers, timeout: 20_000, maxRedirects: 0 }).catch(() => null);
-    const u = res?.ok() ? ((await res.json().catch(() => null)) as { user?: Record<string, unknown> } | null)?.user : null;
-    if (u?.username) {
-      const hd = u.hd_profile_pic_url_info as { url?: string } | undefined;
-      return { username: String(u.username), uid: String(u.pk ?? u.pk_id ?? uid), name: (u.full_name as string) || null, avatar: hd?.url ?? (u.profile_pic_url as string) ?? null };
+/** An open tab already on the site and past any sign-in flow: fetch() from it carries the site's own cookies and
+ *  headers, without navigating (background requests from outside a page get turned away by Instagram). */
+function sitePage(ctx: BrowserContext, p: MetaPlatform) {
+  const host = new URL(SITE[p].home).host;
+  return ctx.pages().find((pg) => {
+    try {
+      const u = new URL(pg.url());
+      return u.host === host && !IN_FLOW.test(u.pathname);
+    } catch {
+      return false;
     }
-  }
-  return null;
+  });
 }
 
-/** Facebook: the user's profile page fetched in the background (title = name, final URL = vanity name). */
+/** Instagram: read from the signed-in page itself: the viewer's data embedded in the HTML next to their id (works
+ *  in any UI language), else the sidebar "Profil" link. No API call: /api/v1/users/…/info answers 429 to scripts. */
+async function identifyInstagram(ctx: BrowserContext, uid: string): Promise<MetaIdentity | null> {
+  const page = sitePage(ctx, "instagram");
+  if (!page) return null;
+  await page.waitForLoadState("load", { timeout: 15_000 }).catch(() => {});
+  const u = await page.evaluate((id) => {
+    const html = document.documentElement.innerHTML;
+    const near = (key: string, value: string) =>
+      html.match(new RegExp(`"${key}":"(${value})"[^{}]{0,300}?"(?:pk|id|pk_id)":"${id}"`))?.[1] ?? html.match(new RegExp(`"(?:pk|id|pk_id)":"${id}"[^{}]{0,300}?"${key}":"(${value})"`))?.[1] ?? null;
+    const nav = [...document.querySelectorAll("a[href^='/']")].find((x) => /^(Profile|Profil)$/i.test((x.textContent ?? "").trim()))?.getAttribute("href");
+    return {
+      username: near("username", "[A-Za-z0-9._]+") ?? nav?.match(/^\/([A-Za-z0-9._]+)\/?$/)?.[1] ?? null,
+      name: near("full_name", '[^"]*'),
+      avatar: near("profile_pic_url", '[^"]+'),
+    };
+  }, uid);
+  if (!u.username) return null;
+  const unescape = (t: string | null) => {
+    try {
+      return t ? (JSON.parse(`"${t}"`) as string) : null; // JSON escapes in the page data (\u00e9, \/ …)
+    } catch {
+      return t;
+    }
+  };
+  return { username: u.username, uid, name: unescape(u.name) || null, avatar: unescape(u.avatar) };
+}
+
+/** Facebook: the user's profile page, fetched from inside a facebook.com tab (title = name, final URL = vanity). */
 async function identifyFacebook(ctx: BrowserContext, uid: string): Promise<MetaIdentity | null> {
-  const res = await ctx.request.get(`https://www.facebook.com/profile.php?id=${uid}`, { timeout: 25_000 }).catch(() => null);
-  if (!res?.ok()) return null;
-  const html = await res.text();
-  if (IN_FLOW.test(new URL(res.url()).pathname)) return null;
-  const vanity = res.url().match(/facebook\.com\/(?!profile\.php)([\w.]+)\/?(?:$|\?)/)?.[1] ?? null;
+  const page = sitePage(ctx, "facebook");
+  if (!page) return null;
+  const r = await page.evaluate(async (id) => {
+    const res = await fetch(`/profile.php?id=${id}`, { credentials: "include" }).catch(() => null);
+    return res?.ok ? { url: res.url, html: await res.text() } : null;
+  }, uid);
+  if (!r || IN_FLOW.test(new URL(r.url).pathname)) return null;
+  const vanity = r.url.match(/facebook\.com\/(?!profile\.php)([\w.]+)\/?(?:$|\?)/)?.[1] ?? null;
   const decode = (t: string) => t.replace(/&amp;/g, "&").replace(/&#039;|&#x27;/g, "'").replace(/&quot;/g, '"');
-  const title = decode(html.match(/<title>([^<]*)<\/title>/i)?.[1] ?? "").replace(/^\(\d+\+?\)\s*/, "").replace(/\s*\|\s*Facebook\s*$/i, "").trim();
+  const title = decode(r.html.match(/<title>([^<]*)<\/title>/i)?.[1] ?? "").replace(/^\(\d+\+?\)\s*/, "").replace(/\s*\|\s*Facebook\s*$/i, "").trim();
   return { username: vanity ?? uid, uid, name: title && title.toLowerCase() !== "facebook" ? title : null, avatar: null };
 }
 
@@ -89,17 +118,11 @@ export async function startLogin(platform: MetaPlatform, sessionKey?: string) {
     const deadline = Date.now() + LOGIN_TIMEOUT_MS;
     let closed = false;
     ctx.on("close", () => (closed = true));
-    let lastLog = 0;
     let stable = 0; // signed in and out of any flow, checks in a row
     try {
       while (!closed && state.status === "waiting") {
         if (Date.now() > deadline) throw new Error("Waktu login habis (10 menit)");
         // still signing in / on a security check in any tab: wait for the user to finish it
-        if (Date.now() - lastLog > 10_000) {
-          lastLog = Date.now();
-          const names = (await ctx.cookies(SITE[platform].home).catch(() => [])).map((c) => c.name).join(",");
-          console.log(`[${platform} login] ${ctx.pages().map((p) => p.url().split("?")[0]).join(" | ")} · cookies: ${names}`); // names only, never values (debug, remove once stable)
-        }
         const inFlow = ctx.pages().some((p) => IN_FLOW.test(new URL(p.url() || "about:blank", "https://x").pathname + new URL(p.url() || "about:blank", "https://x").search));
         const uid = inFlow ? null : await sessionUid(ctx, platform).catch(() => null);
         stable = uid ? stable + 1 : 0;
