@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { CalendarClock, CalendarDays, CalendarRange, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Film, Play, Plus, Search, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Popover } from "@base-ui/react/popover";
 import { confirmDialog } from "@/components/confirm-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import type { YouTubeUploadDefaults } from "@/lib/settings";
+import { queueDrafts } from "./actions";
 import { openLightbox } from "@/components/media-lightbox";
 import { accountColor } from "@/lib/account-color";
 import { mediaUrl } from "@/lib/media-url";
@@ -14,7 +18,7 @@ import { mediaUrl } from "@/lib/media-url";
 // Placements are drafts kept in this browser for now; "Masukkan ke antrean" (real upload jobs) comes next.
 
 type Channel = { id: number; name: string; avatar: string | null; active: boolean };
-type Video = { rel: string; title: string; group: "editor" | "proyek" };
+type Video = { rel: string; title: string; group: "editor" | "proyek"; projectId: number };
 type Job = { id: number; accountId: number; video: string; title: string; status: string; at: number };
 type Draft = { id: string; rel: string; title: string; channelId: number; day: string; time: string };
 type Saved = { drafts: Draft[]; slots: string[]; picked: number[]; view: View };
@@ -56,7 +60,12 @@ function Thumb({ rel, className }: { rel: string; className: string }) {
   );
 }
 
-export function YouTubeCalendar({ channels, videos, jobs }: { channels: Channel[]; videos: Video[]; jobs: Job[] }) {
+export function YouTubeCalendar({ channels, videos, jobs, ytDefaults }: { channels: Channel[]; videos: Video[]; jobs: Job[]; ytDefaults: YouTubeUploadDefaults }) {
+  const router = useRouter();
+  const [queueOpen, setQueueOpen] = useState(false);
+  const [yt, setYt] = useState(ytDefaults); // title / description / tags / visibility / audience / AI label for the batch
+  const [queuing, startQueue] = useTransition();
+  const [lateDrafts, setLateDrafts] = useState(0); // drafts whose hour has passed, counted when the dialog opens
   const [view, setView] = useState<View>("week");
   const [cursor, setCursor] = useState<Date | null>(null); // a day inside the shown week / month (set after mount)
   const [today, setToday] = useState("");
@@ -185,6 +194,25 @@ export function YouTubeCalendar({ channels, videos, jobs }: { channels: Channel[
     setDrafts(next);
     toast.success(`${placed} draf dibuat untuk ${days} hari ke depan`);
   };
+
+  // ---- drafts -> real upload jobs ----
+  const atOf = (d: Draft) => new Date(`${d.day}T${d.time}`).getTime();
+  const queue = () =>
+    startQueue(async () => {
+      try {
+        const r = await queueDrafts({
+          ...yt,
+          drafts: drafts.map((d) => ({ id: d.id, rel: d.rel, title: d.title, projectId: videos.find((v) => v.rel === d.rel)?.projectId ?? 0, channelId: d.channelId, at: atOf(d) })),
+        });
+        setDrafts((list) => list.filter((d) => !r.queued.includes(d.id)));
+        if (r.queued.length) toast.success(`${r.queued.length} video masuk antrean upload YouTube. Aplikasi harus terbuka di jam tayangnya.`);
+        if (r.failed.length) toast.error(`${r.failed.length} draf tetap di kalender: ${[...new Set(r.failed.map((f) => f.error))].join("; ")}`);
+        setQueueOpen(false);
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+      }
+    });
 
   // ---- content list ----
   const planned = new Set([...drafts.map((d) => d.rel), ...jobs.map((j) => j.video)]); // ponytail: cheap, no memo
@@ -335,12 +363,66 @@ export function YouTubeCalendar({ channels, videos, jobs }: { channels: Channel[
               <Trash2 className="size-3.5" />
             </button>
           )}
-          <button type="button" disabled title="Menyusul: draf diubah jadi jadwal upload sungguhan" className="flex h-8 cursor-not-allowed items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium text-muted-foreground">
+          <button
+            type="button"
+            disabled={!drafts.length}
+            onClick={() => {
+              setLateDrafts(drafts.filter((d) => atOf(d) < Date.now() + 5 * 60_000).length);
+              setQueueOpen(true);
+            }}
+            title={drafts.length ? "Ubah semua draf jadi jadwal upload YouTube" : "Tarik video ke kalender dulu"}
+            className="flex h-8 items-center gap-1.5 rounded-lg bg-[#ff3333] px-3 text-xs font-semibold text-white hover:bg-[#e62e2e] disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+          >
             <Upload className="size-3.5" /> Masukkan ke antrean
-            <span className="rounded bg-muted px-1 text-[10px] font-normal">segera</span>
           </button>
         </div>
       </div>
+
+      <Dialog open={queueOpen} onOpenChange={(o) => !queuing && setQueueOpen(o)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Masukkan {drafts.length} draf ke antrean</DialogTitle>
+            <DialogDescription>
+              {[...new Set(drafts.map((d) => d.channelId))].map(name).join(", ")}. Tiap video diunggah tepat di jam tayangnya, jadi aplikasi harus terbuka saat itu. <code>{"{judul}"}</code> diganti judul tiap video.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 text-xs">
+            <label className="grid gap-1">
+              <span className="font-medium">Judul</span>
+              <input value={yt.title} onChange={(e) => setYt({ ...yt, title: e.target.value })} maxLength={200} className="h-8 rounded-md border bg-background px-2" />
+            </label>
+            <label className="grid gap-1">
+              <span className="font-medium">Deskripsi</span>
+              <textarea value={yt.description} onChange={(e) => setYt({ ...yt, description: e.target.value })} maxLength={2200} rows={3} className="resize-none rounded-md border bg-background px-2 py-1.5" />
+            </label>
+            <label className="grid gap-1">
+              <span className="font-medium">Tag <span className="font-normal text-muted-foreground">(pisahkan dengan koma)</span></span>
+              <input value={yt.tags} onChange={(e) => setYt({ ...yt, tags: e.target.value })} className="h-8 rounded-md border bg-background px-2" />
+            </label>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <label className="flex items-center gap-1.5">
+                Visibilitas
+                <select value={yt.visibility} onChange={(e) => setYt({ ...yt, visibility: e.target.value as YouTubeUploadDefaults["visibility"] })} className="h-7 rounded-md border bg-background px-1.5">
+                  <option value="public">Publik</option>
+                  <option value="unlisted">Tidak publik</option>
+                  <option value="private">Pribadi</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-1.5"><input type="checkbox" checked={yt.madeForKids} onChange={(e) => setYt({ ...yt, madeForKids: e.target.checked })} className="accent-[#ff3333]" /> Untuk anak-anak</label>
+              <label className="flex items-center gap-1.5"><input type="checkbox" checked={yt.aiContent} onChange={(e) => setYt({ ...yt, aiContent: e.target.checked })} className="accent-[#ff3333]" /> Konten AI</label>
+            </div>
+            {lateDrafts > 0 && (
+              <p className="rounded-md bg-amber-500/10 px-2 py-1.5 text-amber-600 dark:text-amber-400">{lateDrafts} draf jamnya sudah lewat: draf itu tetap di kalender, geser dulu ke jam lain.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <button type="button" onClick={() => setQueueOpen(false)} disabled={queuing} className="h-8 rounded-lg border px-3 text-xs hover:bg-accent">Batal</button>
+            <button type="button" onClick={queue} disabled={queuing || !yt.title.trim()} className="flex h-8 items-center gap-1.5 rounded-lg bg-[#ff3333] px-3 text-xs font-semibold text-white hover:bg-[#e62e2e] disabled:opacity-50">
+              <Upload className="size-3.5" /> {queuing ? "Memasukkan..." : "Masukkan ke antrean"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
         {/* ── content to drag ─────────────────────────────────────────────────────────────────── */}
