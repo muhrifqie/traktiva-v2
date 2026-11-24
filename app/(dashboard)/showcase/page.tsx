@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { and, asc, eq } from "drizzle-orm";
 import { Store } from "lucide-react";
+import { accountColor } from "@/lib/account-color";
 import { PageHeader } from "@/components/page-header";
-import { PlatformIcon } from "@/components/platform-icon";
+import { pickActive } from "@/lib/settings";
 import { db } from "@/lib/db";
 import { accounts, showcaseProducts, uploadJobs } from "@/lib/db/schema";
 import { PRESETS } from "@/lib/presets";
@@ -14,10 +15,9 @@ export const dynamic = "force-dynamic";
 
 const fmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
 
-export default async function ShowcasePage({ searchParams }: PageProps<"/showcase">) {
-  const sp = await searchParams;
+export default async function ShowcasePage() {
   const tiktok = (await db.select().from(accounts).where(eq(accounts.platform, "tiktok"))).sort((a, b) => a.username.localeCompare(b.username));
-  const current = tiktok.find((a) => a.username === sp.akun) ?? tiktok.find((a) => a.status === "active") ?? tiktok[0];
+  const current = pickActive(tiktok)!; // null only when there is no TikTok account (the empty state below)
   const rows = current
     ? await db.select().from(showcaseProducts).where(eq(showcaseProducts.accountId, current.id)).orderBy(asc(showcaseProducts.position))
     : [];
@@ -51,16 +51,11 @@ export default async function ShowcasePage({ searchParams }: PageProps<"/showcas
       ) : (
         <div className="flex-1 space-y-4">
           <div className="flex flex-wrap items-center gap-1.5">
-            {tiktok.map((a) => (
-              <Link
-                key={a.id}
-                href={`/showcase?akun=${encodeURIComponent(a.username)}`}
-                className={`flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors ${a.id === current?.id ? "border-primary/50 bg-primary/10 text-brand-light" : "bg-card text-muted-foreground hover:text-foreground"}`}
-              >
-                <PlatformIcon platform="tiktok" className="size-3.5" /> @{a.username}
-                {a.status !== "active" && <span className="text-[10px] text-status-progress">perlu login</span>}
-              </Link>
-            ))}
+            {/* the account comes from the switcher in the sidebar */}
+            <span className="flex items-center gap-1.5 text-xs font-medium">
+              <i className="size-2 rounded-full" style={{ background: accountColor(current.id) }} />@{current.username}
+              {current.status !== "active" && <span className="text-[10px] text-status-progress">perlu login</span>}
+            </span>
             <span className="ml-auto" />
             {current.status === "active" && lastSync ? (
               <LiveSync accountId={current.id} lastSync={lastSync.getTime()} count={rows.length} />

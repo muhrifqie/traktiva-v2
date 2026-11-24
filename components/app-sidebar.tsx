@@ -3,7 +3,8 @@
 import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, Library, PanelLeftClose, PanelLeftOpen, Plus, Rocket, Sparkles } from "lucide-react";
+import { ChevronRight, PanelLeftClose, PanelLeftOpen, Plus, Rocket } from "lucide-react";
+import { AccountSwitcher } from "@/components/account-switcher";
 import { PlatformIcon } from "@/components/platform-icon";
 import { UserCard, type UserInfo } from "@/components/user-card";
 import {
@@ -16,9 +17,11 @@ type Group = (typeof NAV_GROUPS)[number];
 /** Groups that belong to one platform get its mark next to the label, and the label opens that platform's page. */
 const GROUP_PLATFORM: Partial<Record<Group, "tiktok">> = { "TikTok Shop": "tiktok" };
 const GROUP_HREF: Partial<Record<Group, string>> = { "TikTok Shop": "/showcase" };
-const GROUP_ICON: Partial<Record<Group, React.ComponentType<{ className?: string }>>> = { "Buat Konten": Sparkles, Pustaka: Library, "Segera hadir": Rocket };
+const GROUP_ICON: Partial<Record<Group, React.ComponentType<{ className?: string }>>> = { "Segera hadir": Rocket };
 /** Groups with one menu need no folding (the label alone would hide a single link). */
 const FOLDABLE = (n: number) => n > 1;
+/** Everyday menus stay plain links (no group button); only platform groups fold. */
+const FLAT = new Set<Group>(["Utama", "Buat Konten", "Pustaka"]);
 
 // folded groups, remembered per PC (localStorage; the server renders everything open)
 const KEY = "trk-sidebar-folded";
@@ -106,7 +109,7 @@ function Group({ name, counts, rail, className = "" }: { name: Group; counts: Na
   if (!items.length) return null;
 
   // the top group, one-menu groups and the folded rail: plain menu buttons
-  if (name === "Utama" || !FOLDABLE(items.length) || rail) {
+  if (FLAT.has(name) || !FOLDABLE(items.length) || rail) {
     return (
       <SidebarGroup className={`px-2 py-1 ${className}`}>
         <SidebarGroupContent>
@@ -181,6 +184,9 @@ export function AppSidebar({ counts = {}, user, className }: { counts?: NavCount
             <Plus className="size-4" />
             {!rail && "Buat video"}
           </Link>
+          <div className={rail ? "mt-1.5" : "mt-2"}>
+            <AccountSwitcher selected={user.social.selected} list={user.social.list} rail={rail} />
+          </div>
         </div>
         {NAV_GROUPS.filter((g) => g !== "Pengaturan").map((g) => (
           <Group key={g} name={g} counts={counts} rail={rail} />

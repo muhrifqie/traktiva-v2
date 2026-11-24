@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarClock, Check, ChevronDown, Search, ShoppingCart, CircleAlert, Clock, ExternalLink, Eye, FlaskConical, Loader2, Play, RotateCcw, Send, Shuffle, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
+import { accountColor } from "@/lib/account-color";
 import { confirmDialog } from "@/components/confirm-dialog";
 import { openLightbox } from "@/components/media-lightbox";
 import type { UploadJob } from "@/lib/db/schema";
@@ -420,7 +421,7 @@ export function JadwalBoard({
               <div className="min-w-0 flex-1 space-y-0.5 text-[11px] text-muted-foreground">
                 {target ? (
                   <p>
-                    Diunggah ke <b className="font-medium text-foreground">@{target.username}</b> (akun di sidebar)
+                    Diunggah ke <b className="font-medium text-foreground"><i className="mr-1 inline-block size-2 rounded-full align-middle" style={{ background: accountColor(target.id) }} />@{target.username}</b> (akun aktif di sidebar)
                     {own.length > 1 ? ` · ${own.length} video, jarak ${gap / 60} jam` : ""}
                   </p>
                 ) : (
@@ -472,7 +473,7 @@ export function JadwalBoard({
                       <Play className="absolute inset-0 m-auto size-3.5 fill-white text-white opacity-80 group-hover:opacity-100" />
                     </button>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[13px] font-medium">{j.title || j.productTitle || "Video"} <span className="font-normal text-muted-foreground">· {j.label} · @{j.username}</span></p>
+                      <p className="truncate text-[13px] font-medium">{j.title || j.productTitle || "Video"} <span className="font-normal text-muted-foreground">· {j.label} · <i className="mr-1 inline-block size-2 rounded-full align-middle" style={{ background: accountColor(j.accountId) }} />@{j.username}</span></p>
                       <p className="truncate text-[11px] text-muted-foreground">
                         <Clock className="mr-1 inline size-3" />
                         {atTikTok(j) ? `Tayang ${when.format(j.postedAt!)}` : j.status === "done" && j.postedAt ? `Terposting ${when.format(j.postedAt)}` : when.format(j.scheduledAt)}
@@ -548,7 +549,7 @@ function HistoryCard({ j, scheduled, busy, disabled, onDelete }: { j: Job; sched
       </button>
       <div className="flex flex-1 flex-col gap-0.5 p-2.5">
         <p className="line-clamp-2 text-xs leading-snug font-medium" title={name}>{name}</p>
-        <p className="truncate text-[11px] text-muted-foreground">{j.label} · @{j.username}</p>
+        <p className="truncate text-[11px] text-muted-foreground">{j.label} · <i className="mr-1 inline-block size-2 rounded-full align-middle" style={{ background: accountColor(j.accountId) }} />@{j.username}</p>
         <p className="truncate text-[11px] text-muted-foreground">
           <Clock className="mr-1 inline size-3" />
           {scheduled ? `Tayang ${when.format(j.postedAt!)}` : j.status === "done" && j.postedAt ? `Terposting ${when.format(j.postedAt)}` : when.format(j.scheduledAt)}

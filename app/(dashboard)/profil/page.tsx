@@ -16,6 +16,7 @@ import { hookInsights } from "@/lib/insights";
 import type { ShopOverview } from "@/lib/platforms/tiktok-shop";
 import { mediaUrl } from "@/lib/media-url";
 import { getShopCache } from "@/lib/showcase";
+import { pickActive } from "@/lib/settings";
 import { SyncButton } from "./sync-button";
 
 export const dynamic = "force-dynamic";
@@ -86,7 +87,7 @@ function VideoCard({ v, username, scheduled }: { v: AccountPost; username: strin
 }
 
 export default async function ProfilPage({ searchParams }: PageProps<"/profil">) {
-  const { a: aParam, sort } = await searchParams;
+  const { sort } = await searchParams;
   const list = await db.select().from(accounts).where(eq(accounts.platform, "tiktok")).orderBy(accounts.username);
 
   if (list.length === 0) {
@@ -104,7 +105,7 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
     );
   }
 
-  const account = list.find((x) => String(x.id) === aParam) ?? list[0];
+  const account = pickActive(list)!;
   const [latest, previous] = await db.select().from(accountStats).where(eq(accountStats.accountId, account.id)).orderBy(desc(accountStats.capturedAt)).limit(2);
   const byViews = sort === "populer";
   // TikTok Shop account health points (read during the showcase sync, automatic after login)
@@ -126,8 +127,6 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
   const scheduled = await scheduledPosts(account.id);
   const canSync = !!account.sessionKey?.startsWith("cfx_") && account.status === "active";
 
-  const chip = (active: boolean) =>
-    `flex h-8 items-center gap-2 rounded-full border pr-3 pl-1 text-xs font-medium transition-colors ${active ? "border-primary/40 bg-primary/10 text-brand-light" : "bg-background text-muted-foreground hover:text-foreground"}`;
   const tab = (active: boolean) => `h-8 rounded-md px-3 text-xs font-medium ${active ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`;
 
   return (
@@ -140,22 +139,6 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
           <Link href="/akun" className="flex h-8 items-center rounded-lg bg-primary px-3 text-[13px] font-medium text-primary-foreground">Login dulu</Link>
         )}
       </PageHeader>
-
-      {list.length > 1 && (
-        <div className="-mt-2 flex flex-wrap gap-2">
-          {list.map((x) => (
-            <Link key={x.id} href={`/profil?a=${x.id}`} className={chip(x.id === account.id)}>
-              {x.avatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element -- remote avatar
-                <img src={x.avatarUrl} alt="" referrerPolicy="no-referrer" className="size-6 rounded-full object-cover" />
-              ) : (
-                <span className="grid size-6 place-items-center rounded-full bg-muted"><PlatformIcon platform="tiktok" className="size-3" /></span>
-              )}
-              @{x.username}
-            </Link>
-          ))}
-        </div>
-      )}
 
       <div className="flex-1 space-y-5">
         {/* profile header */}

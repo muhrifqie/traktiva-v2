@@ -60,7 +60,7 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
       </PageHeader>
       {view === "kalender" ? (
         <JadwalCalendar
-          jobs={mapped.map(({ id, scheduledAt, status, username, title }) => ({ id, scheduledAt, status, username, title }))}
+          jobs={mapped.map(({ id, scheduledAt, status, accountId, username, title }) => ({ id, scheduledAt, status, accountId, username, title }))}
           today={new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date())}
         />
       ) : (

@@ -3,10 +3,11 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { CalendarClock, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { accountColor } from "@/lib/account-color";
 
 // Calendar view of the upload queue (read-only): month or week, one chip per upload in its WIB day. Scheduling and
 // changes stay in the list view (board.tsx), which "Jadwalkan video" opens.
-export type CalJob = { id: number; scheduledAt: number; status: "queued" | "uploading" | "done" | "failed" | "cancelled"; username: string; title: string | null };
+export type CalJob = { id: number; scheduledAt: number; status: "queued" | "uploading" | "done" | "failed" | "cancelled"; accountId: number; username: string; title: string | null };
 
 const TZ = "Asia/Jakarta";
 const dayKey = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }); // 2026-11-24
@@ -31,7 +32,7 @@ const mondayOf = (d: Date) => utc(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCD
 function Chip({ j }: { j: CalJob }) {
   const s = CHIP[j.status];
   return (
-    <span title={`${time.format(j.scheduledAt)} · @${j.username}${j.title ? ` · ${j.title}` : ""} · ${s.label}`} className={`block truncate rounded-md border px-1.5 py-0.5 text-[11px] ${s.cls}`}>
+    <span title={`${time.format(j.scheduledAt)} · @${j.username}${j.title ? ` · ${j.title}` : ""} · ${s.label}`} className={`block truncate rounded-md border border-l-[3px] px-1.5 py-0.5 text-[11px] ${s.cls}`} style={{ borderLeftColor: accountColor(j.accountId) }}>
       <b className="font-semibold tabular-nums">{time.format(j.scheduledAt)}</b> @{j.username}
       {j.title ? <span className="opacity-80"> · {j.title}</span> : null}
     </span>
@@ -117,7 +118,7 @@ export function JadwalCalendar({ jobs, today: todayKey }: { jobs: CalJob[]; toda
             <li key={j.id} className="grid gap-1 px-4 py-2.5 text-[13px]">
               <span className="flex items-center gap-2">
                 <b className="font-semibold tabular-nums">{time.format(j.scheduledAt)}</b>
-                <span className="truncate text-muted-foreground">@{j.username}</span>
+                <span className="truncate text-muted-foreground"><i className="mr-1 inline-block size-2 rounded-full align-middle" style={{ background: accountColor(j.accountId) }} />@{j.username}</span>
                 <span className={`ml-auto shrink-0 rounded-full border px-1.5 py-px text-[10px] font-medium ${CHIP[j.status].cls}`}>{CHIP[j.status].label}</span>
               </span>
               {j.title && <span className="truncate text-xs text-muted-foreground">{j.title}</span>}

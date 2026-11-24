@@ -1,5 +1,5 @@
 import { count, eq } from "drizzle-orm";
-import { getSettings } from "@/lib/settings";
+import { pickActive } from "@/lib/settings";
 import { AppSidebar } from "@/components/app-sidebar";
 import type { UserInfo } from "@/components/user-card";
 import { CommandMenu } from "@/components/command-menu";
@@ -33,9 +33,7 @@ export default async function DashboardLayout({ children }: LayoutProps<"/">) {
   const info = serverInfo();
   const view = licenseView(info, pkg.version);
   const n = social.length;
-  // the account picked in the sidebar; falls back to the first logged-in one (or any) when none/removed
-  const chosen = getSettings().activeAccountId;
-  const selected = social.find((a) => a.id === chosen) ?? social.find((a) => a.status === "active") ?? social[0] ?? null;
+  const selected = pickActive(social);
   const user: UserInfo = {
     email: (google.find((g) => g.status === "active") ?? google[0])?.email ?? null,
     googleAccounts: google.length,
