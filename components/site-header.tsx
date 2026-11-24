@@ -29,12 +29,17 @@ export function SiteHeader() {
 
       {item && (
         <nav aria-label="Breadcrumb" className="hidden shrink-0 items-center gap-1.5 text-[13px] sm:flex">
-          {item.group !== "Utama" && (
+          {item.group === "Akun dan Performa" ? (
+            <>
+              <Link href="/performa" className="text-muted-foreground hover:text-foreground">{item.group}</Link>
+              <ChevronRight className="size-3.5 text-muted-foreground/60" />
+            </>
+          ) : item.group !== "Utama" && item.group !== "Lainnya" ? (
             <>
               <span className="text-muted-foreground">{item.group}</span>
               <ChevronRight className="size-3.5 text-muted-foreground/60" />
             </>
-          )}
+          ) : null}
           <item.icon className="size-4 text-black dark:text-white" />
           <span className="font-medium">{item.title}</span>
         </nav>

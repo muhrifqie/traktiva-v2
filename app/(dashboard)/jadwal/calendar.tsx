@@ -2,12 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { PlatformIcon } from "@/components/platform-icon";
 import { accountColor } from "@/lib/account-color";
 
 // Calendar view of the upload queue (read-only): month or week, one chip per upload in its WIB day. Clicking a day in the
 // month opens its week (every upload, no "+N"). Scheduling and changes stay in the list view (board.tsx), which the
 // "Jadwalkan video" button in the page header opens.
-export type CalJob = { id: number; scheduledAt: number; status: "queued" | "uploading" | "done" | "failed" | "cancelled"; accountId: number; username: string; title: string | null };
+export type CalJob = { id: number; scheduledAt: number; status: "queued" | "uploading" | "done" | "failed" | "cancelled"; accountId: number; username: string; platform: "tiktok" | "instagram" | "facebook" | "youtube" | "shopee"; title: string | null };
 
 const TZ = "Asia/Jakarta";
 const dayKey = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }); // 2026-11-24
@@ -33,7 +34,7 @@ function Chip({ j }: { j: CalJob }) {
   const s = CHIP[j.status];
   return (
     <span title={`${time.format(j.scheduledAt)} · @${j.username}${j.title ? ` · ${j.title}` : ""} · ${s.label}`} className={`block truncate rounded-md border border-l-[3px] px-1.5 py-0.5 text-[11px] ${s.cls}`} style={{ borderLeftColor: accountColor(j.accountId) }}>
-      <b className="font-semibold tabular-nums">{time.format(j.scheduledAt)}</b> @{j.username}
+      <b className="font-semibold tabular-nums">{time.format(j.scheduledAt)}</b> <PlatformIcon platform={j.platform} className="inline size-3 align-[-2px]" /> {j.platform === "youtube" ? "" : "@"}{j.username}
       {j.title ? <span className="opacity-80"> · {j.title}</span> : null}
     </span>
   );
