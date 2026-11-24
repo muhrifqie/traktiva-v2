@@ -3,14 +3,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeft, Blend, Check, Frame, Layers, Maximize2, Move, Play, Scissors, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Columns2, Crop, FlipHorizontal2, FolderOpen, Loader2, Palette, PictureInPicture2,
+  ArrowLeft, Blend, Bookmark, CalendarClock, Check, ExternalLink, Trash2, Type, Frame, Layers, Maximize2, Move, Play, Scissors, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Columns2, Crop, FlipHorizontal2, FolderOpen, Loader2, Palette, PictureInPicture2,
   Music, Plus, Ratio, RefreshCw, Rows2, Search, Shuffle, Square, Timer, Upload, Video, Volume2, VolumeX, X, type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { mediaUrl } from "@/lib/media-url";
+import type { EditorPreset, YouTubeUploadDefaults } from "@/lib/settings";
 import type { EditorJob, SourceFile } from "@/lib/youtube-editor";
 import { ASPECTS, PIP_RANGE, pipBox, RATIO_RANGE, SIZES, type Aspect, type EditorSettings, type Fill, type Fit, type Flip, type Seam, type Shape, type Size } from "@/lib/youtube-editor-config";
-import { clipLengths, musicList, openMediaFolder, previewClip, previewFrame, refreshLists, renderStatus, renderVideos, saveEditorSettings, stopRender, uploadEditorMusic } from "./actions";
+import { clipLengths, deletePreset, musicList, savePreset, scheduleResults, openMediaFolder, previewClip, previewFrame, refreshLists, renderStatus, renderVideos, saveEditorSettings, stopRender, uploadEditorMusic } from "./actions";
 
 // YouTube → Editor, full screen over the app (sidebar hidden): media on the left, the live monitor in the middle,
 // settings on the right. Click Shorts to pick them, drag the divider (or the reaction overlay) on the monitor, press Render.
@@ -128,10 +129,11 @@ const FLIPS: { v: Flip; label: string; title: string }[] = [
 ];
 
 export function VideoEditor({
-  originals, initialGameplay, initialResults, initialJob, initialSettings, initialRendered, initialMusic,
+  originals, initialGameplay, initialResults, initialJob, initialSettings, initialRendered, initialMusic, initialPresets, channels, uploadDefaults,
 }: {
   originals: { channel: string; files: SourceFile[] }[]; initialGameplay: SourceFile[]; initialResults: SourceFile[]; initialJob: EditorJob | null;
   initialSettings: EditorSettings; initialRendered: Record<string, string>; initialMusic: { src: string; name: string; dur: number }[];
+  initialPresets: EditorPreset[]; channels: { id: number; name: string }[]; uploadDefaults: YouTubeUploadDefaults;
 }) {
   const [tab, setTab] = useState<Tab>("asli");
   const [channel, setChannel] = useState(originals[0]?.channel ?? "");
@@ -149,6 +151,52 @@ export function VideoEditor({
   const [preview, setPreview] = useState<{ url: string | null; busy: boolean; error: string | null }>({ url: null, busy: false, error: null });
   const [vid, setVid] = useState<{ url: string | null; key: string; busy: boolean }>({ url: null, key: "", busy: false });
   const [music, setMusic] = useState(initialMusic);
+  const [presets, setPresets] = useState(initialPresets);
+  const [presetOpen, setPresetOpen] = useState(false);
+  const [presetName, setPresetName] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set()); // results chosen for the Kalender
+  const [plan, setPlan] = useState(() => ({
+    accountId: channels[0]?.id ?? 0,
+    startAt: "",
+    gap: 120,
+    title: uploadDefaults.title,
+    description: uploadDefaults.description,
+    tags: uploadDefaults.tags,
+    visibility: uploadDefaults.visibility,
+  }));
+  const [scheduling, setScheduling] = useState(false);
+  const applyPreset = (pr: EditorPreset) => {
+    setMany(pr.settings);
+    setPresetOpen(false);
+    toast.success(`Gaya "${pr.name}" dipakai`);
+  };
+  const storePreset = async () => {
+    const name = presetName.trim();
+    if (!name) return toast.error("Beri nama gaya dulu.");
+    setPresets(await savePreset(name, cfg));
+    setPresetName("");
+    toast.success(`Gaya "${name}" disimpan`);
+  };
+  const dropPreset = async (name: string) => setPresets(await deletePreset(name));
+  const togglePicked = (rel: string) =>
+    setPicked((s0) => {
+      const n = new Set(s0);
+      if (n.has(rel)) n.delete(rel);
+      else n.add(rel);
+      return n;
+    });
+  const schedule = async () => {
+    if (!plan.accountId) return toast.error("Belum ada channel YouTube. Hubungkan di menu Akun.");
+    const startAt = plan.startAt ? new Date(plan.startAt).getTime() : Date.now() + 10 * 60_000;
+    setScheduling(true);
+    // oldest first, so the queue follows the render order
+    const videos = results.filter((r) => picked.has(r.rel)).map((r) => r.rel).reverse();
+    const r = await scheduleResults({ accountId: plan.accountId, videos, startAt, gapMinutes: plan.gap, title: plan.title, description: plan.description, tags: plan.tags, visibility: plan.visibility, madeForKids: uploadDefaults.madeForKids, aiContent: uploadDefaults.aiContent });
+    setScheduling(false);
+    if ("error" in r) return toast.error(r.error);
+    setPicked(new Set());
+    toast.success(`${r.ok!.count} video masuk Kalender Upload, mulai ${new Date(r.ok!.first).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}`);
+  };
   const [uploading, setUploading] = useState(false);
   const [listening, setListening] = useState<string | null>(null);
   const ear = useRef<HTMLAudioElement>(null);
@@ -267,7 +315,9 @@ export function VideoEditor({
         const r = await refreshLists();
         setResults(r.results);
         setRendered(r.rendered);
-        toast.success(`${j?.done.length ?? 0} video selesai dirender`);
+        const fresh = j?.done.map((d) => d.rel) ?? [];
+        setPicked(new Set(fresh));
+        toast.success(`${fresh.length} video selesai dirender`, { action: fresh.length ? { label: "Jadwalkan", onClick: () => setTab("hasil") } : undefined });
       }
     }, 1500);
     return () => clearInterval(t);
@@ -461,6 +511,37 @@ export function VideoEditor({
         <div className="w-72">
           <Segmented value={cfg.layout} onChange={(v) => set("layout", v)} disabled={running} items={[{ v: "side", label: <><Columns2 className="size-3.5" /> Samping</> }, { v: "stack", label: <><Rows2 className="size-3.5" /> Tumpuk</> }, { v: "pip", label: <><PictureInPicture2 className="size-3.5" /> Reaction</> }]} />
         </div>
+        <div className="relative">
+          <button type="button" onClick={() => setPresetOpen((v) => !v)} aria-expanded={presetOpen} className={`flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs ${presetOpen ? ON : "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground"}`}>
+            <Bookmark className="size-3.5" /> Gaya {presets.length > 0 && <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{presets.length}</span>}
+            <ChevronDown className="size-3.5" />
+          </button>
+          {presetOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setPresetOpen(false)} />
+              <div className="absolute top-11 left-0 z-50 w-72 rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl">
+                <p className="px-1.5 pb-1.5 text-[11px] font-semibold text-muted-foreground">Gaya tersimpan</p>
+                <div className="no-scrollbar max-h-64 space-y-0.5 overflow-y-auto">
+                  {presets.map((pr) => (
+                    <div key={pr.name} className="group flex items-center gap-1 rounded-lg hover:bg-accent">
+                      <button type="button" onClick={() => applyPreset(pr)} disabled={running} className="flex h-9 min-w-0 flex-1 items-center gap-2 px-2 text-left text-xs">
+                        <Bookmark className="size-3.5 shrink-0 text-orange-500" />
+                        <span className="truncate">{pr.name}</span>
+                        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{SIZES[pr.settings.size]?.label} · {{ side: "Samping", stack: "Tumpuk", pip: "Reaction" }[pr.settings.layout]}</span>
+                      </button>
+                      <button type="button" onClick={() => void dropPreset(pr.name)} aria-label={`Hapus gaya ${pr.name}`} title="Hapus" className="mr-1 grid size-7 place-items-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"><Trash2 className="size-3.5" /></button>
+                    </div>
+                  ))}
+                  {!presets.length && <p className="px-2 py-3 text-center text-[11px] text-muted-foreground">Belum ada. Atur Editor, lalu simpan di bawah.</p>}
+                </div>
+                <div className="mt-2 flex gap-1.5 border-t pt-2">
+                  <input value={presetName} onChange={(e) => setPresetName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void storePreset()} maxLength={40} placeholder="Nama gaya, mis. Reaction pojok" aria-label="Nama gaya" className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-orange-400/40" />
+                  <button type="button" onClick={() => void storePreset()} className="h-8 shrink-0 rounded-md bg-orange-500 px-2.5 text-xs font-semibold text-white hover:bg-orange-600">Simpan</button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
         <span className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground">
           {saved ? <Check className="size-3.5 text-amber-500" /> : <Loader2 className="size-3.5 animate-spin" />} {saved ? "Tersimpan" : "Menyimpan…"}
         </span>
@@ -560,16 +641,66 @@ export function VideoEditor({
           )}
           {tab === "hasil" && (
             <div className="flex min-h-0 flex-1 flex-col gap-2 p-2.5">
-              <button type="button" onClick={() => void openMediaFolder("results")} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border text-xs hover:bg-accent"><FolderOpen className="size-3.5" /> Buka folder hasil</button>
+              <div className="flex items-center gap-1 text-[11px]">
+                <span className="flex-1 text-muted-foreground">{picked.size ? <><b className="text-foreground">{picked.size}</b> dipilih</> : "Klik video untuk memilih"}</span>
+                <button type="button" onClick={() => setPicked(new Set(results.map((r) => r.rel)))} className="flex h-7 items-center gap-1 rounded-md px-2 hover:bg-accent"><Plus className="size-3" /> Semua</button>
+                {picked.size > 0 && <button type="button" onClick={() => setPicked(new Set())} className="flex h-7 items-center gap-1 rounded-md px-2 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-3" /> Hapus</button>}
+                <button type="button" onClick={() => void openMediaFolder("results")} title="Buka folder hasil" aria-label="Buka folder hasil" className="grid size-7 place-items-center rounded-md hover:bg-accent"><FolderOpen className="size-3.5" /></button>
+              </div>
               {job?.failed.map((f) => <p key={f} className="text-[11px] text-destructive">{f}</p>)}
               <div className="no-scrollbar -mx-1 grid min-h-0 flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-2 overflow-y-auto p-1">
-                {results.map((r) => (
-                  <a key={r.rel} href={mediaUrl(r.rel)} target="_blank" rel="noreferrer" title={r.name} className="overflow-hidden rounded-lg border bg-muted hover:ring-2 hover:ring-border">
-                    <video src={`${mediaUrl(r.rel)}#t=1`} preload="metadata" muted className="aspect-[9/16] w-full object-cover" />
-                  </a>
-                ))}
+                {results.map((r) => {
+                  const on = picked.has(r.rel);
+                  return (
+                    <div key={r.rel} className={`group relative overflow-hidden rounded-lg border bg-muted ${on ? "ring-2 ring-orange-400" : "hover:ring-2 hover:ring-border"}`}>
+                      <button type="button" onClick={() => togglePicked(r.rel)} title={r.name} className="block w-full">
+                        <video src={`${mediaUrl(r.rel)}#t=1`} preload="metadata" muted className="aspect-[9/16] w-full object-cover" />
+                      </button>
+                      <span className={`pointer-events-none absolute top-1 left-1 grid size-5 place-items-center rounded-full ${on ? "bg-orange-500 text-white" : "border border-white/70 bg-black/30 text-white opacity-0 group-hover:opacity-100"}`}>{on ? <Check className="size-3" /> : <Plus className="size-3" />}</span>
+                      <a href={mediaUrl(r.rel)} target="_blank" rel="noreferrer" title="Putar" aria-label={`Putar ${r.name}`} className="absolute right-1 bottom-1 grid size-6 place-items-center rounded bg-black/60 text-white opacity-0 group-hover:opacity-100"><ExternalLink className="size-3" /></a>
+                    </div>
+                  );
+                })}
                 {!results.length && <p className="col-span-full p-4 text-center text-xs text-muted-foreground">Belum ada hasil render.</p>}
               </div>
+              {picked.size > 0 && (
+                <div className="space-y-2 rounded-lg border bg-background/60 p-2.5">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold"><CalendarClock className="size-3.5 text-rose-400" /> Jadwalkan ke YouTube</p>
+                  {channels.length ? (
+                    <>
+                      <select value={plan.accountId} onChange={(e) => setPlan({ ...plan, accountId: Number(e.target.value) })} aria-label="Channel" className="h-8 w-full rounded-md border bg-background px-2 text-xs">
+                        {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <label className="space-y-0.5 text-[10px] text-muted-foreground">Mulai
+                          <input type="datetime-local" value={plan.startAt} onChange={(e) => setPlan({ ...plan, startAt: e.target.value })} className="h-8 w-full rounded-md border bg-background px-1.5 text-xs text-foreground" />
+                        </label>
+                        <label className="space-y-0.5 text-[10px] text-muted-foreground">Jarak
+                          <select value={plan.gap} onChange={(e) => setPlan({ ...plan, gap: Number(e.target.value) })} className="h-8 w-full rounded-md border bg-background px-1.5 text-xs text-foreground">
+                            {[60, 120, 180, 360, 720, 1440].map((m) => <option key={m} value={m}>{m < 1440 ? `${m / 60} jam` : "1 hari"}</option>)}
+                          </select>
+                        </label>
+                      </div>
+                      <input value={plan.title} onChange={(e) => setPlan({ ...plan, title: e.target.value })} maxLength={200} placeholder="Judul, {judul} = judul Short" aria-label="Judul" className="h-8 w-full rounded-md border bg-background px-2 text-xs" />
+                      <textarea value={plan.description} onChange={(e) => setPlan({ ...plan, description: e.target.value })} rows={2} placeholder="Deskripsi" aria-label="Deskripsi" className="w-full resize-none rounded-md border bg-background px-2 py-1.5 text-xs" />
+                      <div className="grid grid-cols-[1fr_auto] gap-1.5">
+                        <input value={plan.tags} onChange={(e) => setPlan({ ...plan, tags: e.target.value })} placeholder="Tag, pisahkan koma" aria-label="Tag" className="h-8 min-w-0 rounded-md border bg-background px-2 text-xs" />
+                        <select value={plan.visibility} onChange={(e) => setPlan({ ...plan, visibility: e.target.value as typeof plan.visibility })} aria-label="Visibilitas" className="h-8 rounded-md border bg-background px-1.5 text-xs">
+                          <option value="public">Publik</option>
+                          <option value="unlisted">Tidak publik</option>
+                          <option value="private">Pribadi</option>
+                        </select>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">Kosongkan Mulai = 10 menit lagi. Jarak minimal 1 jam supaya tidak kena batas upload harian.</p>
+                      <button type="button" onClick={() => void schedule()} disabled={scheduling} className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-rose-500 text-xs font-semibold text-white hover:bg-rose-600 disabled:opacity-50">
+                        {scheduling ? <Loader2 className="size-3.5 animate-spin" /> : <CalendarClock className="size-3.5" />} Jadwalkan {picked.size} video
+                      </button>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">Belum ada channel YouTube. Hubungkan dulu di menu <Link href="/akun" className="underline">Akun</Link>.</p>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -736,15 +867,64 @@ export function VideoEditor({
               </Row>
             </Section>
           )}
-          <Section icon={Play} tone="bg-yellow-500/15 text-yellow-500" title="Mulai overlay" value={cfg.gameStart < 0 ? "acak" : `detik ${fmt(cfg.gameStart)}`}>
-            <Segmented value={cfg.gameStart < 0 ? "acak" : "pilih"} onChange={(v) => set("gameStart", v === "acak" ? -1 : 0)} disabled={running} items={[{ v: "acak", label: <><Shuffle className="size-3.5" /> Acak</>, title: "Tiap render mulai dari titik acak" }, { v: "pilih", label: <><Timer className="size-3.5" /> Dari detik…</>, title: "Semua render mulai dari detik yang sama" }]} />
+          <Section icon={Play} tone="bg-yellow-500/15 text-yellow-500" title="Mulai overlay" value={cfg.gameStart === -1 ? "acak" : cfg.gameStart === -2 ? "bersambung" : `detik ${fmt(cfg.gameStart)}`}>
+            <Segmented
+              value={cfg.gameStart === -1 ? "acak" : cfg.gameStart === -2 ? "sambung" : "pilih"}
+              onChange={(v) => set("gameStart", v === "acak" ? -1 : v === "sambung" ? -2 : 0)}
+              disabled={running}
+              items={[
+                { v: "acak", label: <><Shuffle className="size-3.5" /> Acak</>, title: "Tiap video mulai dari titik acak" },
+                { v: "sambung", label: "Bersambung", title: "Video berikutnya melanjutkan overlay dari titik video sebelumnya berhenti: tidak ada bagian yang terulang" },
+                { v: "pilih", label: <><Timer className="size-3.5" /> Detik…</>, title: "Semua video mulai dari detik yang sama" },
+              ]}
+            />
             {cfg.gameStart >= 0 && (
               <div className="flex items-center gap-2">
                 <Slider label="Detik mulai overlay" value={Math.min(cfg.gameStart, Math.max(1, Math.floor(gameLen) - 1))} min={0} max={Math.max(1, Math.floor(gameLen) - 1)} step={1} onChange={(v) => set("gameStart", v)} disabled={running} />
                 <input type="number" aria-label="Detik mulai" min={0} max={Math.floor(gameLen) || undefined} value={cfg.gameStart} onChange={(e) => set("gameStart", Math.max(0, Math.round(Number(e.target.value) || 0)))} disabled={running} className="h-8 w-16 shrink-0 rounded-md border bg-background px-2 text-right text-xs tabular-nums" />
               </div>
             )}
-            <p className="text-[11px] text-muted-foreground">{gameLen ? `Video overlay ${fmt(gameLen)}. ` : ""}Diputar ulang kalau lebih pendek dari video asli.</p>
+            <p className="text-[11px] text-muted-foreground">
+              {gameLen ? `Video overlay ${fmt(gameLen)}. ` : ""}
+              {cfg.gameStart === -2 ? "Video ke-2 melanjutkan dari titik video ke-1 berhenti, dan seterusnya. " : ""}
+              {random ? "Klip overlay dibagi bergiliran acak: tidak ada yang terulang sebelum semua terpakai." : "Klip overlay dipakai bergantian sesuai urutan."}
+            </p>
+          </Section>
+          <Section icon={Timer} tone="bg-amber-500/15 text-amber-500" title="Durasi" value={cfg.maxLen ? `maks ${fmt(cfg.maxLen)}` : "penuh"}>
+            <Row icon={Scissors} label="Lewati awal">
+              <div className="flex items-center gap-2">
+                <Slider label="Lewati detik awal" value={Math.min(cfg.trimStart, 30)} min={0} max={30} step={1} onChange={(v) => set("trimStart", v)} disabled={running} />
+                <span className="w-9 shrink-0 text-right text-[11px] tabular-nums">{cfg.trimStart} dtk</span>
+              </div>
+            </Row>
+            <Row icon={Timer} label="Panjang maks">
+              <Segmented value={String(cfg.maxLen) as string} onChange={(v) => set("maxLen", Number(v))} disabled={running} items={[{ v: "0", label: "Penuh" }, { v: "59", label: "59 dtk" }, { v: "45", label: "45" }, { v: "30", label: "30" }]} />
+            </Row>
+            <p className="text-[11px] text-muted-foreground">Berlaku untuk semua video. 59 detik = aman sebagai Shorts.</p>
+          </Section>
+          <Section icon={Type} tone="bg-pink-500/15 text-pink-400" title="Teks di video" value={{ none: "tanpa", title: "judul", custom: "sendiri" }[cfg.textMode]}>
+            <Segmented value={cfg.textMode} onChange={(v) => set("textMode", v)} disabled={running} items={[{ v: "none", label: "Tanpa" }, { v: "title", label: "Judul Short" }, { v: "custom", label: "Tulis sendiri" }]} />
+            {cfg.textMode === "custom" && (
+              <textarea value={cfg.textCustom} onChange={(e) => set("textCustom", e.target.value.slice(0, 200))} rows={2} disabled={running} placeholder="Mis. Tunggu endingnya! {judul}" aria-label="Teks di video" className="w-full resize-none rounded-md border bg-background px-2 py-1.5 text-xs" />
+            )}
+            {cfg.textMode !== "none" && (
+              <>
+                <Row icon={Move} label="Posisi">
+                  <Segmented value={cfg.textPos} onChange={(v) => set("textPos", v)} disabled={running} items={[{ v: "top", label: "Atas" }, { v: "middle", label: "Tengah" }, { v: "bottom", label: "Bawah" }]} />
+                </Row>
+                <Row icon={Maximize2} label="Ukuran">
+                  <Segmented value={cfg.textSize} onChange={(v) => set("textSize", v)} disabled={running} items={[{ v: "s", label: "Kecil" }, { v: "m", label: "Sedang" }, { v: "l", label: "Besar" }]} />
+                </Row>
+                <div className="grid grid-cols-3 gap-1">
+                  {([["box", "Kotak", "bg-black/70 text-white"], ["outline", "Garis", "text-white [text-shadow:0_0_2px_#000,0_0_2px_#000,0_0_2px_#000]"], ["yellow", "Kuning", "text-[#FFD93D] [text-shadow:0_0_2px_#000,0_0_2px_#000,0_0_2px_#000]"]] as const).map(([v, label, look]) => (
+                    <button key={v} type="button" onClick={() => set("textStyle", v)} disabled={running} aria-pressed={cfg.textStyle === v} className={`flex h-10 items-center justify-center rounded-md border bg-stone-500/30 text-xs ${cfg.textStyle === v ? "ring-2 ring-orange-400" : "hover:bg-stone-500/40"}`}>
+                      <span className={`rounded px-1.5 py-0.5 font-bold ${look}`}>{label}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground">{"{judul}"} diganti judul Short (tanpa nama channel dan emoji).</p>
+              </>
+            )}
           </Section>
           <Section icon={Crop} tone="bg-amber-500/15 text-amber-500" title="Tampilan">
             {([["fitOriginal", "Video asli", Video], ["fitGame", "Overlay", Layers]] as const).map(([k, label, Icon]) => (

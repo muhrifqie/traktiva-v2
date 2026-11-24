@@ -63,6 +63,11 @@ export function listRendered(): Record<string, string> {
     return {};
   }
 }
+/** The Short title behind a result file: from its source (full name), else from the file name. */
+export function resultTitle(resultRel: string) {
+  const src = Object.entries(listRendered()).find(([, r]) => r === resultRel)?.[0];
+  return pretty(path.basename(src ?? resultRel.replace(/^.*\/\d{14}\s+/, "")));
+}
 function markRendered(source: string, result: string) {
   fs.writeFileSync(RENDERED(), JSON.stringify({ ...listRendered(), [source]: result }));
 }
@@ -159,17 +164,77 @@ export async function resolveMusic(choice: string) {
 }
 const musicInput = (rel: string | null) => (rel ? ["-stream_loop", "-1", "-i", path.resolve(MEDIA_DIR, rel)] : []);
 
+// ---- on-screen text ----------------------------------------------------------------------------------------------
+const FONTS = ["C:/Windows/Fonts/arialbd.ttf", "/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"];
+const fontFile = () => FONTS.find((f) => fs.existsSync(f)) ?? null;
+const escPath = (p: string) => p.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "");
+/** Short title for on-screen text: the Short's name without the channel suffix, hashtags and emoji. */
+export const cleanTitle = (name: string) =>
+  name
+    .split(/\s*[｜|]\s*/)[0]
+    .replace(/#\S+/g, "")
+    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+const wrap = (text: string, max: number) =>
+  text.split(/\n/).flatMap((para) => {
+    const out: string[] = [];
+    let line = "";
+    for (const w of para.split(/\s+/).filter(Boolean)) {
+      if (line && (line + " " + w).length > max) {
+        out.push(line);
+        line = w;
+      } else line = line ? `${line} ${w}` : w;
+    }
+    return line ? [...out, line] : out;
+  });
+/** The text to draw for this video ("" = none). */
+export const overlayText = (o: EditorSettings, title: string) =>
+  o.textMode === "title" ? cleanTitle(title) : o.textMode === "custom" ? o.textCustom.replace(/\{judul\}/g, cleanTitle(title)).trim() : "";
+/** The filter with the text drawn on [v] (still ends in [v]). The text goes through a temp file (no escaping);
+ *  its path is pushed to `tmp` for the caller to delete. */
+function withText(filter: string, o: EditorSettings, title: string, tmp: string[]) {
+  const text = overlayText(o, title);
+  const font = fontFile();
+  if (!text || !font) return filter;
+  const [W, H] = o.size.split("x").map(Number);
+  const size = Math.round(Math.min(W, H * 0.5625) * { s: 0.05, m: 0.065, l: 0.085 }[o.textSize]);
+  const lines = wrap(text, Math.max(8, Math.floor((W * 0.86) / (size * 0.56))));
+  const shown = lines.slice(0, 3);
+  if (lines.length > 3) shown[2] = `${shown[2].replace(/\s*\S*$/, "")}…`;
+  const dir = path.join(OUT(), ".preview");
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `text-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`);
+  fs.writeFileSync(file, shown.join("\n"));
+  tmp.push(file);
+  const style = {
+    box: `fontcolor=white:box=1:boxcolor=black@0.62:boxborderw=${Math.round(size * 0.35)}`,
+    outline: `fontcolor=white:borderw=${Math.max(3, Math.round(size * 0.09))}:bordercolor=black`,
+    yellow: `fontcolor=0xFFD93D:borderw=${Math.max(3, Math.round(size * 0.09))}:bordercolor=black`,
+  }[o.textStyle];
+  const y = { top: `${Math.round(H * 0.09)}`, middle: "(h-text_h)/2", bottom: `h-text_h-${Math.round(H * 0.13)}` }[o.textPos];
+  return `${filter.replace(/\[v\]$/, "[v0]")};[v0]drawtext=fontfile='${escPath(font)}':textfile='${escPath(file)}':fontsize=${size}:line_spacing=${Math.round(size * 0.22)}:text_align=C:x=(w-text_w)/2:y=${y}:${style}[v]`;
+}
+const cleanup = (tmp: string[]) => tmp.forEach((f) => fs.rmSync(f, { force: true }));
+/** Where the overlay starts in a preview at `at` s of the original. */
+const previewGameAt = (o: EditorSettings, at: number) => (o.gameStart >= 0 ? o.gameStart + at : o.gameStart === -2 ? at : at + 5);
+
 /** One still of the result at `at` seconds (overlay at its start + at, or 5 s further in) with these settings: the Editor's live preview. */
 export async function renderPreview(original: string, gameplay: string, o: EditorSettings, at = 2) {
   if (!ffmpegPath) throw new Error("ffmpeg tidak tersedia di perangkat ini.");
   const dir = path.join(OUT(), ".preview");
   fs.mkdirSync(dir, { recursive: true });
   const out = path.join(dir, "preview.jpg");
-  await run(
-    ffmpegPath,
-    ["-y", "-hide_banner", "-loglevel", "error", "-ss", at.toFixed(2), "-i", original, "-ss", (o.gameStart >= 0 ? o.gameStart + at : at + 5).toFixed(2), "-i", gameplay, "-filter_complex", layoutFilter(o), "-map", "[v]", "-frames:v", "1", "-q:v", "4", out],
-    { windowsHide: true },
-  );
+  const tmp: string[] = [];
+  try {
+    await run(
+      ffmpegPath,
+      ["-y", "-hide_banner", "-loglevel", "error", "-ss", at.toFixed(2), "-i", original, "-ss", previewGameAt(o, at).toFixed(2), "-i", gameplay, "-filter_complex", withText(layoutFilter(o), o, pretty(path.basename(original)), tmp), "-map", "[v]", "-frames:v", "1", "-q:v", "4", out],
+      { windowsHide: true },
+    );
+  } finally {
+    cleanup(tmp);
+  }
   return toRel(out);
 }
 
@@ -184,7 +249,8 @@ export async function renderPreviewClip(original: string, gameplay: string, o: E
   const music = await resolveMusic(o.music);
   const sound = audioFilter(o, { original: a.audio, game: b.audio, music: !!music });
   const start = Math.max(0, Math.min(at, a.len - 1));
-  const gameAt = o.gameStart >= 0 ? o.gameStart + start : start + 5;
+  const gameAt = previewGameAt(o, start);
+  const tmp: string[] = [];
   await run(
     ffmpegPath,
     [
@@ -192,13 +258,13 @@ export async function renderPreviewClip(original: string, gameplay: string, o: E
       "-ss", start.toFixed(2), "-i", original,
       "-stream_loop", "-1", "-ss", (b.len ? gameAt % b.len : 0).toFixed(2), "-i", gameplay,
       ...musicInput(music),
-      "-filter_complex", sound ? `${layoutFilter(o)};${sound}` : layoutFilter(o),
+      "-filter_complex", `${withText(layoutFilter(o), o, pretty(path.basename(original)), tmp)}${sound ? `;${sound}` : ""}`,
       "-map", "[v]", ...(sound ? ["-map", "[aout]", "-c:a", "aac", "-b:a", "128k"] : ["-an"]),
       "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26", "-pix_fmt", "yuv420p", "-t", String(secs), "-movflags", "+faststart",
       out,
     ],
     { windowsHide: true, timeout: 120_000 },
-  );
+  ).finally(() => cleanup(tmp));
   return toRel(out);
 }
 
@@ -207,18 +273,23 @@ export type EditorJob = { total: number; done: { name: string; rel: string }[]; 
 const g = globalThis as { __ytEditor?: EditorJob; __ytEditorProc?: ReturnType<typeof spawn> };
 export const editorJob = () => g.__ytEditor ?? null;
 
-async function renderOne(original: string, gameplay: string, o: EditorSettings, out: string, title: string, music: string | null) {
+/** Render one video; `cursor` = where the overlay should start in "bersambung" mode. Returns the overlay span used. */
+async function renderOne(original: string, gameplay: string, o: EditorSettings, out: string, title: string, music: string | null, cursor = 0) {
   const [a, b] = await Promise.all([probe(original), probe(gameplay)]);
-  const len = a.len;
-  // the overlay starts where the user chose, or somewhere random (it loops) so two renders with the same clip differ
-  const offset = o.gameStart >= 0 ? Math.min(o.gameStart, Math.max(0, b.len - 1)) : b.len > len + 5 ? Math.random() * (b.len - len - 2) : 0;
+  const start = Math.max(0, Math.min(o.trimStart, a.len - 1));
+  const len = Math.max(1, Math.min(a.len - start, o.maxLen > 0 ? o.maxLen : Infinity));
+  // overlay start: the chosen second, where the previous video stopped ("bersambung"), or a random point (it loops)
+  const offset =
+    o.gameStart >= 0 ? Math.min(o.gameStart, Math.max(0, b.len - 1)) : o.gameStart === -2 ? (b.len ? cursor % b.len : 0) : b.len > len + 5 ? Math.random() * (b.len - len - 2) : 0;
   const sound = audioFilter(o, { original: a.audio, game: b.audio, music: !!music }, len);
+  const tmp: string[] = [];
+  const video = withText(layoutFilter(o), o, title, tmp);
   const args = [
     "-y", "-hide_banner", "-loglevel", "error",
-    "-i", original,
+    ...(start > 0 ? ["-ss", start.toFixed(2)] : []), "-i", original,
     "-stream_loop", "-1", "-ss", offset.toFixed(2), "-i", gameplay,
     ...musicInput(music),
-    "-filter_complex", sound ? `${layoutFilter(o)};${sound}` : layoutFilter(o),
+    "-filter_complex", sound ? `${video};${sound}` : video,
     "-map", "[v]", ...(sound ? ["-map", "[aout]", "-c:a", "aac", "-b:a", "160k"] : ["-an"]),
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
     ...(len ? ["-t", len.toFixed(2)] : []),
@@ -236,7 +307,23 @@ async function renderOne(original: string, gameplay: string, o: EditorSettings, 
     p.stderr.on("data", (c: Buffer) => (err += c.toString()));
     p.on("close", (code) => (code === 0 ? resolve() : reject(new Error(err.split("\n").filter(Boolean).pop() ?? `ffmpeg keluar dengan kode ${code}`))));
     p.on("error", reject);
-  });
+  }).finally(() => cleanup(tmp));
+  return offset + len;
+}
+
+/** Shuffled deck: every clip once before any repeats, a new order each round. */
+function deck<T>(items: T[]) {
+  let pile: T[] = [];
+  return () => {
+    if (!pile.length) {
+      pile = [...items];
+      for (let i = pile.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pile[i], pile[j]] = [pile[j], pile[i]];
+      }
+    }
+    return pile.pop()!;
+  };
 }
 
 /** Render every original with a gameplay clip (picked in turn from the chosen ones, or at random). */
@@ -249,16 +336,18 @@ export async function startRender(c: { originals: string[]; gameplay: string[]; 
   const job: EditorJob = { total: c.originals.length, done: [], failed: [], current: null, running: true, cancelled: false };
   g.__ytEditor = job;
   const abs = (rel: string) => path.resolve(MEDIA_DIR, rel);
+  const draw = deck(pool);
+  const cursors = new Map<string, number>(); // "bersambung": where each overlay clip stopped
   void (async () => {
     for (const [i, rel] of c.originals.entries()) {
       if (job.cancelled) break;
       const name = pretty(path.basename(rel));
       job.current = name;
-      const game = c.random ? pool[Math.floor(Math.random() * pool.length)] : pool[i % pool.length];
+      const game = c.random ? draw() : pool[i % pool.length];
       const stamp = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 19).replace(/[-:T]/g, ""); // WIB wall clock
       const out = path.join(OUT(), `${stamp} ${name.replace(/[<>:"/\\|?*]+/g, "").slice(0, 60)}.mp4`);
       try {
-        await renderOne(abs(rel), abs(game), c.settings, out, name, await resolveMusic(c.settings.music));
+        cursors.set(game, await renderOne(abs(rel), abs(game), c.settings, out, name, await resolveMusic(c.settings.music), cursors.get(game) ?? 0));
         job.done.push({ name, rel: toRel(out) });
         markRendered(rel, toRel(out));
       } catch (e) {

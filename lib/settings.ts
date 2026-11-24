@@ -43,7 +43,7 @@ export const YOUTUBE_UPLOAD_DEFAULTS: YouTubeUploadDefaults = {
   madeForKids: false,
   aiContent: true,
 };
-type Settings = { activeAccountId?: number | null /* social account shown in the sidebar */; myConcepts?: MyConcept[]; voice: VoiceSettings; editTemplates?: EditTemplate[]; chatgpt?: ChatgptSettings | null; writing?: WritingRules; youtubeUpload?: Partial<YouTubeUploadDefaults>; youtubeEditor?: Partial<EditorSettings> };
+type Settings = { activeAccountId?: number | null /* social account shown in the sidebar */; myConcepts?: MyConcept[]; voice: VoiceSettings; editTemplates?: EditTemplate[]; chatgpt?: ChatgptSettings | null; writing?: WritingRules; youtubeUpload?: Partial<YouTubeUploadDefaults>; youtubeEditor?: Partial<EditorSettings>; youtubeEditorPresets?: EditorPreset[] };
 const DEFAULTS: Settings = { voice: { provider: "flow" } };
 const FILE = path.join(/* turbopackIgnore: true */ DATA_DIR, "settings.json");
 
@@ -79,6 +79,9 @@ export function updateSettings(patch: Partial<Settings>) {
 export const youtubeUploadDefaults = (): YouTubeUploadDefaults => ({ ...YOUTUBE_UPLOAD_DEFAULTS, ...getSettings().youtubeUpload });
 /** YouTube → Editor configuration (size, layout, share, fit, fill), kept across refreshes, restarts and updates. */
 export const youtubeEditorSettings = (): EditorSettings => ({ ...EDITOR_DEFAULTS, ...getSettings().youtubeEditor });
+/** Named Editor styles the owner saved ("Reaction pojok", "Split 60:40 + musik"), applied with one click. */
+export type EditorPreset = { name: string; settings: EditorSettings };
+export const youtubeEditorPresets = (): EditorPreset[] => (getSettings().youtubeEditorPresets ?? []).map((p) => ({ name: p.name, settings: { ...EDITOR_DEFAULTS, ...p.settings } }));
 
 /** Owner's writing rules (CTA, banned words, extra notes) with defaults filled in. */
 export const writingRules = (): WritingRules => ({ ...DEFAULT_WRITING, ...getSettings().writing });

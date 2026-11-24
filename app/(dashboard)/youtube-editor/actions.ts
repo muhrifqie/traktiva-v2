@@ -5,8 +5,13 @@ import fs from "node:fs";
 import { z } from "zod";
 import { addMusic, listMusic } from "@/lib/audio-library";
 import { resolveMedia } from "@/lib/media";
-import { updateSettings } from "@/lib/settings";
-import { cancelRender, editorJob, GAMEPLAY_DIR, listGameplay, listRendered, listResults, probe, renderPreview, renderPreviewClip, SIZES, startRender, type EditorSettings } from "@/lib/youtube-editor";
+import { db } from "@/lib/db";
+import { accounts, uploadJobs } from "@/lib/db/schema";
+import { getSettings, updateSettings, youtubeEditorPresets } from "@/lib/settings";
+import { kickUploads } from "@/lib/uploads";
+import { eq } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
+import { cancelRender, cleanTitle, editorJob, resultTitle, GAMEPLAY_DIR, listGameplay, listRendered, listResults, probe, renderPreview, renderPreviewClip, SIZES, startRender, type EditorSettings } from "@/lib/youtube-editor";
 
 // errors come back as { error } (thrown server-action errors are hidden in production)
 const safe = async <T,>(f: () => Promise<T>) => {
@@ -35,7 +40,14 @@ const Settings = z.object({
   pipFocusY: z.number().min(0).max(100),
   pipBorder: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
   pipBorderColor: z.enum(["white", "black"]),
-  gameStart: z.number().min(-1).max(36_000),
+  gameStart: z.number().min(-2).max(36_000),
+  trimStart: z.number().min(0).max(36_000),
+  maxLen: z.number().min(0).max(36_000),
+  textMode: z.enum(["none", "title", "custom"]),
+  textCustom: z.string().max(200),
+  textPos: z.enum(["top", "middle", "bottom"]),
+  textSize: z.enum(["s", "m", "l"]),
+  textStyle: z.enum(["box", "outline", "yellow"]),
   music: z.string().max(300),
   volMusic: z.number().int().min(0).max(100),
   volOriginal: z.number().int().min(0).max(150),
@@ -79,6 +91,66 @@ export const renderVideos = async (input: { originals: string[]; gameplay: strin
   });
 
 export const renderStatus = async () => editorJob();
+
+// ---- presets: named styles in settings.json ----
+const Name = z.string().trim().min(1).max(40);
+export async function savePreset(name: string, settings: EditorSettings) {
+  const n = Name.parse(name);
+  const list = youtubeEditorPresets().filter((p) => p.name.toLowerCase() !== n.toLowerCase());
+  updateSettings({ youtubeEditorPresets: [...list, { name: n, settings: Settings.parse(settings) }].slice(-30) });
+  return youtubeEditorPresets();
+}
+export async function deletePreset(name: string) {
+  updateSettings({ youtubeEditorPresets: (getSettings().youtubeEditorPresets ?? []).filter((p) => p.name !== name) });
+  return youtubeEditorPresets();
+}
+
+// ---- results → Kalender Upload (YouTube) ----
+export const youtubeChannels = async () =>
+  (await db.select({ id: accounts.id, name: accounts.displayName, username: accounts.username }).from(accounts).where(eq(accounts.platform, "youtube"))).map((a) => ({
+    id: a.id,
+    name: a.name || a.username,
+  }));
+const Schedule = z.object({
+  accountId: z.number().int().positive(),
+  videos: z.array(Rel).min(1).max(50),
+  startAt: z.number().int(), // epoch ms
+  gapMinutes: z.number().int().min(30).max(7 * 24 * 60),
+  title: z.string().trim().min(1).max(200), // "{judul}" = the Short's title
+  description: z.string().max(5000),
+  tags: z.string().max(500),
+  visibility: z.enum(["public", "unlisted", "private"]),
+  madeForKids: z.boolean(),
+  aiContent: z.boolean(),
+});
+/** Queue rendered videos as YouTube uploads, one every gapMinutes from startAt (the runner posts each at its time). */
+export const scheduleResults = async (input: z.input<typeof Schedule>) =>
+  safe(async () => {
+    const d = Schedule.parse(input);
+    const acc = await db.select().from(accounts).where(eq(accounts.id, d.accountId)).get();
+    if (acc?.platform !== "youtube") throw new Error("Pilih channel YouTube.");
+    for (const v of d.videos) if (!fs.existsSync(resolveMedia(v))) throw new Error(`Video tidak ditemukan: ${v}`);
+    const start = Math.max(d.startAt, Date.now() + 60_000);
+    const tags = d.tags.split(",").map((t) => t.trim()).filter(Boolean).slice(0, 30);
+    await db.insert(uploadJobs).values(
+      d.videos.map((video, i) => {
+        const judul = cleanTitle(resultTitle(video));
+        const fill = (t: string) => t.replace(/\{judul\}/g, judul).trim();
+        return {
+          accountId: acc.id,
+          video,
+          label: "Editor",
+          caption: fill(d.description),
+          videoTitle: fill(d.title).slice(0, 100),
+          meta: { tags, visibility: d.visibility, madeForKids: d.madeForKids, aiContent: d.aiContent },
+          scheduledAt: new Date(start + i * d.gapMinutes * 60_000),
+        };
+      }),
+    );
+    revalidatePath("/jadwal");
+    kickUploads();
+    return { count: d.videos.length, first: start };
+  });
 
 // ---- music: the shared Pustaka library (same tracks as in Buat Video) ----
 export const musicList = async () => (await listMusic()).map((m) => ({ src: m.src, name: m.name, dur: m.dur }));

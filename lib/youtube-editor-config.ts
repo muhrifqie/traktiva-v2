@@ -35,7 +35,15 @@ export type EditorSettings = {
   pipFocusY: number;
   pipBorder: 0 | 1 | 2 | 3; // frame: none, thin, medium, thick
   pipBorderColor: "white" | "black";
-  gameStart: number; // where the overlay video starts (s); -1 = a random point each render
+  gameStart: number; // where the overlay starts (s); -1 = a random point each render; -2 = "bersambung": each video picks up where the previous one stopped
+  trimStart: number; // skip this many seconds at the start of every original
+  maxLen: number; // longest result (s); 0 = the whole original
+  // on-screen text: the Short's title or your own (where "{judul}" becomes the title)
+  textMode: "none" | "title" | "custom";
+  textCustom: string;
+  textPos: "top" | "middle" | "bottom";
+  textSize: "s" | "m" | "l";
+  textStyle: "box" | "outline" | "yellow";
   music: string; // background music from Pustaka: "" none, "*" a random track per video, else its media path
   volMusic: number; // 0–100 (%)
   volOriginal: number; // 0–150 (%)
@@ -63,6 +71,13 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   pipBorder: 1,
   pipBorderColor: "white",
   gameStart: -1,
+  trimStart: 0,
+  maxLen: 0,
+  textMode: "none",
+  textCustom: "",
+  textPos: "top",
+  textSize: "m",
+  textStyle: "box",
   music: "",
   volMusic: 25,
   volOriginal: 100,
