@@ -23,7 +23,7 @@ function inQueue(j: { status: string; postedAt: Date | null }) {
   return j.status === "queued" || j.status === "uploading" || (j.status === "done" && !!j.postedAt && j.postedAt.getTime() > Date.now());
 }
 
-export default async function JadwalPage({ searchParams }: { searchParams: Promise<{ project?: string; tampilan?: string; akun?: string; video?: string }> }) {
+export default async function JadwalPage({ searchParams }: { searchParams: Promise<{ project?: string; tampilan?: string; akun?: string; video?: string | string[] }> }) {
   const { project, tampilan, akun, video } = await searchParams;
   // Kalender by default; the list (with the scheduling form) when asked, or when coming from a project to schedule it
   const view = tampilan === "daftar" || project || akun || video ? "daftar" : "kalender";
@@ -89,7 +89,7 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
         banned={writingRules().replace}
         maxPerDay={MAX_PER_DAY}
         initialProject={project ? Number(project) : null}
-        initialVideo={video ?? null}
+        initialVideos={[video ?? []].flat()}
         selectedAccountId={pickActive(social.filter((a) => a.status === "active"), akun)?.id ?? null}
         provenTags={provenTags}
       />

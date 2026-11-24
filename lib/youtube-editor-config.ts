@@ -89,6 +89,14 @@ export const DEFAULT_SETTINGS: EditorSettings = {
 export const RATIO_RANGE = [20, 80] as const;
 export const PIP_RANGE = [15, 90] as const;
 
+/** Per-video changes on top of the shared settings (Editor → "Khusus video ini"). */
+export type VideoOverride = { text?: string; trimStart?: number; game?: string };
+/** The settings one video renders with: the shared ones plus its own text / start. */
+export function withOverride(o: EditorSettings, v?: VideoOverride): EditorSettings {
+  if (!v) return o;
+  return { ...o, ...(v.text?.trim() ? { textMode: "custom" as const, textCustom: v.text } : {}), ...(v.trimStart != null ? { trimStart: v.trimStart } : {}) };
+}
+
 export const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 /** Reaction overlay in output pixels: x/y/tw/th = outer box (frame included), w/h = the video inside, b = frame, r = corner radius.
  *  Shared by the ffmpeg filter and the monitor, so what you drag is what gets rendered. */

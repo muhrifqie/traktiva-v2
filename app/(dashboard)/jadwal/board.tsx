@@ -137,7 +137,7 @@ type Account = { id: number; username: string; status: string; platform: string;
 const accName = (a: Account) => (a.platform === "youtube" ? `${a.displayName || a.username} (YouTube)` : `@${a.username}`);
 
 export function JadwalBoard({
-  jobs, accounts, videos, etalase, minGap, initialProject, initialVideo, tips, banned, maxPerDay, selectedAccountId, provenTags, ytDefaults, ytLimited,
+  jobs, accounts, videos, etalase, minGap, initialProject, initialVideos, tips, banned, maxPerDay, selectedAccountId, provenTags, ytDefaults, ytLimited,
 }: {
   ytDefaults: YouTubeUploadDefaults; // menu YouTube → Pengaturan upload
   ytLimited: Record<number, number>; // channels capped by YouTube's daily upload limit → until (ms)
@@ -146,19 +146,19 @@ export function JadwalBoard({
   provenTags: Record<number, string[]>; // general hashtags that did best on each account (lib/hashtags.ts)
   etalase: EtalaseItem[];
   jobs: Job[]; accounts: Account[]; videos: Uploadable[]; minGap: number; initialProject: number | null;
-  initialVideo: string | null; // ?video=<rel> (Galeri → Jadwalkan): that video's group, only it picked
+  initialVideos: string[]; // ?video=<rel>… (Galeri / Editor → Jadwalkan): their group, only they picked
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [busyId, setBusyId] = useState<number | null>(null);
   const active = accounts.filter((a) => a.status === "active");
   const projects = useMemo(() => [...new Map(videos.map((v) => [v.projectId, v.title])).entries()], [videos]);
-  const [projectId, setProjectId] = useState<number | null>(videos.find((v) => v.video === initialVideo)?.projectId ?? initialProject ?? projects[0]?.[0] ?? null);
+  const [projectId, setProjectId] = useState<number | null>(videos.find((v) => v.video === initialVideos[0])?.projectId ?? initialProject ?? projects[0]?.[0] ?? null);
   const editorGroup = projectId === 0; // YouTube Editor renders: pick the videos, "{judul}" filled per video
   const own = videos.filter((v) => v.projectId === projectId);
   const [picked, setPicked] = useState<string[]>([]);
   // where to post: one or more accounts (TikTok and/or YouTube); the first one drives the tips and the product list
-  const firstAccount = initialVideo ? active.find((a) => a.platform === "youtube") ?? active[0] : active.find((a) => a.id === selectedAccountId) ?? active[0];
+  const firstAccount = initialVideos.length ? active.find((a) => a.platform === "youtube") ?? active[0] : active.find((a) => a.id === selectedAccountId) ?? active[0];
   const [accountIds, setAccountIds] = useState<number[]>(firstAccount ? [firstAccount.id] : []);
   const targets = active.filter((a) => accountIds.includes(a.id));
   const target = targets[0];
@@ -166,7 +166,7 @@ export function JadwalBoard({
   const hasYt = targets.some((a) => a.platform === "youtube");
   const hasTt = targets.some((a) => a.platform !== "youtube");
   const toggleAccount = (id: number) => setAccountIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
-  const [firstPick] = useState(() => initialVideo); // consumed by the first reset below
+  const [firstPicks] = useState(() => initialVideos); // consumed by the first reset below
   const [caption, setCaption] = useState("");
   const [productId, setProductId] = useState("");
   const [productTitle, setProductTitle] = useState("");
@@ -188,7 +188,7 @@ export function JadwalBoard({
   useEffect(() => {
     const t = setTimeout(() => {
       // Galeri sent one video: only it; editor renders: none until picked; a project: all of its videos
-      setPicked(firstPick && own.some((v) => v.video === firstPick) ? [firstPick] : editorGroup ? [] : own.map((v) => v.video));
+      setPicked(firstPicks.some((f) => own.some((v) => v.video === f)) ? firstPicks.filter((f) => own.some((v) => v.video === f)) : editorGroup ? [] : own.map((v) => v.video));
       if (hasYt) {
         // editor renders keep "{judul}": the server fills each video's own title
         const fill = (tpl: string) => (editorGroup ? tpl : tpl.replaceAll("{judul}", projects.find((p) => p[0] === projectId)?.[1] ?? "")).replaceAll("{produk}", own[0] ? shortName(own[0]) : "").trim();

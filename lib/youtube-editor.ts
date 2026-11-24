@@ -20,7 +20,7 @@ export const GAMEPLAY_DIR = () => path.join(MEDIA_DIR, "Gameplay");
 const OUT = () => path.join(MEDIA_DIR, "YouTube Editor");
 const VIDEO = /\.(mp4|mov|webm|mkv)$/i;
 
-import { even, pipBox, type EditorSettings, type Fit, type Flip } from "@/lib/youtube-editor-config";
+import { even, pipBox, withOverride, type EditorSettings, type Fit, type Flip, type VideoOverride } from "@/lib/youtube-editor-config";
 export { DEFAULT_SETTINGS, SIZES, type EditorSettings, type Fill, type Fit, type Layout, type Size } from "@/lib/youtube-editor-config";
 export type SourceFile = { rel: string; name: string; date?: string };
 
@@ -329,12 +329,25 @@ export async function renderPreviewClip(original: string, gameplay: string, o: E
 }
 
 // One render queue at a time, kept on globalThis so page polls and dev reloads see the same job.
-export type EditorJob = { total: number; done: { name: string; rel: string }[]; failed: string[]; current: string | null; running: boolean; cancelled: boolean };
+export type JobItem = { rel: string; name: string; status: "wait" | "run" | "done" | "fail"; pct: number; out?: string; error?: string; secs?: number };
+export type RenderRequest = { originals: string[]; gameplay: string[]; settings: EditorSettings; random: boolean; overrides?: Record<string, VideoOverride> };
+export type EditorJob = {
+  total: number;
+  done: { name: string; rel: string }[];
+  failed: string[];
+  current: string | null;
+  running: boolean;
+  cancelled: boolean;
+  items: JobItem[]; // one row per video, with live progress
+  startedAt: number;
+  request: RenderRequest; // kept for "Ulangi yang gagal"
+};
 const g = globalThis as { __ytEditor?: EditorJob; __ytEditorProc?: ReturnType<typeof spawn> };
 export const editorJob = () => g.__ytEditor ?? null;
 
-/** Render one video; `cursor` = where the overlay should start in "bersambung" mode. Returns the overlay span used. */
-async function renderOne(original: string, gameplay: string, o: EditorSettings, out: string, title: string, music: string | null, cursor = 0) {
+/** Render one video; `cursor` = where the overlay should start in "bersambung" mode; `onPct` gets 0–100 while
+ *  ffmpeg works. Returns the overlay span used. */
+async function renderOne(original: string, gameplay: string, o: EditorSettings, out: string, title: string, music: string | null, cursor = 0, onPct?: (p: number) => void) {
   const [a, b] = await Promise.all([probe(original), probe(gameplay)]);
   const start = Math.max(0, Math.min(o.trimStart, a.len - 1));
   const len = Math.max(1, Math.min(a.len - start, o.maxLen > 0 ? o.maxLen : Infinity));
@@ -345,7 +358,7 @@ async function renderOne(original: string, gameplay: string, o: EditorSettings, 
   const tmp: string[] = [];
   const video = withText(layoutFilter(o), o, title, tmp);
   const args = [
-    "-y", "-hide_banner", "-loglevel", "error",
+    "-y", "-hide_banner", "-loglevel", "error", "-progress", "pipe:1", "-nostats",
     ...(start > 0 ? ["-ss", start.toFixed(2)] : []), "-i", original,
     "-stream_loop", "-1", "-ss", offset.toFixed(2), "-i", gameplay,
     ...musicInput(music),
@@ -365,6 +378,11 @@ async function renderOne(original: string, gameplay: string, o: EditorSettings, 
     g.__ytEditorProc = p;
     let err = "";
     p.stderr.on("data", (c: Buffer) => (err += c.toString()));
+    // -progress: "out_time_us=…" lines → share of the output written
+    p.stdout.on("data", (c: Buffer) => {
+      const us = [...c.toString().matchAll(/out_time_us=(\d+)/g)].pop()?.[1];
+      if (us && onPct) onPct(Math.min(99, (Number(us) / 1e6 / len) * 100));
+    });
     p.on("close", (code) => (code === 0 ? resolve() : reject(new Error(err.split("\n").filter(Boolean).pop() ?? `ffmpeg keluar dengan kode ${code}`))));
     p.on("error", reject);
   }).finally(() => cleanup(tmp));
@@ -387,13 +405,18 @@ function deck<T>(items: T[]) {
 }
 
 /** Render every original with a gameplay clip (picked in turn from the chosen ones, or at random). */
-export async function startRender(c: { originals: string[]; gameplay: string[]; settings: EditorSettings; random: boolean }) {
+export async function startRender(c: RenderRequest) {
   if (!ffmpegPath) throw new Error("ffmpeg tidak tersedia di perangkat ini.");
   if (g.__ytEditor?.running) throw new Error("Masih ada video yang sedang dirender, tunggu selesai dulu.");
   const pool = c.gameplay.length ? c.gameplay : listGameplay().map((x) => x.rel);
   if (!pool.length) throw new Error("Belum ada video gameplay. Taruh klip gameplay di folder Gameplay dulu.");
   fs.mkdirSync(OUT(), { recursive: true });
-  const job: EditorJob = { total: c.originals.length, done: [], failed: [], current: null, running: true, cancelled: false };
+  const job: EditorJob = {
+    total: c.originals.length, done: [], failed: [], current: null, running: true, cancelled: false,
+    items: c.originals.map((rel) => ({ rel, name: pretty(path.basename(rel)), status: "wait", pct: 0 })),
+    startedAt: Date.now(),
+    request: c,
+  };
   g.__ytEditor = job;
   const abs = (rel: string) => path.resolve(MEDIA_DIR, rel);
   const draw = deck(pool);
@@ -403,15 +426,23 @@ export async function startRender(c: { originals: string[]; gameplay: string[]; 
       if (job.cancelled) break;
       const name = pretty(path.basename(rel));
       job.current = name;
-      const game = c.random ? draw() : pool[i % pool.length];
+      const item = job.items[i];
+      item.status = "run";
+      const t0 = Date.now();
+      const own = c.overrides?.[rel];
+      const game = own?.game && fs.existsSync(abs(own.game)) ? own.game : c.random ? draw() : pool[i % pool.length];
       const stamp = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 19).replace(/[-:T]/g, ""); // WIB wall clock
       const out = path.join(OUT(), `${stamp} ${name.replace(/[<>:"/\\|?*]+/g, "").slice(0, 60)}.mp4`);
       try {
-        cursors.set(game, await renderOne(abs(rel), abs(game), c.settings, out, name, await resolveMusic(c.settings.music), cursors.get(game) ?? 0));
+        const settings = withOverride(c.settings, own);
+        cursors.set(game, await renderOne(abs(rel), abs(game), settings, out, name, await resolveMusic(c.settings.music), cursors.get(game) ?? 0, (p) => (item.pct = p)));
         job.done.push({ name, rel: toRel(out) });
         markRendered(rel, toRel(out));
+        Object.assign(item, { status: "done", pct: 100, out: toRel(out), secs: Math.round((Date.now() - t0) / 1000) });
       } catch (e) {
-        if (!job.cancelled) job.failed.push(`${name}: ${e instanceof Error ? e.message.slice(0, 160) : e}`);
+        const msg = e instanceof Error ? e.message.slice(0, 160) : String(e);
+        if (!job.cancelled) job.failed.push(`${name}: ${msg}`);
+        Object.assign(item, job.cancelled ? { status: "wait", pct: 0 } : { status: "fail", error: msg });
         fs.rmSync(out, { force: true });
       }
     }

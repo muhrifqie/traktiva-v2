@@ -5,13 +5,10 @@ import fs from "node:fs";
 import { z } from "zod";
 import { addMusic, listMusic } from "@/lib/audio-library";
 import { resolveMedia } from "@/lib/media";
-import { db } from "@/lib/db";
-import { accounts, uploadJobs } from "@/lib/db/schema";
 import { getSettings, updateSettings, youtubeEditorPresets } from "@/lib/settings";
-import { kickUploads } from "@/lib/uploads";
-import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { cancelRender, cleanTitle, deleteEditorFile, editorJob, resultTitle, revealEditorFile, GAMEPLAY_DIR, listGameplay, listRendered, listResults, probe, renderPreview, renderPreviewClip, SIZES, startRender, type EditorSettings } from "@/lib/youtube-editor";
+import { cancelRender, deleteEditorFile, editorJob, revealEditorFile, GAMEPLAY_DIR, listGameplay, listRendered, listResults, probe, renderPreview, renderPreviewClip, SIZES, startRender, type EditorSettings } from "@/lib/youtube-editor";
+import type { VideoOverride } from "@/lib/youtube-editor-config";
 
 // errors come back as { error } (thrown server-action errors are hidden in production)
 const safe = async <T,>(f: () => Promise<T>) => {
@@ -83,14 +80,23 @@ export const clipLengths = async (rels: string[]) => {
   return out;
 };
 
-export const renderVideos = async (input: { originals: string[]; gameplay: string[]; settings: EditorSettings; random: boolean }) =>
+const Override = z.object({ text: z.string().max(200).optional(), trimStart: z.number().min(0).max(36_000).optional(), game: Rel.optional() });
+export const renderVideos = async (input: { originals: string[]; gameplay: string[]; settings: EditorSettings; random: boolean; overrides?: Record<string, VideoOverride> }) =>
   safe(async () => {
-    const d = z.object({ originals: z.array(Rel).min(1).max(200), gameplay: z.array(Rel).max(50), settings: Settings, random: z.boolean() }).parse(input);
+    const d = z.object({ originals: z.array(Rel).min(1).max(200), gameplay: z.array(Rel).max(50), settings: Settings, random: z.boolean(), overrides: z.record(z.string(), Override).optional() }).parse(input);
     for (const rel of [...d.originals, ...d.gameplay]) if (!fs.existsSync(resolveMedia(rel))) throw new Error(`File tidak ditemukan: ${rel}`);
     return startRender(d);
   });
 
 export const renderStatus = async () => editorJob();
+/** Render the videos that failed in the last run again, with the same settings. */
+export const retryFailed = async () =>
+  safe(async () => {
+    const j = editorJob();
+    const failed = j?.items.filter((i) => i.status === "fail").map((i) => i.rel) ?? [];
+    if (!j || !failed.length) throw new Error("Tidak ada video yang gagal.");
+    return startRender({ ...j.request, originals: failed });
+  });
 
 /** Right-click on any Editor video (original, overlay, result): to the Recycle Bin / show in the file manager. */
 export const removeEditorFile = async (rel: string) =>
@@ -113,53 +119,6 @@ export async function deletePreset(name: string) {
   updateSettings({ youtubeEditorPresets: (getSettings().youtubeEditorPresets ?? []).filter((p) => p.name !== name) });
   return youtubeEditorPresets();
 }
-
-// ---- results → Kalender Upload (YouTube) ----
-export const youtubeChannels = async () =>
-  (await db.select({ id: accounts.id, name: accounts.displayName, username: accounts.username }).from(accounts).where(eq(accounts.platform, "youtube"))).map((a) => ({
-    id: a.id,
-    name: a.name || a.username,
-  }));
-const Schedule = z.object({
-  accountId: z.number().int().positive(),
-  videos: z.array(Rel).min(1).max(50),
-  startAt: z.number().int(), // epoch ms
-  gapMinutes: z.number().int().min(30).max(7 * 24 * 60),
-  title: z.string().trim().min(1).max(200), // "{judul}" = the Short's title
-  description: z.string().max(5000),
-  tags: z.string().max(500),
-  visibility: z.enum(["public", "unlisted", "private"]),
-  madeForKids: z.boolean(),
-  aiContent: z.boolean(),
-});
-/** Queue rendered videos as YouTube uploads, one every gapMinutes from startAt (the runner posts each at its time). */
-export const scheduleResults = async (input: z.input<typeof Schedule>) =>
-  safe(async () => {
-    const d = Schedule.parse(input);
-    const acc = await db.select().from(accounts).where(eq(accounts.id, d.accountId)).get();
-    if (acc?.platform !== "youtube") throw new Error("Pilih channel YouTube.");
-    for (const v of d.videos) if (!fs.existsSync(resolveMedia(v))) throw new Error(`Video tidak ditemukan: ${v}`);
-    const start = Math.max(d.startAt, Date.now() + 60_000);
-    const tags = d.tags.split(",").map((t) => t.trim()).filter(Boolean).slice(0, 30);
-    await db.insert(uploadJobs).values(
-      d.videos.map((video, i) => {
-        const judul = cleanTitle(resultTitle(video));
-        const fill = (t: string) => t.replace(/\{judul\}/g, judul).trim();
-        return {
-          accountId: acc.id,
-          video,
-          label: "Editor",
-          caption: fill(d.description),
-          videoTitle: fill(d.title).slice(0, 100),
-          meta: { tags, visibility: d.visibility, madeForKids: d.madeForKids, aiContent: d.aiContent },
-          scheduledAt: new Date(start + i * d.gapMinutes * 60_000),
-        };
-      }),
-    );
-    revalidatePath("/jadwal");
-    kickUploads();
-    return { count: d.videos.length, first: start };
-  });
 
 // ---- music: the shared Pustaka library (same tracks as in Buat Video) ----
 export const musicList = async () => (await listMusic()).map((m) => ({ src: m.src, name: m.name, dur: m.dur }));
