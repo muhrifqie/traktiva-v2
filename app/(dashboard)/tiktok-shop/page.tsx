@@ -1,14 +1,13 @@
 import Link from "next/link";
 import { and, count, desc, eq, gte, inArray } from "drizzle-orm";
 import { Award, CalendarClock, ChartNoAxesColumn, Eye, Plus, Send, Store, Users } from "lucide-react";
-import { AccountOverviewCard, OverviewEmpty, OverviewTiles } from "@/components/platform-overview";
+import { AccountOverviewCard, OverviewEmpty } from "@/components/platform-overview";
 import { PageHeader } from "@/components/page-header";
 import { PlatformIcon } from "@/components/platform-icon";
 import { contentHealth } from "@/lib/content-health";
 import { db } from "@/lib/db";
 import { accounts, accountStats, showcaseProducts, uploadJobs } from "@/lib/db/schema";
 import type { ShopOverview } from "@/lib/platforms/tiktok-shop";
-import { PLATFORM } from "@/lib/platforms";
 import { getShopCache } from "@/lib/showcase";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +16,6 @@ const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000);
 const num = new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 1 });
 const timeFmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
 const HEALTH = { rest: "Perlu istirahat: views turun tajam", drop: "Views turun dari minggu lalu", rare: "Jarang posting minggu ini" } as const;
-const COLOR = PLATFORM.tiktok.color;
 
 // TikTok (sidebar → Platform): every logged-in account as a card; the account opens its own pages, 1 Profil and
 // 2 Etalase (?akun=<id>, components/platform-tabs.tsx), plus Jadwalkan. Same layout as YouTube → Ringkasan (components/platform-overview.tsx).
@@ -39,7 +37,6 @@ export default async function TikTokShopPage() {
     Promise.all(ids.map(async (id) => (await getShopCache<ShopOverview>(id, "overview"))?.data.health ?? null)),
   ]);
   const by = (rows: { id: number; n: number }[], id: number) => rows.find((r) => r.id === id)?.n ?? 0;
-  const sum = (rows: { n: number }[]) => rows.reduce((s, r) => s + r.n, 0);
 
   return (
     <>
@@ -57,15 +54,6 @@ export default async function TikTokShopPage() {
         </OverviewEmpty>
       ) : (
         <div className="space-y-6">
-          <OverviewTiles
-            color={COLOR}
-            tiles={[
-              { icon: Users, label: "Akun", value: list.length, sub: `${list.filter((a) => a.status === "active").length} login` },
-              { icon: Store, label: "Produk di etalase", value: sum(products) },
-              { icon: CalendarClock, label: "Antre upload", value: sum(queued) },
-              { icon: Send, label: "Terposting 7 hari", value: sum(posted) },
-            ]}
-          />
           <section className="space-y-2">
             <h2 className="text-[13px] font-semibold text-muted-foreground">Akun ({list.length})</h2>
             <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">

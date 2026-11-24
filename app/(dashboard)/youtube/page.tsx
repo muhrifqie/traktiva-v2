@@ -1,11 +1,10 @@
 import { and, asc, count, eq, inArray } from "drizzle-orm";
-import { CalendarClock, ChartNoAxesColumn, Clock, Eye, Film, Layers, Repeat, UserCircle, Users } from "lucide-react";
-import { AccountOverviewCard, OverviewEmpty, OverviewTiles } from "@/components/platform-overview";
+import { CalendarClock, ChartNoAxesColumn, Clock, Eye, Film, Repeat, UserCircle, Users } from "lucide-react";
+import { AccountOverviewCard, OverviewEmpty } from "@/components/platform-overview";
 import { PageHeader } from "@/components/page-header";
 import { PlatformIcon } from "@/components/platform-icon";
 import { db } from "@/lib/db";
 import { accounts, uploadJobs } from "@/lib/db/schema";
-import { PLATFORM } from "@/lib/platforms";
 import { YT_CACHE, ytSummary, type YouTubeCache } from "@/lib/platforms/youtube-studio";
 import { VERIFY_URL } from "@/lib/platforms/youtube-upload";
 import { getShopCache } from "@/lib/showcase";
@@ -16,7 +15,6 @@ export const dynamic = "force-dynamic";
 
 const num = new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 1 });
 const timeFmt = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
-const COLOR = PLATFORM.youtube.color;
 
 // YouTube (sidebar → Platform): every channel as a card, same layout as TikTok (components/platform-overview.tsx);
 // a channel opens its own pages, 1 Channel · 2 Performa · 3 Unduh Shorts (?akun=<id>, components/platform-tabs.tsx).
@@ -31,7 +29,6 @@ export default async function YouTubePage() {
       : Promise.resolve([] as { id: number; n: number }[]),
   ]);
   const sums = caches.map((c) => (c ? ytSummary(c.data) : null));
-  const total = (f: (s: NonNullable<(typeof sums)[number]>) => number) => sums.reduce((t, s) => t + (s ? f(s) : 0), 0);
   const q = (id: number) => queued.find((r) => r.id === id)?.n ?? 0;
 
   return (
@@ -44,15 +41,6 @@ export default async function YouTubePage() {
         </OverviewEmpty>
       ) : (
         <div className="space-y-6">
-          <OverviewTiles
-            color={COLOR}
-            tiles={[
-              { icon: Layers, label: "Channel", value: list.length, sub: `${list.filter((a) => a.status === "active").length} login` },
-              { icon: Users, label: "Subscriber", value: num.format(total((s) => s.subscribers)) },
-              { icon: Eye, label: "Penayangan 28 hari", value: num.format(total((s) => s.views28)) },
-              { icon: CalendarClock, label: "Antre upload", value: queued.reduce((t, r) => t + r.n, 0) },
-            ]}
-          />
           <section className="space-y-2">
             <h2 className="text-[13px] font-semibold text-muted-foreground">Channel ({list.length})</h2>
             <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">

@@ -371,10 +371,10 @@ export function JadwalBoard({
                     </button>
                   );
                 })}
-                {(["instagram", "facebook"] as const).map((p) => (
+                {(["shopee", "instagram", "facebook"] as const).map((p) => (
                   <span key={p} className="flex h-9 items-center gap-2 rounded-lg border border-dashed px-3 text-[13px] text-muted-foreground/70" title="Sedang dikerjakan">
                     <PlatformIcon platform={p} className="size-4 opacity-60" />
-                    {p === "instagram" ? "Instagram Reels" : "Facebook Reels"}
+                    {p === "shopee" ? "Shopee Video" : p === "instagram" ? "Instagram Reels" : "Facebook Reels"}
                     <span className="rounded bg-muted px-1.5 text-[10px]">Segera</span>
                   </span>
                 ))}

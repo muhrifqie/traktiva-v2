@@ -27,9 +27,8 @@ export const NAV = [
   { slug: "youtube-performa", title: "Performa YouTube", icon: ChartNoAxesColumn, group: "Platform", platform: "youtube", color: "#ff3333", desc: "Semua video & Shorts, Insight 28 hari, dan progres monetisasi dari YouTube Studio.", sidebar: false },
   { slug: "youtube-shorts", title: "Unduh Shorts YouTube", icon: Download, group: "Platform", platform: "youtube", color: "#ff3333", desc: "Unduh semua Shorts dari satu channel YouTube ke folder video kamu.", sidebar: false },
   { slug: "akun", title: "Akun Sosial", icon: Users, group: "Platform", color: "#26b5ce", desc: "Sambungkan dan kelola akun TikTok, YouTube, Instagram, Facebook, dan Shopee.", sidebar: false }, // "Tambah akun" on the platform pages
-  // platforms not live yet: placeholder pages until they are built (status follows the website roadmap)
-  { slug: "shopee", title: "Shopee", icon: Store, group: "Platform", platform: "shopee", status: "Segera", color: "#ee4d2d", desc: "Akun Shopee Video, etalase, dan jadwal upload dari video yang sama. Sedang dikerjakan.", sidebar: false },
-  // shown in the sidebar as "Segera": being built (Rifq); their pages are placeholders until then
+  // shown in the sidebar as "Segera": not live yet, their pages are placeholders until they are built
+  { slug: "shopee", title: "Shopee", icon: Store, group: "Platform", platform: "shopee", status: "Segera", color: "#ee4d2d", desc: "Akun Shopee Video, etalase, dan jadwal upload dari video yang sama. Sedang dikerjakan." },
   { slug: "instagram", title: "Instagram", icon: Store, group: "Platform", platform: "instagram", status: "Segera", color: "#ff2d7a", desc: "Upload Reels ke akun Instagram Business/Creator dari video yang sama. Sedang dikerjakan." },
   { slug: "facebook", title: "Facebook", icon: Store, group: "Platform", platform: "facebook", status: "Segera", color: "#3b82f6", desc: "Upload Reels ke Facebook Page dari video yang sama. Sedang dikerjakan." },
 
