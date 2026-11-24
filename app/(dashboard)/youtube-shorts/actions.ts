@@ -3,7 +3,7 @@
 import { spawn } from "node:child_process";
 import { z } from "zod";
 import { resolveMedia } from "@/lib/media";
-import { cancelDownload, downloadJob, listChannelShorts, startDownload, updateYtdlp } from "@/lib/youtube";
+import { cancelDownload, discardPendingDownload, downloadJob, listChannelShorts, pendingDownload, startDownload, updateYtdlp } from "@/lib/youtube";
 
 // Errors come back as { error } so the page can show the message (thrown server-action errors are hidden in production).
 const safe = async <T,>(f: () => Promise<T>) => {
@@ -29,6 +29,16 @@ export const downloadShorts = async (handle: string, ids: string[], options: z.i
   );
 
 export const stopDownload = async () => cancelDownload();
+
+/** Continue the download that a closed app left unfinished. */
+export const resumeDownload = async () =>
+  safe(async () => {
+    const p = pendingDownload();
+    if (!p) throw new Error("Tidak ada unduhan yang perlu dilanjutkan.");
+    return startDownload(p);
+  });
+
+export const discardPending = async () => discardPendingDownload();
 
 export const downloadStatus = async () => downloadJob();
 

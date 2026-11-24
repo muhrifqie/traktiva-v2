@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
-import { Check, CheckCheck, Download, ExternalLink, Eye, EyeOff, FileText, FolderOpen, History, ImageIcon, Loader2, Music, RefreshCw, Search, Settings2, Square, Video, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { Check, CheckCheck, CirclePause, Download, ExternalLink, Eye, EyeOff, FileText, FolderOpen, History, ImageIcon, Loader2, Music, RefreshCw, Search, Settings2, Square, Video, X } from "lucide-react";
 import { toast } from "sonner";
-import type { ChannelShorts, DownloadJob, DownloadOptions } from "@/lib/youtube";
-import { downloadShorts, downloadStatus, openShortsFolder, readChannel, stopDownload, updateDownloader } from "./actions";
+import type { ChannelShorts, DownloadJob, DownloadOptions, PendingDownload } from "@/lib/youtube";
+import { discardPending, downloadShorts, downloadStatus, openShortsFolder, readChannel, resumeDownload, stopDownload, updateDownloader } from "./actions";
 
 const num = new Intl.NumberFormat("id-ID");
 const compact = new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 1 });
@@ -17,6 +17,16 @@ const QUALITY: { v: DownloadOptions["quality"]; label: string }[] = [
 const MIN_VIEWS = [0, 1_000, 10_000, 100_000, 1_000_000];
 const DEFAULTS: DownloadOptions = { quality: "best", format: "video", thumbnail: false, description: false };
 const KEY = "trk-yt-download";
+const STATE = "trk-yt-download-state"; // the open channel, selection and filters: survive a refresh or an app restart
+
+type Saved = { input: string; channel: ChannelShorts | null; picked: string[]; sort: "new" | "views"; minViews: number; hideDone: boolean };
+function loadState(): Saved | null {
+  try {
+    return JSON.parse(localStorage.getItem(STATE) ?? "null");
+  } catch {
+    return null;
+  }
+}
 
 // settings are a per-PC convenience: remembered in localStorage, defaults when it is unavailable
 function loadOptions(): DownloadOptions {
@@ -59,7 +69,7 @@ function Toggle({ checked, onChange, icon: Icon, label, disabled }: { checked: b
 
 // Paste a channel → pick Shorts (all, newest N, or one by one) → download with the chosen quality/format into
 // ~/Videos/Traktiva/YouTube Shorts/<channel>. The settings panel stays on screen while scrolling the grid.
-export function ShortsDownloader({ initialJob, history }: { initialJob: DownloadJob | null; history: { handle: string; files: number }[] }) {
+export function ShortsDownloader({ initialJob, history, pending: initialPending }: { initialJob: DownloadJob | null; history: { handle: string; files: number }[]; pending: PendingDownload | null }) {
   const [input, setInput] = useState("");
   const [channel, setChannel] = useState<ChannelShorts | null>(null);
   const [job, setJob] = useState(initialJob);
@@ -70,14 +80,35 @@ export function ShortsDownloader({ initialJob, history }: { initialJob: Download
   const [minViews, setMinViews] = useState(0);
   const [hideDone, setHideDone] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [pending, setPending] = useState(initialPending);
+  const restored = useRef(false);
   const running = !!job?.running;
 
-  // remembered settings, read after mount (localStorage is not there during the server render)
+  // remembered settings and the last open channel, read after mount (no localStorage during the server render)
   useEffect(() => {
     const saved = loadOptions();
-    const t = setTimeout(() => setOpts(saved), 0);
+    const st = loadState();
+    const t = setTimeout(() => {
+      setOpts(saved);
+      if (st) {
+        setInput(st.input ?? "");
+        setChannel(st.channel ?? null);
+        setPicked(new Set(st.picked ?? []));
+        setSort(st.sort ?? "new");
+        setMinViews(st.minViews ?? 0);
+        setHideDone(!!st.hideDone);
+      }
+      restored.current = true;
+    }, 0);
     return () => clearTimeout(t);
   }, []);
+  useEffect(() => {
+    if (!restored.current) return; // never overwrite the saved state with the empty first render
+    try {
+      const st: Saved = { input, channel, picked: [...picked], sort, minViews, hideDone };
+      localStorage.setItem(STATE, JSON.stringify(st));
+    } catch {}
+  }, [input, channel, picked, sort, minViews, hideDone]);
   const setOpt = <K extends keyof DownloadOptions>(k: K, v: DownloadOptions[K]) =>
     setOpts((o) => {
       const next = { ...o, [k]: v };
@@ -137,11 +168,34 @@ export function ShortsDownloader({ initialJob, history }: { initialJob: Download
     else toast.success(r.ok || "Pengunduh sudah versi terbaru", { id: t });
   };
 
+  const resume = async () => {
+    const r = await resumeDownload();
+    if ("error" in r) return toast.error(r.error);
+    setPending(null);
+    setJob(r.ok ?? null);
+    toast.success("Unduhan dilanjutkan");
+  };
+  const close = () => {
+    setChannel(null);
+    setInput("");
+    setPicked(new Set());
+  };
+
   const currentTitle = job?.current ? (channel?.shorts.find((s) => s.id === job.current)?.title ?? job.current) : null;
   const pct = job?.total ? ((job.done.length + (job.percent ?? 0) / 100) / job.total) * 100 : 0;
 
-  return (
-    <div className="space-y-4">
+  const banner = pending && !running && (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[13px]">
+      <CirclePause className="size-4 text-amber-500" />
+      <span className="flex-1">
+        Unduhan <b>{pending.handle}</b> terhenti sebelum selesai (app ditutup): {pending.ids.length} {pending.options.format === "audio" ? "audio" : "Shorts"} tersisa.
+      </span>
+      <button type="button" onClick={resume} className="h-8 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">Lanjutkan</button>
+      <button type="button" onClick={() => void discardPending().then(() => setPending(null))} className="h-8 rounded-lg px-3 text-xs hover:bg-accent">Abaikan</button>
+    </div>
+  );
+  const searchBox = (
+    <>
       <form onSubmit={(e) => (e.preventDefault(), read())} className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-2 pl-3">
         <Search className="size-4 shrink-0 text-muted-foreground" />
         <input
@@ -157,7 +211,7 @@ export function ShortsDownloader({ initialJob, history }: { initialJob: Download
       </form>
 
       {history.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        <div className={`flex flex-wrap items-center gap-1.5 text-xs ${channel ? "" : "justify-center"}`}>
           <span className="flex items-center gap-1 text-muted-foreground"><History className="size-3.5" /> Pernah diunduh:</span>
           {history.map((h) => (
             <button
@@ -180,16 +234,31 @@ export function ShortsDownloader({ initialJob, history }: { initialJob: Download
         </div>
       )}
 
-      {!channel && !reading && (
-        <div className="grid place-items-center rounded-xl border border-dashed p-10 text-center">
-          <div className="max-w-sm space-y-1">
-            <Download className="mx-auto size-7 text-muted-foreground" />
-            <p className="text-sm font-medium">Unduh Shorts dari satu channel</p>
+    </>
+  );
+
+  // nothing open: the search sits in the middle of the page
+  if (!channel)
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center pb-16">
+        <div className="w-full max-w-2xl space-y-4">
+          <div className="space-y-1 text-center">
+            <span className="mx-auto mb-3 grid size-12 place-items-center rounded-2xl bg-[#ff3333]/10 text-[#ff3333]">
+              {reading ? <Loader2 className="size-6 animate-spin" /> : <Download className="size-6" />}
+            </span>
+            <p className="text-base font-semibold">{reading ? "Membaca channel…" : "Unduh Shorts dari satu channel"}</p>
             <p className="text-xs text-muted-foreground">Tempel link channel, pilih Shorts yang mau diambil, atur kualitas dan format, lalu unduh. Yang sudah pernah diunduh otomatis dilewati.</p>
           </div>
+          {banner}
+          {searchBox}
         </div>
-      )}
+      </div>
+    );
 
+  return (
+    <div className="space-y-4">
+      {banner}
+      {searchBox}
       {channel && (
         <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="min-w-0 space-y-3">
@@ -204,6 +273,7 @@ export function ShortsDownloader({ initialJob, history }: { initialJob: Download
                 </p>
               </div>
               <a href={channel.url} target="_blank" rel="noreferrer" className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" title="Buka di YouTube"><ExternalLink className="size-4" /></a>
+              <button type="button" onClick={close} disabled={running} title="Tutup channel" aria-label="Tutup channel" className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"><X className="size-4" /></button>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs">

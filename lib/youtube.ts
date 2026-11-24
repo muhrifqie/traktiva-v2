@@ -120,6 +120,28 @@ export function downloadHistory() {
     .slice(0, 12);
 }
 
+// The request of the running download is written to DATA_DIR: if the app closes mid-way, the next start offers to
+// continue it (the download archive already skips the finished ones).
+export type PendingDownload = { handle: string; ids: string[]; options: DownloadOptions };
+const PENDING = () => path.join(/* turbopackIgnore: true */ DATA_DIR, "youtube-download.json");
+const clearPending = () => fs.rmSync(PENDING(), { force: true });
+
+/** The unfinished download of a previous run (remaining ids only), or null. */
+export function pendingDownload(): PendingDownload | null {
+  if (g.__ytJob?.running) return null;
+  try {
+    const p = JSON.parse(fs.readFileSync(PENDING(), "utf8")) as PendingDownload;
+    const have = new Set(downloadedIds(folderOf(p.handle), p.options.format));
+    const ids = p.ids.filter((id) => !have.has(id));
+    if (ids.length) return { ...p, ids };
+  } catch {
+    return null;
+  }
+  clearPending();
+  return null;
+}
+export const discardPendingDownload = clearPending;
+
 // One download at a time, kept on globalThis so dev hot-reloads and page polls see the same job.
 // ponytail: single global job; a queue per channel if users need several channels at once.
 export type DownloadJob = {
@@ -166,6 +188,8 @@ export async function startDownload(c: { handle: string; ids: string[]; options:
     "--print", "after_move:DONE %(id)s",
     ...ids.map((id) => `https://www.youtube.com/shorts/${id}`),
   ];
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(PENDING(), JSON.stringify({ handle: c.handle, ids, options: o } satisfies PendingDownload));
   const p = spawn(await ytdlp(), args, { windowsHide: true });
   g.__ytProc = p;
   let buf = "";
@@ -197,6 +221,7 @@ export async function startDownload(c: { handle: string; ids: string[]; options:
     job.current = null;
     job.percent = null;
     g.__ytProc = undefined;
+    clearPending(); // finished or cancelled on purpose: nothing to resume
     if (!job.cancelled && !job.done.length && job.total) job.error = err.split("\n").find((l) => l.startsWith("ERROR"))?.slice(0, 200) ?? "Unduhan gagal.";
   });
   p.on("error", (e) => ((job.running = false), (job.error = e.message)));
