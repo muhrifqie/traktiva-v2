@@ -3,12 +3,12 @@
 import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronDown, PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
+import { ChevronRight, Library, PanelLeftClose, PanelLeftOpen, Plus, Rocket, Sparkles } from "lucide-react";
 import { PlatformIcon } from "@/components/platform-icon";
 import { UserCard, type UserInfo } from "@/components/user-card";
 import {
-  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
-  SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, useSidebar,
+  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
+  SidebarMenu, SidebarMenuAction, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, useSidebar,
 } from "@/components/ui/sidebar";
 import { NAV, NAV_GROUPS, type NavCounts, type NavItem } from "@/lib/nav";
 
@@ -16,6 +16,7 @@ type Group = (typeof NAV_GROUPS)[number];
 /** Groups that belong to one platform get its mark next to the label, and the label opens that platform's page. */
 const GROUP_PLATFORM: Partial<Record<Group, "tiktok">> = { "TikTok Shop": "tiktok" };
 const GROUP_HREF: Partial<Record<Group, string>> = { "TikTok Shop": "/showcase" };
+const GROUP_ICON: Partial<Record<Group, React.ComponentType<{ className?: string }>>> = { "Buat Konten": Sparkles, Pustaka: Library, "Segera hadir": Rocket };
 /** Groups with one menu need no folding (the label alone would hide a single link). */
 const FOLDABLE = (n: number) => n > 1;
 
@@ -73,54 +74,91 @@ function NavItems({ items, counts, rail }: { items: readonly NavItem[]; counts: 
   );
 }
 
+const isHere = (pathname: string, slug: string) => {
+  const path = /^\/video\/\d+/.test(pathname) ? "/proyek" : pathname; // the Studio belongs to Proyek Video
+  return path === `/${slug}` || path.startsWith(`/${slug}/`);
+};
+
+/** One child of a group: indented under the group button, on the branch line. */
+function SubItem({ item, counts }: { item: NavItem; counts: NavCounts }) {
+  const pathname = usePathname();
+  const label = "short" in item ? item.short : item.title;
+  const platform = "platform" in item ? item.platform : null;
+  return (
+    <SidebarMenuSubItem>
+      <SidebarMenuSubButton isActive={isHere(pathname, item.slug)} className="h-7 gap-2 text-[13px] text-sidebar-foreground/85 data-active:font-medium" render={<Link href={`/${item.slug}`} aria-label={item.title} />}>
+        {platform ? <PlatformIcon platform={platform} className="size-3.5 shrink-0" /> : <item.icon className="size-3.5 shrink-0 text-black dark:text-white" />}
+        <span className="truncate">{label}</span>
+        {"status" in item ? (
+          <span className={`ml-auto rounded px-1.5 text-[10px] ${item.status === "Segera" ? "bg-amber-500/12 text-amber-600 dark:text-amber-300" : "bg-sidebar-accent text-muted-foreground"}`}>{item.status}</span>
+        ) : counts[item.slug] ? (
+          <span className="ml-auto text-[11px] text-muted-foreground">{counts[item.slug]}</span>
+        ) : null}
+      </SidebarMenuSubButton>
+    </SidebarMenuSubItem>
+  );
+}
+
 function Group({ name, counts, rail, className = "" }: { name: Group; counts: NavCounts; rail: boolean; className?: string }) {
   const pathname = usePathname();
   const folded = useSyncExternalStore(subscribe, read, () => "").split("|").includes(name);
   const items = NAV.filter((n) => n.group === name && !("sidebar" in n && n.sidebar === false));
   if (!items.length) return null;
-  const platform = GROUP_PLATFORM[name];
-  const href = GROUP_HREF[name];
-  const foldable = FOLDABLE(items.length) && !rail;
-  // the group of the page you are on stays open, even when folded
-  const here = items.some((n) => pathname === `/${n.slug}` || pathname.startsWith(`/${n.slug}/`));
-  const open = !foldable || !folded || here;
-  const labelCls = "flex min-w-0 flex-1 items-center gap-1.5 truncate";
-  return (
-    <SidebarGroup className={`px-2 py-1.5 ${className}`}>
-      {/* the first group (Beranda, Riset, Kalender) needs no label */}
-      {name !== "Utama" && !rail && (
-        <SidebarGroupLabel className="group/label h-6 gap-1 px-2 text-[11px] font-medium tracking-wide text-muted-foreground/80 uppercase">
-          {href ? (
-            <Link href={href} className={`${labelCls} rounded hover:text-foreground`} title={`Buka ${name}`}>
-              {platform && <PlatformIcon platform={platform} className="size-3" />}
-              {name}
-            </Link>
-          ) : foldable ? (
-            <button type="button" onClick={() => toggleFolded(name)} className={`${labelCls} text-left uppercase hover:text-foreground`} aria-expanded={open}>
-              {name}
-            </button>
-          ) : (
-            <span className={labelCls}>{name}</span>
-          )}
-          {foldable && !open && <span className="text-[10px] font-normal tracking-normal text-muted-foreground/70 normal-case">{items.length}</span>}
-          {foldable && (
-            <button
-              type="button"
-              onClick={() => toggleFolded(name)}
-              aria-label={open ? `Lipat ${name}` : `Buka ${name}`}
-              aria-expanded={open}
-              className="grid size-5 shrink-0 place-items-center rounded hover:bg-sidebar-accent hover:text-foreground"
-            >
-              <ChevronDown className={`size-3.5 transition-transform ${open ? "" : "-rotate-90"}`} />
-            </button>
-          )}
-        </SidebarGroupLabel>
-      )}
-      {open && (
+
+  // the top group, one-menu groups and the folded rail: plain menu buttons
+  if (name === "Utama" || !FOLDABLE(items.length) || rail) {
+    return (
+      <SidebarGroup className={`px-2 py-1 ${className}`}>
         <SidebarGroupContent>
           <NavItems items={items} counts={counts} rail={rail} />
         </SidebarGroupContent>
-      )}
+      </SidebarGroup>
+    );
+  }
+
+  // a group = a menu button of its own with its menus as branches underneath; the group of the current page stays open
+  const platform = GROUP_PLATFORM[name];
+  const href = GROUP_HREF[name];
+  const Icon = GROUP_ICON[name];
+  const here = items.some((n) => isHere(pathname, n.slug));
+  const open = !folded || here;
+  const mark = platform ? <PlatformIcon platform={platform} className="size-4 shrink-0" /> : Icon ? <Icon className="size-4 shrink-0 text-black dark:text-white" /> : null;
+  const chevron = <ChevronRight className={`size-3.5 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />;
+  const btnCls = "h-8 gap-2.5 text-[13px] text-sidebar-foreground/85";
+  return (
+    <SidebarGroup className={`px-2 py-1 ${className}`}>
+      <SidebarGroupContent>
+        <SidebarMenu className="gap-0.5">
+          <SidebarMenuItem>
+            {href ? (
+              <>
+                {/* the platform button opens its page; the arrow folds the branches */}
+                <SidebarMenuButton isActive={false} className={btnCls} render={<Link href={href} aria-label={`Buka ${name}`} />}>
+                  {mark}
+                  <span className="truncate font-medium">{name}</span>
+                </SidebarMenuButton>
+                <SidebarMenuAction onClick={() => toggleFolded(name)} aria-label={open ? `Lipat ${name}` : `Buka ${name}`} aria-expanded={open}>
+                  {chevron}
+                </SidebarMenuAction>
+              </>
+            ) : (
+              <SidebarMenuButton className={btnCls} onClick={() => toggleFolded(name)} aria-expanded={open} aria-label={open ? `Lipat ${name}` : `Buka ${name}`}>
+                {mark}
+                <span className="truncate font-medium">{name}</span>
+                <span className="ml-auto flex items-center gap-1.5">
+                  {!open && <span className="text-[11px] text-muted-foreground">{items.length}</span>}
+                  {chevron}
+                </span>
+              </SidebarMenuButton>
+            )}
+            {open && (
+              <SidebarMenuSub className="mr-0 gap-0.5">
+                {items.map((item) => <SubItem key={item.slug} item={item} counts={counts} />)}
+              </SidebarMenuSub>
+            )}
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarGroupContent>
     </SidebarGroup>
   );
 }
