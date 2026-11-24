@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { accountPosts, accounts, accountStats, googleAccounts, kaloSessions, showcaseProducts, uploadJobs, videoProjects } from "@/lib/db/schema";
+import { isUnsaved } from "@/lib/unsaved";
 import { getSettings } from "@/lib/settings";
 import { licenseView, serverInfo } from "@/lib/server-info";
 import pkg from "@/package.json";
@@ -23,7 +24,7 @@ export async function loadBeranda() {
   const [social, google, projects, uploads, kalo, showcase] = await Promise.all([
     db.select().from(accounts).orderBy(asc(accounts.platform), asc(accounts.username)),
     db.select().from(googleAccounts).orderBy(asc(googleAccounts.email)),
-    db.select({ id: videoProjects.id, status: videoProjects.status, createdAt: videoProjects.createdAt, updatedAt: videoProjects.updatedAt, archived: videoProjects.archived }).from(videoProjects),
+    db.select({ id: videoProjects.id, status: videoProjects.status, createdAt: videoProjects.createdAt, updatedAt: videoProjects.updatedAt, archived: videoProjects.archived, options: videoProjects.options }).from(videoProjects),
     db.select().from(uploadJobs),
     db.select({ status: kaloSessions.status }).from(kaloSessions),
     db.select({ n: sql<number>`count(*)` }).from(showcaseProducts).where(eq(showcaseProducts.hidden, false)),
@@ -120,7 +121,7 @@ export async function loadBeranda() {
       videos7: count(doneDays, today - 6),
       videos30: count(doneDays, today - 29),
       running: projects.filter((p) => p.status === "running").length,
-      drafts: projects.filter((p) => p.status === "draft" && !p.archived).length,
+      drafts: projects.filter((p) => p.status === "draft" && !p.archived && !isUnsaved(p.options)).length,
       failed: projects.filter((p) => p.status === "failed" && !p.archived).length,
       uploadsTotal: posted.length,
       uploads7: count(postedDays, today - 6),

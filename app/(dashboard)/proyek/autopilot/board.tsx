@@ -96,7 +96,7 @@ export function AutopilotBoard({ initial, products, accounts, hasVoice }: { init
             {pending ? <Loader2 className="size-4 animate-spin" /> : <Rocket className="size-4" />} Buatkan {picked.length || ""} video
           </button>
         </div>
-        {!hasVoice && <p className="flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><CircleAlert className="size-3.5" /> Cartesia belum diatur: video jadi tanpa voice-over utuh (pakai suara Flow per adegan).</p>}
+        {!hasVoice && <p className="flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><CircleAlert className="size-3.5" /> Cartesia belum diatur: video jadi tanpa voice-over utuh (pakai suara Flow per scene).</p>}
         <p className="text-[11px] text-muted-foreground">Tiap video ±10–20 menit dan memakai kredit Flow (5 gambar + 5 klip). Pakai produk yang ada di etalase akunmu supaya keranjangnya bisa ditautkan.</p>
         {!products.length ? (
           <p className="text-xs text-muted-foreground">Ranking belum ada. Buka Riset Produk → TikTok dulu (butuh sesi KaloData).</p>

@@ -8,6 +8,8 @@ import { toast } from "sonner";
 import type { AppStatus, Task } from "@/app/api/status/route";
 import { GoogleIcon } from "@/components/brand-icons";
 import { chime, setSoundOn, soundOn } from "@/lib/chime";
+import { confirmDialog } from "@/components/confirm-dialog";
+import { cancelProject } from "@/app/(dashboard)/video/project-actions";
 
 // VS Code-style status bar: engine + accounts on the left, live work in the middle, capacity on the right.
 // Click the task area to open a panel with every running task and its scenes.
@@ -37,7 +39,7 @@ export function StatusBar() {
   const [s, setS] = useState<(AppStatus & { skew: number }) | null>(null);
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const seen = useRef<Set<string> | null>(null);
+  const running = useRef<Set<string> | null>(null); // task keys (p<id>) running at the previous poll
   const retry = useRef(0);
   const [sound, setSound] = useState(true);
   useEffect(() => {
@@ -57,9 +59,11 @@ export function StatusBar() {
       const r = await fetch("/api/status", { cache: "no-store" });
       if (!r.ok) throw new Error(String(r.status));
       const next: AppStatus = await r.json();
-      // toast once for everything that finished since the bar first loaded
-      if (seen.current) {
-        const fresh = next.finished.filter((f) => !seen.current!.has(f.key));
+      // toast once per run: only projects that were running at the previous poll and have now finished.
+      // (Saving a finished project bumps its updatedAt, so comparing finished keys alone re-toasted on every edit.)
+      const wasRunning = running.current;
+      if (wasRunning) {
+        const fresh = next.finished.filter((f) => wasRunning.has(f.key.split(":")[0]) && !next.tasks.some((t) => t.key === f.key.split(":")[0]));
         if (fresh.length) chime(fresh.some((f) => !f.ok) ? "failed" : "done");
         for (const f of fresh) {
           const go = { label: "Lihat", onClick: () => router.push(f.href) };
@@ -67,7 +71,7 @@ export function StatusBar() {
           else toast.error(`Perlu dicek: ${f.title}`, { action: go });
         }
       }
-      seen.current = new Set(next.finished.map((f) => f.key));
+      running.current = new Set(next.tasks.map((t) => t.key));
       retry.current = 0;
       setS({ ...next, skew: next.now - Date.now() }); // skew: server clock − browser clock, so timers match server timestamps
     } catch {
@@ -112,7 +116,17 @@ export function StatusBar() {
   return (
     <>
       {open && <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden="true" />}
-      {open && <TaskPanel tasks={tasks} slots={s?.slots} now={t} onClose={() => setOpen(false)} />}
+      {open && <TaskPanel tasks={tasks} slots={s?.slots} now={t} onClose={() => setOpen(false)} onCancel={async (task) => {
+        if (!(await confirmDialog({ title: `Batalkan "${task.title}"?`, description: "Yang sudah jadi tetap disimpan. Yang sedang dibuat di Flow dihentikan (kreditnya mungkin tetap terpakai).", confirmLabel: "Batalkan proses", danger: true }))) return;
+        try {
+          await cancelProject(Number(task.key.slice(1)));
+          toast.success("Proses dibatalkan");
+          setKick((k) => k + 1);
+          router.refresh();
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "Gagal membatalkan");
+        }
+      }} />}
 
       <footer
         className="relative z-50 flex h-(--statusbar-height) shrink-0 items-stretch overflow-hidden border-t bg-sidebar text-[11px] text-muted-foreground"
@@ -173,7 +187,7 @@ const STATE = {
   failed: { icon: CircleAlert, cls: "text-destructive" },
 } as const;
 
-function TaskPanel({ tasks, slots, now, onClose }: { tasks: Task[]; slots?: AppStatus["slots"]; now: number; onClose: () => void }) {
+function TaskPanel({ tasks, slots, now, onClose, onCancel }: { tasks: Task[]; slots?: AppStatus["slots"]; now: number; onClose: () => void; onCancel: (t: Task) => void }) {
   return (
     <div className="fixed bottom-(--statusbar-height) left-0 z-50 flex max-h-[60vh] w-full flex-col overflow-hidden border bg-popover text-popover-foreground shadow-xl sm:left-2 sm:mb-1 sm:w-[440px] sm:rounded-xl">
       <div className="flex items-center gap-2 border-b px-3 py-2">
@@ -194,10 +208,13 @@ function TaskPanel({ tasks, slots, now, onClose }: { tasks: Task[]; slots?: AppS
               const pct = task.pct;
               return (
                 <li key={task.key} className="space-y-2 px-3 py-2.5">
-                  <Link href={task.href} onClick={onClose} className="flex items-baseline gap-2 hover:underline">
-                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{task.title}</span>
-                    {task.startedAt && <span className="font-mono text-[11px] tabular-nums text-muted-foreground">{mmss(now - task.startedAt)}</span>}
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    <Link href={task.href} onClick={onClose} className="flex min-w-0 flex-1 items-baseline gap-2 hover:underline">
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{task.title}</span>
+                      {task.startedAt && <span className="font-mono text-[11px] tabular-nums text-muted-foreground">{mmss(now - task.startedAt)}</span>}
+                    </Link>
+                    <button type="button" onClick={() => onCancel(task)} className="shrink-0 rounded-md border border-destructive/40 px-2 py-0.5 text-[11px] font-medium text-destructive hover:bg-destructive/10">Batalkan</button>
+                  </div>
                   <p className="truncate text-[11px] text-muted-foreground">{task.subtitle} · {task.progress ?? "Memproses..."}</p>
                   {task.total > 1 && (
                     <div className="h-1 overflow-hidden rounded-full bg-muted">

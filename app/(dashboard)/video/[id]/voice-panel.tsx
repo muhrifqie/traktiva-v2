@@ -156,7 +156,7 @@ export function VoicePanel({
 /** One scene's spoken line, with a ▶ to hear it in the chosen Cartesia voice. */
 export function SceneVoiceLine({ line, state, hasKey, player }: { line: string | null; state: ProjectVoiceState; hasKey: boolean; player: ReturnType<typeof usePlayer> }) {
   if (state.choice === "off") return null;
-  if (!line) return <p className="text-[10px] text-muted-foreground">Tanpa naskah suara di adegan ini.</p>;
+  if (!line) return <p className="text-[10px] text-muted-foreground">Tanpa naskah suara di scene ini.</p>;
   const canPlay = state.choice === "cartesia" && hasKey && state.voiceId;
   const key = `line:${line}`;
   return (

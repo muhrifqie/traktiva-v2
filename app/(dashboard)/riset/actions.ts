@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { savedProducts, videoProjects } from "@/lib/db/schema";
+import { pruneUnsaved, UNSAVED } from "@/lib/unsaved";
 import { createProjectFolder, saveResult } from "@/lib/media";
 import { defaultOptions, presetById } from "@/lib/presets";
 
@@ -55,9 +56,10 @@ export async function createProjectFromSaved(id: number, presetId: string) {
   if (!preset?.available) throw new Error("Konsep ini belum tersedia.");
   const name = p.title.length > 120 ? `${p.title.slice(0, 117)}...` : p.title;
   const product = { name, details: p.shopName ? `dari ${p.shopName}` : "", price: p.price ?? "", photos: [] as string[] };
+  await pruneUnsaved();
   const [{ id: projectId }] = await db
     .insert(videoProjects)
-    .values({ presetId, title: "", step: 2, product, options: defaultOptions(preset), scenes: [], folder: "" })
+    .values({ presetId, title: "", step: 2, product, options: { ...defaultOptions(preset), [UNSAVED]: "1" }, scenes: [], folder: "" })
     .returning({ id: videoProjects.id });
   const folder = await createProjectFolder(projectId, preset.id);
   if (p.image) {

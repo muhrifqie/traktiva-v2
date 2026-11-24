@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { showcaseProducts, videoProjects } from "@/lib/db/schema";
+import { pruneUnsaved, UNSAVED } from "@/lib/unsaved";
 import { createProjectFolder, resolveMedia, writeMedia } from "@/lib/media";
 import { addToShowcase, fetchMarketRanking, removeFromShowcase } from "@/lib/platforms/tiktok-shop";
 import { detailFacts, getTiktokAccount, loadProductDetail, mirrorShowcase, setShopCache, syncAccountShowcase } from "@/lib/showcase";
@@ -69,11 +70,12 @@ export async function createProjectFromProduct(showcaseId: number, presetId: str
   const name = p.title.length > 120 ? `${p.title.slice(0, 117)}...` : p.title;
   // the saved product page (if it was opened) gives the AI real facts and more photos
   const details = p.detail ? detailFacts(p.detail) : p.labels.join(", ");
+  await pruneUnsaved();
   const [{ id }] = await db
     .insert(videoProjects)
     .values({
       presetId, title: "", step: 2, product: { name, details, price: p.price, photos: [] },
-      options: defaultOptions(preset), scenes: [], folder: "",
+      options: { ...defaultOptions(preset), [UNSAVED]: "1" }, scenes: [], folder: "",
     })
     .returning({ id: videoProjects.id });
   const folder = await createProjectFolder(id, preset.id);
@@ -82,6 +84,6 @@ export async function createProjectFromProduct(showcaseId: number, presetId: str
     const data = await fs.readFile(resolveMedia(src)).catch(() => null);
     if (data) photos.push(await writeMedia(`${folder}/produk/etalase-${p.productId}-${i + 1}${src.slice(src.lastIndexOf("."))}`, data));
   }
-  await db.update(videoProjects).set({ folder, product: { name, details, price: p.price, photos }, options: { ...defaultOptions(preset), showcaseId: String(p.id) } }).where(eq(videoProjects.id, id));
+  await db.update(videoProjects).set({ folder, product: { name, details, price: p.price, photos }, options: { ...defaultOptions(preset), showcaseId: String(p.id), [UNSAVED]: "1" } }).where(eq(videoProjects.id, id));
   redirect(`/video/${id}`);
 }

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2, NotebookPen, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { DEFAULT_WRITING, type WritingRules } from "@/lib/writing";
+import { DEFAULT_WRITING, PLATFORM_REPLACE, type WritingRules } from "@/lib/writing";
 import { saveWritingRules } from "./actions";
 
 const field = "h-8 w-full rounded-md border bg-background px-2.5 text-[13px] outline-none focus:border-ring";
@@ -33,7 +33,7 @@ export function WritingRulesCard({ initial }: { initial: WritingRules }) {
         <span className="grid size-7 place-items-center rounded-lg bg-muted text-black dark:text-white"><NotebookPen className="size-4" /></span>
         <div className="min-w-0 flex-1">
           <h2 className="text-[13px] font-semibold">Aturan naskah AI</h2>
-          <p className="text-xs text-muted-foreground">Berlaku untuk semua yang ditulis & diucapkan AI: naskah voice-over, kalimat tiap adegan, caption, stiker, dan AI Director.</p>
+          <p className="text-xs text-muted-foreground">Berlaku untuk semua yang ditulis & diucapkan AI: naskah voice-over, kalimat tiap scene, caption, stiker, dan AI Director.</p>
         </div>
         <button type="button" onClick={() => setR(DEFAULT_WRITING)} className="flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground" title="Kembalikan aturan bawaan">
           <RotateCcw className="size-3.5" /> Bawaan
@@ -44,6 +44,20 @@ export function WritingRulesCard({ initial }: { initial: WritingRules }) {
         <span className="text-xs font-medium">Kalimat ajakan (CTA) di akhir video</span>
         <input className={field} value={r.cta} maxLength={80} onChange={(e) => setR({ ...r, cta: e.target.value })} placeholder="cek keranjang di bawah ya" />
       </label>
+
+      <div className="space-y-1.5 rounded-lg bg-muted/40 p-2.5">
+        <p className="text-xs font-medium">Dilarang platform (selalu aktif)</p>
+        <p className="text-[11px] text-muted-foreground">Kata yang ditolak TikTok Shop & Shopee untuk produk herbal/kesehatan. Diganti otomatis di naskah, suara, storyboard, dan caption. AI juga dilarang menulis klaim menyembuhkan, nama penyakit, dan kata vulgar.</p>
+        <div className="flex flex-wrap gap-1.5">
+          {PLATFORM_REPLACE.map((x) => (
+            <span key={x.from} className="flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-[11px]">
+              <span className="line-through decoration-destructive/70">{x.from}</span>
+              <ArrowRight className="size-3 text-muted-foreground" />
+              {x.to}
+            </span>
+          ))}
+        </div>
+      </div>
 
       <div className="space-y-1.5">
         <p className="text-xs font-medium">Kata yang dilarang → diganti otomatis</p>
