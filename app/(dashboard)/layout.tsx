@@ -10,7 +10,7 @@ import { MediaLightbox } from "@/components/media-lightbox";
 import { ServerBanner } from "@/components/server-banner";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { db } from "@/lib/db";
-import { accounts, googleAccounts, videoProjects } from "@/lib/db/schema";
+import { accounts, googleAccounts, uploadJobs, videoProjects } from "@/lib/db/schema";
 import { startProfileAutoSync } from "@/lib/profile-autosync";
 import { startShowcaseAutoSync } from "@/lib/showcase";
 import { ADMIN_PANEL_URL, licenseView, serverInfo } from "@/lib/server-info";
@@ -22,13 +22,15 @@ export default async function DashboardLayout({ children }: LayoutProps<"/">) {
   // background syncs (no-ops when already running): also covers a server started before they existed
   startProfileAutoSync();
   startShowcaseAutoSync();
-  const [social, google, [{ videos }]] = await Promise.all([
+  const [social, google, [{ videos }], [{ queued }], [{ running }]] = await Promise.all([
     db
       .select({ id: accounts.id, platform: accounts.platform, username: accounts.username, displayName: accounts.displayName, avatarUrl: accounts.avatarUrl, status: accounts.status })
       .from(accounts)
       .orderBy(accounts.platform, accounts.username),
     db.select({ email: googleAccounts.email, status: googleAccounts.status }).from(googleAccounts).orderBy(googleAccounts.id),
     db.select({ videos: count() }).from(videoProjects).where(eq(videoProjects.status, "done")),
+    db.select({ queued: count() }).from(uploadJobs).where(eq(uploadJobs.status, "queued")),
+    db.select({ running: count() }).from(videoProjects).where(eq(videoProjects.status, "running")),
   ]);
   const info = serverInfo();
   const view = licenseView(info, pkg.version);
@@ -50,7 +52,7 @@ export default async function DashboardLayout({ children }: LayoutProps<"/">) {
       <TitleBar />
       <SiteHeader />
       <div className="flex flex-1">
-        <AppSidebar counts={{ akun: n }} user={user} className="h-[calc(100svh-var(--titlebar-height)-var(--header-height)-var(--statusbar-height))]" />
+        <AppSidebar counts={{ akun: n, jadwal: queued, proyek: running }} /* sidebar badges: accounts, uploads waiting, videos being made */ user={user} className="h-[calc(100svh-var(--titlebar-height)-var(--header-height)-var(--statusbar-height))]" />
         {/* Frameless: the page shares the chrome's surface (no panel border); only cards float on it.
             The page body scrolls inside; every page gets the same safe area (gutters, max width, rhythm). */}
         <SidebarInset className="overflow-hidden bg-sidebar md:h-[calc(100svh-var(--titlebar-height)-var(--header-height)-var(--statusbar-height))] md:peer-data-[variant=inset]:m-0 md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:shadow-none md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-0">

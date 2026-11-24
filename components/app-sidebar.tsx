@@ -3,11 +3,11 @@
 import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, PanelLeftClose, PanelLeftOpen, Plus, Rocket } from "lucide-react";
+import { ChevronRight, PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
 import { PlatformIcon } from "@/components/platform-icon";
 import { UserCard, type UserInfo } from "@/components/user-card";
 import {
-  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
+  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuAction, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, useSidebar,
 } from "@/components/ui/sidebar";
 import { NAV, NAV_GROUPS, type NavCounts, type NavItem } from "@/lib/nav";
@@ -16,17 +16,19 @@ type Group = (typeof NAV_GROUPS)[number];
 /** Groups that belong to one platform get its mark next to the label, and the label opens that platform's page. */
 const GROUP_PLATFORM: Partial<Record<Group, "tiktok">> = { "TikTok Shop": "tiktok" };
 const GROUP_HREF: Partial<Record<Group, string>> = { "TikTok Shop": "/tiktok-shop" };
-const GROUP_ICON: Partial<Record<Group, React.ComponentType<{ className?: string }>>> = { "Segera hadir": Rocket };
-/** Groups with one menu need no folding (the label alone would hide a single link). */
-const FOLDABLE = (n: number) => n > 1;
-/** Everyday menus: one plain list on top (no group button); only platform groups fold. */
-const TOP: Group[] = ["Utama", "Buat Konten", "Pustaka"];
-/** Menus that close the sidebar at the bottom, next to the user card. */
-const BOTTOM: Group[] = ["Akun", "Pengaturan"];
-/** Folded until opened (placeholders for platforms that are not live yet). */
-const START_FOLDED = new Set<Group>(["Segera hadir"]);
+/**
+ * Sidebar sections, top to bottom, each with a small label. A live platform (TikTok Shop) is a button with its menus on
+ * a branch line; platforms not live yet are listed right under it, so the roadmap shows without opening anything.
+ * The last section sits at the bottom next to the user card.
+ */
+const SECTIONS: { label: string | null; groups: Group[]; tree?: Group[] }[] = [
+  { label: null, groups: ["Utama"] },
+  { label: "Konten", groups: ["Buat Konten", "Pustaka"] },
+  { label: "Platform", tree: ["TikTok Shop"], groups: ["Segera hadir"] },
+  { label: null, groups: ["Akun", "Pengaturan"] },
+];
 
-// groups toggled away from their default (open, or folded for START_FOLDED), remembered per PC in localStorage
+// folded platform groups, remembered per PC (localStorage; the server renders everything open)
 const KEY = "trk-sidebar-folded";
 const read = () => {
   try {
@@ -65,17 +67,17 @@ function NavItems({ items, counts, rail }: { items: readonly NavItem[]; counts: 
           <SidebarMenuItem key={item.slug}>
             <SidebarMenuButton
               isActive={active}
-              className={`h-8 gap-2.5 text-[13px] text-sidebar-foreground/85 data-active:font-medium data-active:text-sidebar-foreground ${rail ? "justify-center px-0" : ""} ${platform ? "text-sidebar-foreground/60" : ""}`}
+              className={`h-9 gap-3 text-[13.5px] text-sidebar-foreground/80 data-active:font-medium data-active:text-sidebar-foreground ${rail ? "justify-center px-0" : "px-2.5"} ${"status" in item ? "text-sidebar-foreground/55" : ""}`}
               render={<Link href={`/${item.slug}`} title={rail ? item.title : undefined} aria-label={item.title} />}
             >
-              {platform ? <PlatformIcon platform={platform} className="size-4 shrink-0" /> : <item.icon className="size-4 shrink-0 text-black dark:text-white" />}
+              {platform ? <PlatformIcon platform={platform} className={`size-[18px] shrink-0 ${"status" in item ? "opacity-70" : ""}`} /> : <item.icon className="size-[18px] shrink-0 text-black dark:text-white" />}
               {!rail && <span className="truncate">{label}</span>}
             </SidebarMenuButton>
             {!rail && "status" in item && (
-              <SidebarMenuBadge className={`rounded px-1.5 text-[10px] ${item.status === "Segera" ? "bg-amber-500/12 text-amber-600 dark:text-amber-300" : "bg-sidebar-accent text-muted-foreground"}`}>{item.status}</SidebarMenuBadge>
+              <SidebarMenuBadge className={`top-2 rounded px-1.5 text-[10px] ${item.status === "Segera" ? "bg-amber-500/12 text-amber-600 dark:text-amber-300" : "bg-sidebar-accent text-muted-foreground"}`}>{item.status}</SidebarMenuBadge>
             )}
             {!rail && !("status" in item) && !!counts[item.slug] && (
-              <SidebarMenuBadge className="rounded bg-sidebar-accent px-1.5 text-[11px] text-muted-foreground">{counts[item.slug]}</SidebarMenuBadge>
+              <SidebarMenuBadge className="top-2 rounded-full bg-sidebar-accent px-1.5 text-[11px] tabular-nums text-muted-foreground">{counts[item.slug]}</SidebarMenuBadge>
             )}
           </SidebarMenuItem>
         );
@@ -92,8 +94,8 @@ function SubItem({ item, counts }: { item: NavItem; counts: NavCounts }) {
   const platform = "platform" in item ? item.platform : null;
   return (
     <SidebarMenuSubItem>
-      <SidebarMenuSubButton isActive={isHere(pathname, item.slug)} className="h-7 gap-2 text-[13px] text-sidebar-foreground/85 data-active:font-medium" render={<Link href={`/${item.slug}`} aria-label={item.title} />}>
-        {platform ? <PlatformIcon platform={platform} className="size-3.5 shrink-0" /> : <item.icon className="size-3.5 shrink-0 text-black dark:text-white" />}
+      <SidebarMenuSubButton isActive={isHere(pathname, item.slug)} className="h-8 gap-2.5 text-[13px] text-sidebar-foreground/80 data-active:font-medium" render={<Link href={`/${item.slug}`} aria-label={item.title} />}>
+        {platform ? <PlatformIcon platform={platform} className="size-4 shrink-0" /> : <item.icon className="size-4 shrink-0 text-black dark:text-white" />}
         <span className="truncate">{label}</span>
         {"status" in item ? (
           <span className={`ml-auto rounded px-1.5 text-[10px] ${item.status === "Segera" ? "bg-amber-500/12 text-amber-600 dark:text-amber-300" : "bg-sidebar-accent text-muted-foreground"}`}>{item.status}</span>
@@ -107,38 +109,23 @@ function SubItem({ item, counts }: { item: NavItem; counts: NavCounts }) {
 
 const visible = (groups: readonly Group[]) => NAV.filter((n) => groups.includes(n.group) && !("sidebar" in n && n.sidebar === false));
 
-/** Several groups as one plain list of menu buttons (no headers). */
-function Plain({ groups, counts, rail, className = "" }: { groups: readonly Group[]; counts: NavCounts; rail: boolean; className?: string }) {
-  return (
-    <SidebarGroup className={`px-2 py-1 ${className}`}>
-      <SidebarGroupContent>
-        <NavItems items={visible(groups)} counts={counts} rail={rail} />
-      </SidebarGroupContent>
-    </SidebarGroup>
-  );
-}
-
-function Group({ name, counts, rail }: { name: Group; counts: NavCounts; rail: boolean }) {
+/** A platform group: its button opens the platform page, its menus hang underneath on a branch line (foldable). */
+function Tree({ name, counts, rail }: { name: Group; counts: NavCounts; rail: boolean }) {
   const pathname = usePathname();
-  const toggled = useSyncExternalStore(subscribe, read, () => "").split("|").includes(name);
-  const folded = START_FOLDED.has(name) ? !toggled : toggled;
+  const folded = useSyncExternalStore(subscribe, read, () => "").split("|").includes(name);
   const items = visible([name]);
   if (!items.length) return null;
-  // one-menu groups and the folded rail: plain menu buttons
-  if (!FOLDABLE(items.length) || rail) return <Plain groups={[name]} counts={counts} rail={rail} />;
+  if (rail) return <NavItems items={items} counts={counts} rail />;
 
   // a group = a menu button of its own with its menus as branches underneath; the group of the current page stays open
   const platform = GROUP_PLATFORM[name];
   const href = GROUP_HREF[name];
-  const Icon = GROUP_ICON[name];
   const here = items.some((n) => isHere(pathname, n.slug));
   const open = !folded || here;
-  const mark = platform ? <PlatformIcon platform={platform} className="size-4 shrink-0" /> : Icon ? <Icon className="size-4 shrink-0 text-black dark:text-white" /> : null;
+  const mark = platform ? <PlatformIcon platform={platform} className="size-[18px] shrink-0" /> : null;
   const chevron = <ChevronRight className={`size-3.5 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />;
-  const btnCls = "h-8 gap-2.5 text-[13px] text-sidebar-foreground/85";
+  const btnCls = "h-9 gap-3 px-2.5 text-[13.5px] text-sidebar-foreground/80";
   return (
-    <SidebarGroup className="px-2 py-0.5">
-      <SidebarGroupContent>
         <SidebarMenu className="gap-0.5">
           <SidebarMenuItem>
             {href ? (
@@ -163,14 +150,12 @@ function Group({ name, counts, rail }: { name: Group; counts: NavCounts; rail: b
               </SidebarMenuButton>
             )}
             {open && (
-              <SidebarMenuSub className="mr-0 gap-0.5">
+              <SidebarMenuSub className="mr-0 ml-[18px] gap-0.5 py-1">
                 {items.map((item) => <SubItem key={item.slug} item={item} counts={counts} />)}
               </SidebarMenuSub>
             )}
           </SidebarMenuItem>
         </SidebarMenu>
-      </SidebarGroupContent>
-    </SidebarGroup>
   );
 }
 
@@ -193,12 +178,15 @@ export function AppSidebar({ counts = {}, user, className }: { counts?: NavCount
             {!rail && "Buat video"}
           </Link>
         </div>
-        <Plain groups={TOP} counts={counts} rail={rail} />
-        <div className="mx-4 my-1 border-t border-sidebar-border/70" />
-        {NAV_GROUPS.filter((g) => !TOP.includes(g) && !BOTTOM.includes(g)).map((g) => (
-          <Group key={g} name={g} counts={counts} rail={rail} />
+        {SECTIONS.map((s, i) => (
+          <SidebarGroup key={i} className={`px-2 ${i === SECTIONS.length - 1 ? "mt-auto" : ""} ${rail ? "py-1" : "py-1.5"}`}>
+            {s.label && !rail && <SidebarGroupLabel className="h-7 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground/80 uppercase">{s.label}</SidebarGroupLabel>}
+            <SidebarGroupContent className="flex flex-col gap-0.5">
+              {s.tree?.map((g) => <Tree key={g} name={g} counts={counts} rail={rail} />)}
+              <NavItems items={visible(s.groups)} counts={counts} rail={rail} />
+            </SidebarGroupContent>
+          </SidebarGroup>
         ))}
-        <Plain groups={BOTTOM} counts={counts} rail={rail} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border p-2">
         {rail ? (
