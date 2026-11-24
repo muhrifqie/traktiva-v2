@@ -11,6 +11,9 @@ const display = Bricolage_Grotesque({ variable: "--font-display", subsets: ["lat
 export const metadata: Metadata = {
   title: { default: "Traktiva", template: "%s · Traktiva" },
   description: "Bikin video pakai AI, dari ide sampai jadwal upload.",
+  // files in public/ (same logo as the desktop app); nginx serves them on every subdomain (nginx/traktiva-static.conf)
+  icons: { icon: [{ url: "/favicon.ico", sizes: "48x48" }, { url: "/icon.svg", type: "image/svg+xml" }], apple: "/apple-touch-icon.png" },
+  manifest: "/site.webmanifest",
 };
 
 /** Same theme switch as the desktop app: the "dark" class on <html>; the choice lives in the trk_theme cookie (default dark). */
