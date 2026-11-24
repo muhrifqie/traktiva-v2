@@ -7,22 +7,22 @@ import { ChevronLeft } from "lucide-react";
 
 function Tabs({ tabs, back }: { tabs: { href: string; label: string; on: boolean }[]; back?: { href: string; label: string } }) {
   return (
-    <nav aria-label="Halaman" className="-mt-2 flex flex-wrap items-center gap-2">
+    <nav aria-label="Halaman" className="-mt-2 flex w-full items-center gap-2">
       {back && (
-        <Link href={back.href} className="flex h-8 items-center gap-1 rounded-lg px-2 text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground">
+        <Link href={back.href} className="flex h-11 shrink-0 items-center gap-1 rounded-lg border bg-card px-3 text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground">
           <ChevronLeft className="size-4" /> {back.label}
         </Link>
       )}
-      <div className="flex rounded-lg border bg-card p-0.5">
+      <div className="flex min-w-0 flex-1 rounded-lg border bg-card p-1">
         {tabs.map((t, i) => (
           <Link
             key={t.href}
             href={t.href}
             aria-current={t.on ? "page" : undefined}
-            className={`flex h-8 items-center gap-2 rounded-md px-3 text-[13px] font-medium ${t.on ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            className={`flex h-9 min-w-0 flex-1 items-center justify-center gap-2 rounded-md px-3 text-[13px] font-medium ${t.on ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
           >
             <span className={`grid size-5 place-items-center rounded-full text-[11px] tabular-nums ${t.on ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{i + 1}</span>
-            {t.label}
+            <span className="truncate">{t.label}</span>
           </Link>
         ))}
       </div>
