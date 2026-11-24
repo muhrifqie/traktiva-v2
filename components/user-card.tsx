@@ -1,15 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { BadgeCheck, Check, ChevronsUpDown, Clapperboard, HardDrive, Info, KeyRound, Loader2, LogIn, Monitor, Plus, Settings, ShieldCheck, Users } from "lucide-react";
-import { toast } from "sonner";
-import { selectAccount } from "@/app/(dashboard)/akun/actions";
+import { BadgeCheck, ChevronsUpDown, Clapperboard, HardDrive, Info, KeyRound, Monitor, Settings, ShieldCheck, Users } from "lucide-react";
 import { confirmDialog } from "@/components/confirm-dialog";
 import { GoogleIcon } from "@/components/brand-icons";
 import { Logo } from "@/components/logo";
-import { PlatformIcon } from "@/components/platform-icon";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -45,26 +40,6 @@ const LICENSE = {
 
 const OS: Record<string, string> = { win32: "Windows", darwin: "macOS", linux: "Linux" };
 
-/** Profile photo of a social account (initial as fallback), with its platform mark in the corner. */
-function SocialAvatar({ account, size = "size-8" }: { account: SocialAccount; size?: string }) {
-  const [broken, setBroken] = useState(false);
-  return (
-    <span className={`relative ${size} shrink-0`}>
-      {account.avatarUrl && !broken ? (
-        // eslint-disable-next-line @next/next/no-img-element -- platform CDN avatars
-        <img src={account.avatarUrl} alt="" referrerPolicy="no-referrer" onError={() => setBroken(true)} className="size-full rounded-full border object-cover" />
-      ) : (
-        <span className="grid size-full place-items-center rounded-full bg-muted text-[13px] font-semibold uppercase">{(account.displayName || account.username)[0]}</span>
-      )}
-      <span className="absolute -right-0.5 -bottom-0.5 grid size-3.5 place-items-center rounded-full bg-sidebar ring-1 ring-sidebar">
-        <PlatformIcon platform={account.platform} className="size-2.5" />
-      </span>
-    </span>
-  );
-}
-
-const accountName = (a: SocialAccount) => a.displayName || `@${a.username}`;
-
 function Avatar({ name, size = "size-8" }: { name: string | null; size?: string }) {
   return name ? (
     <span className={`grid ${size} shrink-0 place-items-center rounded-lg bg-primary text-[13px] font-semibold uppercase text-primary-foreground`}>
@@ -86,42 +61,27 @@ async function changeLicense() {
 }
 
 /**
- * Bottom-left of the sidebar: the license owner (the website account the key is linked to) with the social account
- * the user works with; opens the license + accounts panel. Without a social account it still shows the license.
+ * Bottom-left of the sidebar: who uses this app = the owner of the license in use (the website account the key is
+ * linked to), with the license details. Social accounts are managed on Akun Sosial (they can be many).
  */
 export function UserCard({ info }: { info: UserInfo }) {
-  const router = useRouter();
-  const [switching, startSwitch] = useTransition();
   const lic = LICENSE[info.license.status];
   const owner = info.license.owner;
   const name = owner?.name || (info.email ? info.email.split("@")[0] : "Pengguna Traktiva");
-  const { selected, list } = info.social;
-  const sub = selected
-    ? selected.status === "need_login" ? "Perlu login ulang" : `${PLATFORM[selected.platform].label} · @${selected.username}`
-    : info.license.status === "dev" ? lic.label : `Lisensi ${info.license.plan} · ${lic.label}`;
-
-  const pick = (id: number) =>
-    startSwitch(async () => {
-      try {
-        await selectAccount(id);
-        router.refresh();
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Gagal mengganti akun");
-      }
-    });
+  const sub = info.license.status === "dev" ? lic.label : `Lisensi ${info.license.plan} · ${lic.label}`;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         className="flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[popup-open]:bg-sidebar-accent group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0"
-        aria-label="Profil, lisensi, dan akun sosmed"
+        aria-label="Profil dan lisensi"
       >
-        {selected ? <SocialAvatar account={selected} /> : <Avatar name={name} />}
+        <Avatar name={name} />
         <span className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
           <span className="block truncate text-[13px] font-medium">{name}</span>
-          <span className={`block truncate text-[11px] ${selected?.status === "need_login" || info.license.status === "expired" ? "text-amber-500" : "text-muted-foreground"}`}>{sub}</span>
+          <span className={`block truncate text-[11px] ${info.license.status === "expired" ? "text-amber-500" : "text-muted-foreground"}`}>{sub}</span>
         </span>
-        {switching ? <Loader2 className="size-3.5 animate-spin text-muted-foreground" /> : <ChevronsUpDown className="size-3.5 text-muted-foreground group-data-[collapsible=icon]:hidden" />}
+        <ChevronsUpDown className="size-3.5 text-muted-foreground group-data-[collapsible=icon]:hidden" />
       </DropdownMenuTrigger>
 
       <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-72 p-0">
@@ -153,27 +113,7 @@ export function UserCard({ info }: { info: UserInfo }) {
           )}
         </div>
 
-        <div className="p-1 pt-2">
-          <p className="px-2 pt-1 pb-1 text-[11px] font-medium text-muted-foreground">Akun sosmed</p>
-          {list.map((a) => (
-            <DropdownMenuItem key={a.id} disabled={switching} onClick={() => a.id !== selected?.id && pick(a.id)} className="gap-2.5">
-              <SocialAvatar account={a} size="size-6" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px]">{accountName(a)}</span>
-                <span className={`block truncate text-[11px] ${a.status === "need_login" ? "text-amber-500" : "text-muted-foreground"}`}>
-                  {a.status === "need_login" ? "Perlu login ulang" : `@${a.username}`}
-                </span>
-              </span>
-              {a.id === selected?.id && <Check className="size-4 text-brand-light" />}
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuItem render={<Link href="/akun" />} className="gap-2.5 text-muted-foreground">
-            <span className="grid size-6 place-items-center rounded-full border border-dashed">{list.length ? <Plus className="size-3.5" /> : <LogIn className="size-3.5" />}</span>
-            {list.length ? "Tambah akun" : "Hubungkan akun sosmed"}
-          </DropdownMenuItem>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2 p-3 pt-1">
+        <div className="grid grid-cols-3 gap-2 p-3">
           {[
             { icon: <GoogleIcon className="size-3.5" />, n: info.googleAccounts, label: "Google" },
             { icon: <Users className="size-3.5 text-black dark:text-white" />, n: info.socialAccounts, label: "Sosial" },
