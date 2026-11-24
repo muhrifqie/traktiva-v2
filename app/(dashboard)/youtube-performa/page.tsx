@@ -66,6 +66,29 @@ function Tile({ icon: Icon, label, value, sub }: { icon: LucideIcon; label: stri
   );
 }
 
+/** Small bento number: icon + label, big value. */
+function Kpi({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+  return (
+    <div className="flex flex-col justify-between gap-2 rounded-xl border bg-card p-4">
+      <span className="flex items-center gap-2 text-xs text-muted-foreground"><Icon className="size-4" /> {label}</span>
+      <span className="text-2xl font-semibold tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+/** Horizontal share bar row: label, value, thin bar. */
+function BarRow({ label, value, pct, lead }: { label: string; value: string; pct: number; lead?: React.ReactNode }) {
+  return (
+    <li className="space-y-1">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-1.5 truncate text-muted-foreground">{lead}{label}</span>
+        <span className="font-medium tabular-nums">{value}</span>
+      </div>
+      <div className="h-1 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, background: RED }} /></div>
+    </li>
+  );
+}
+
 /** Bento cell: icon + title on top, any content below. */
 function Box({ icon: Icon, title, hint, className = "", children }: { icon: LucideIcon; title: string; hint?: string; className?: string; children: React.ReactNode }) {
   return (
@@ -191,40 +214,100 @@ function Waiting({ name }: { name: string }) {
 
 // ---------- views ----------
 
-/** Every channel side by side: totals, combined daily views, a comparison table and the top videos overall. */
+/** Every channel side by side, in the same bento as one channel: summed numbers, then per-channel comparisons. */
 function AllChannels({ list }: { list: Channel[] }) {
   const rows = list.map((c) => ({ ...c, s: stats(c) }));
   const synced = rows.filter((r) => r.s);
-  const sum = (f: (s: NonNullable<ReturnType<typeof stats>>) => number) => synced.reduce((t, r) => t + f(r.s!), 0);
+  const sum = (f: (r: (typeof synced)[number]) => number) => synced.reduce((t, r) => t + f(r), 0);
+  const kpi = (r: Channel, re: RegExp) => idNum(card(r.cache!.data, re)?.metrics[0]?.value) ?? 0;
   const byDay = new Map<number, number>();
   for (const r of synced) for (const [day, n] of viewSeries(r.cache!.data)) byDay.set(day, (byDay.get(day) ?? 0) + n);
   const days = [...byDay].sort((a, b) => a[0] - b[0]).map(([day, n]) => ({ day, n }));
+  const views28 = sum((r) => r.s!.views28);
+  const name = (a: Account) => a.displayName || a.username;
   const top = synced
-    .flatMap((r) => r.posts.map((p) => ({ p, type: r.cache!.data.types[p.externalId] ?? "video" })))
-    .sort((a, b) => b.p.views - a.p.views)
-    .slice(0, 10);
-  const accountOf = new Map(list.map((c) => [c.a.id, c.a]));
+    .flatMap((r) => r.posts.map((p) => ({ p, a: r.a })))
+    .sort((x, y) => y.p.views - x.p.views)
+    .slice(0, 5);
+  const monet = (m: NonNullable<ReturnType<typeof stats>>["monetization"]) =>
+    m ? (m.monetized ? 100 : Math.max(m.subscribers / m.subscribersNeeded, m.shortsViews / m.shortsViewsNeeded, m.watchHours / m.watchHoursNeeded) * 100) : null;
+  const empty = <p className="text-xs text-muted-foreground">Belum ada data.</p>;
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Tile icon={Layers} label="Channel" value={`${list.length}`} sub={`${list.filter((c) => c.a.status === "active").length} login`} />
-        <Tile icon={Users} label="Subscriber" value={num.format(sum((s) => s.subscribers))} />
-        <Tile icon={Film} label="Video" value={num.format(sum((s) => s.videos))} sub={`${num.format(sum((s) => s.shorts))} Shorts`} />
-        <Tile icon={Eye} label="Penayangan 28 hari" value={num.format(sum((s) => s.views28))} />
-        <Tile icon={Clock} label="Jam tonton 28 hari" value={num.format(Math.round(sum((s) => s.hours28) * 10) / 10)} />
+        <Tile icon={Users} label="Subscriber" value={num.format(sum((r) => r.s!.subscribers))} />
+        <Tile icon={Film} label="Video" value={num.format(sum((r) => r.s!.videos))} sub={`${num.format(sum((r) => r.s!.shorts))} Shorts`} />
+        <Tile icon={Eye} label="Penayangan total" value={num.format(sum((r) => r.posts.reduce((t, p) => t + p.views, 0)))} />
       </div>
 
-      {days.length > 0 && (
-        <section className="rounded-xl border bg-card p-4">
-          <DailyBars data={days} color={RED} unit="views" label="Penayangan harian, semua channel" period="28 hari" />
-        </section>
-      )}
+      <section className="space-y-2">
+        <h2 className="text-[13px] font-semibold text-muted-foreground">Insight 28 hari, semua channel</h2>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <Box icon={Eye} title="Penayangan" hint="28 hari" className="md:col-span-2">
+            <p className="text-3xl font-semibold tabular-nums">{num.format(views28)}</p>
+            {days.length > 0 && <DailyBars data={days} color={RED} unit="views" label="Per hari, digabung" period="28 hari" />}
+          </Box>
+          <div className="grid grid-cols-2 gap-3 md:col-span-2">
+            <Kpi icon={Clock} label="Jam tonton" value={num.format(Math.round(sum((r) => r.s!.hours28) * 10) / 10)} />
+            <Kpi icon={UserPlus} label="Subscriber baru" value={num.format(sum((r) => kpi(r, /^Subscriber$/i)))} />
+            <Kpi icon={Zap} label="Penayangan 48 jam" value={num.format(sum((r) => kpi(r, /48 jam/i)))} />
+            <Kpi icon={UsersRound} label="Audiens bulanan" value={num.format(sum((r) => kpi(r, /audiens/i)))} />
+          </div>
+
+          <Box icon={Layers} title="Penayangan per channel" hint="28 hari">
+            {synced.length ? (
+              <ul className="space-y-2 text-xs">
+                {[...synced].sort((x, y) => y.s!.views28 - x.s!.views28).map((r) => (
+                  <BarRow key={r.a.id} lead={<AccountAvatar a={r.a} size="size-4" />} label={name(r.a)} value={num.format(r.s!.views28)} pct={views28 ? (r.s!.views28 / views28) * 100 : 0} />
+                ))}
+              </ul>
+            ) : empty}
+          </Box>
+
+          <Box icon={Repeat} title="Ditonton sampai habis?" hint="Shorts">
+            {synced.length ? (
+              <ul className="space-y-2 text-xs">
+                {synced.map((r) => (
+                  <BarRow key={r.a.id} lead={<AccountAvatar a={r.a} size="size-4" />} label={name(r.a)} value={r.s!.stay ?? "—"} pct={idNum(r.s!.stay ?? undefined) ?? 0} />
+                ))}
+              </ul>
+            ) : empty}
+          </Box>
+
+          <Box icon={Flame} title="Konten populer" hint="semua waktu">
+            {top.length ? (
+              <ol className="space-y-2 text-xs">
+                {top.map(({ p, a }, i) => (
+                  <li key={p.id} className="flex items-center gap-2">
+                    <span className="grid size-5 shrink-0 place-items-center rounded bg-muted text-[10px] font-semibold">{i + 1}</span>
+                    <AccountAvatar a={a} size="size-4" />
+                    <a href={`https://youtu.be/${p.externalId}`} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate hover:underline" title={`${p.caption} · ${name(a)}`}>{p.caption}</a>
+                    <span className="flex shrink-0 items-center gap-1 font-medium tabular-nums"><Eye className="size-3 text-muted-foreground" />{compact.format(p.views)}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : <p className="text-xs text-muted-foreground">Belum ada penayangan.</p>}
+          </Box>
+
+          <Box icon={BadgeDollarSign} title="Menuju monetisasi" hint="syarat terdekat">
+            {synced.length ? (
+              <ul className="space-y-2 text-xs">
+                {synced.map((r) => {
+                  const pct = monet(r.s!.monetization);
+                  return <BarRow key={r.a.id} lead={<AccountAvatar a={r.a} size="size-4" />} label={name(r.a)} value={r.s!.monetization?.monetized ? "Aktif" : pct != null ? `${pct.toFixed(0)}%` : "—"} pct={pct ?? 0} />;
+                })}
+              </ul>
+            ) : empty}
+          </Box>
+        </div>
+      </section>
 
       <section className="space-y-2">
         <h2 className="text-[13px] font-semibold text-muted-foreground">Perbandingan channel</h2>
         <div className="overflow-x-auto rounded-xl border bg-card">
-          <table className="w-full min-w-[860px] text-[13px]">
+          <table className="w-full min-w-[760px] text-[13px]">
             <thead className="border-b text-xs text-muted-foreground">
               <tr className="text-left">
                 <th className="px-3 py-2 font-medium">Channel</th>
@@ -233,67 +316,45 @@ function AllChannels({ list }: { list: Channel[] }) {
                 <th className="px-3 py-2 text-right font-medium">Penayangan 28h</th>
                 <th className="px-3 py-2 text-right font-medium">Jam tonton</th>
                 <th className="px-3 py-2 text-right font-medium">Tetap menonton</th>
-                <th className="px-3 py-2 font-medium">Monetisasi</th>
-                <th className="px-3 py-2 font-medium">Sinkron</th>
+                <th className="px-3 py-2 font-medium">Diperbarui</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ a, s, cache }) => {
-                const m = s?.monetization;
-                const pct = m ? Math.min(100, Math.max(m.subscribers / m.subscribersNeeded, m.shortsViews / m.shortsViewsNeeded, m.watchHours / m.watchHoursNeeded) * 100) : null;
-                return (
-                  <tr key={a.id} className="border-b last:border-0 hover:bg-accent/30">
-                    <td className="px-3 py-2">
-                      <Link href={`/youtube-performa?akun=${a.id}`} className="flex items-center gap-2.5">
-                        <AccountAvatar a={a} size="size-8" />
-                        <span className="min-w-0">
-                          <span className="block truncate font-medium">{a.displayName || a.username}</span>
-                          <span className="block truncate text-xs text-muted-foreground">@{a.username}</span>
-                        </span>
-                      </Link>
+              {rows.map(({ a, s, cache }) => (
+                <tr key={a.id} className="border-b last:border-0 hover:bg-accent/30">
+                  <td className="px-3 py-2">
+                    <Link href={`/youtube-performa?akun=${a.id}`} className="flex items-center gap-2.5">
+                      <AccountAvatar a={a} size="size-8" />
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">{name(a)}</span>
+                        <span className="block truncate text-xs text-muted-foreground">@{a.username}</span>
+                      </span>
+                    </Link>
+                  </td>
+                  {s ? (
+                    <>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums">{num.format(s.subscribers)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{s.videos}<span className="ml-1 text-xs text-muted-foreground">({s.shorts} Shorts)</span></td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums">{num.format(s.views28)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{num.format(s.hours28)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{s.stay ?? "—"}</td>
+                    </>
+                  ) : (
+                    <td colSpan={5} className="px-3 py-2 text-xs text-muted-foreground">
+                      {a.status === "active" ? <span className="flex items-center gap-1.5"><Loader2 className="size-3 animate-spin" /> Mengambil data dari Studio...</span> : "Perlu login ulang"}
                     </td>
-                    {s ? (
-                      <>
-                        <td className="px-3 py-2 text-right font-medium tabular-nums">{num.format(s.subscribers)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{s.videos}<span className="ml-1 text-xs text-muted-foreground">({s.shorts} Shorts)</span></td>
-                        <td className="px-3 py-2 text-right font-medium tabular-nums">{num.format(s.views28)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{num.format(s.hours28)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{s.stay ?? "—"}</td>
-                        <td className="px-3 py-2">
-                          {m?.monetized ? (
-                            <span className="rounded-full bg-status-ok/10 px-2 py-0.5 text-[11px] font-medium text-status-ok">Aktif</span>
-                          ) : pct != null ? (
-                            <span className="flex items-center gap-2" title="Syarat terdekat yang paling banyak terpenuhi">
-                              <span className="h-1.5 w-16 overflow-hidden rounded-full bg-muted"><span className="block h-full rounded-full" style={{ width: `${pct}%`, background: RED }} /></span>
-                              <span className="text-xs tabular-nums text-muted-foreground">{pct.toFixed(0)}%</span>
-                            </span>
-                          ) : "—"}
-                        </td>
-                      </>
-                    ) : (
-                      <td colSpan={6} className="px-3 py-2 text-xs text-muted-foreground">
-                        {a.status === "active" ? <span className="flex items-center gap-1.5"><Loader2 className="size-3 animate-spin" /> Mengambil data dari Studio...</span> : "Perlu login ulang"}
-                      </td>
-                    )}
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-muted-foreground">{cache ? timeFmt.format(cache.capturedAt) : "—"}</td>
-                    <td className="px-3 py-2 text-right">
-                      <Link href={`/youtube-performa?akun=${a.id}`} aria-label={`Detail ${a.displayName || a.username}`} className="inline-grid size-7 place-items-center rounded-md hover:bg-accent"><ChevronRight className="size-4" /></Link>
-                    </td>
-                  </tr>
-                );
-              })}
+                  )}
+                  <td className="px-3 py-2 whitespace-nowrap text-xs text-muted-foreground">{cache ? timeFmt.format(cache.capturedAt) : "—"}</td>
+                  <td className="px-3 py-2 text-right">
+                    <Link href={`/youtube-performa?akun=${a.id}`} aria-label={`Detail ${name(a)}`} className="inline-grid size-7 place-items-center rounded-md hover:bg-accent"><ChevronRight className="size-4" /></Link>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       </section>
-
-      {top.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-[13px] font-semibold text-muted-foreground">10 video teratas, semua channel</h2>
-          <VideoTable rows={top} channelOf={(p) => accountOf.get(p.accountId)} />
-        </section>
-      )}
     </div>
   );
 }
@@ -347,12 +408,7 @@ function OneChannel({ c }: { c: Channel }) {
             {views?.series && <DailyBars data={views.series.points.map(([day, n]) => ({ day, n }))} color={RED} unit="views" label="Per hari" period="28 hari" />}
           </Box>
           <div className="grid grid-cols-2 gap-3 md:col-span-2">
-            {kpis.map((k) => (
-              <div key={k.label} className="flex flex-col justify-between gap-2 rounded-xl border bg-card p-4">
-                <span className="flex items-center gap-2 text-xs text-muted-foreground"><k.icon className="size-4" /> {k.label}</span>
-                <span className="text-2xl font-semibold tabular-nums">{metric(k.card)}</span>
-              </div>
-            ))}
+            {kpis.map((k) => <Kpi key={k.label} icon={k.icon} label={k.label} value={metric(k.card)} />)}
           </div>
 
           <Box icon={Repeat} title="Ditonton sampai habis?" hint="Shorts">
@@ -452,9 +508,15 @@ export default async function YouTubePerformaPage({ searchParams }: PageProps<"/
   // channels never synced but still logged in: fetch them now (on screen) instead of waiting for the 3-hour timer
   const missing = (one ? [one] : channels).filter((c) => !c.cache && c.a.status === "active" && c.a.externalId?.startsWith("UC")).map((c) => c.a.id);
 
+  // header line: when the shown data was refreshed (the oldest channel in "Semua channel")
+  const shown = (one ? [one] : channels).map((c) => c.cache?.capturedAt).filter((d): d is Date => !!d);
+  const oldest = shown.length ? new Date(Math.min(...shown.map((d) => d.getTime()))) : null;
+  const updated = oldest
+    ? `Data diperbarui ${timeFmt.format(oldest)} WIB · sinkron otomatis tiap 3 jam`
+    : "Mengambil data pertama dari YouTube Studio...";
   return (
     <>
-      <PageHeader slug="youtube-performa">
+      <PageHeader slug="youtube-performa" desc={updated}>
         {one?.cache && <YouTubeSyncButton accountId={one.a.id} name={one.a.displayName || one.a.username} />}
         <ChannelSelect
           current={one ? one.a.id : "all"}
