@@ -125,6 +125,14 @@ function volumeTrack(v: number) {
   return `linear-gradient(to right, var(--track) ${a}%, var(--primary) ${a}%, var(--primary) ${b}%, var(--track) ${b}%)`;
 }
 const LEAD_MIN = 20; // = SCHEDULE_LEAD_MIN in lib/uploads.ts: closer than this posts right away
+/** Where a job is posted and its publish button, for the queue's tooltips. */
+const SITE: Record<string, { name: string; button: string }> = {
+  tiktok: { name: "TikTok Studio", button: "Post" },
+  youtube: { name: "YouTube Studio", button: "Simpan" },
+  instagram: { name: "Instagram", button: "Bagikan" },
+  facebook: { name: "Facebook", button: "Posting" },
+};
+const siteOf = (p: string) => SITE[p] ?? SITE.tiktok;
 const MAX_AHEAD_DAYS = 9; // = SCHEDULE_MAX_DAYS in lib/uploads.ts (TikTok Studio schedules ~10 days ahead)
 const SCHEDULED = { label: "Terjadwal di TikTok", cls: "bg-status-ok/12 text-status-ok" };
 const STATUS: Record<Job["status"], { label: string; cls: string }> = {
@@ -660,13 +668,13 @@ export function JadwalBoard({
                       {busyId === j.id && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
                       {j.status === "queued" && (
                         <>
-                          <IconBtn title={`Uji coba: buka ${j.videoTitle ? "YouTube" : "TikTok"} Studio, isi semua, TANPA menekan ${j.videoTitle ? "Simpan" : "Post"}`} onClick={() => run(j.id, () => runUploadNow(j.id, true), "Uji coba selesai, tidak diposting")} disabled={pending}><FlaskConical className="size-4" /></IconBtn>
-                          <IconBtn title="Posting sekarang" onClick={async () => (await confirmDialog({ title: "Posting sekarang?", description: `Video “${j.title || "Video"}” (${j.label}) langsung diunggah ke TikTok @${j.username}${j.productId ? " dengan produk keranjang" : ""}. Postingan tidak bisa dibatalkan dari sini.`, confirmLabel: "Posting sekarang" })) && run(j.id, () => runUploadNow(j.id, false), "Video terposting")} disabled={pending}><Send className="size-4" /></IconBtn>
+                          <IconBtn title={`Uji coba: buka ${siteOf(j.platform).name}, isi semua, TANPA menekan ${siteOf(j.platform).button}`} onClick={() => run(j.id, () => runUploadNow(j.id, true), "Uji coba selesai, tidak diposting")} disabled={pending}><FlaskConical className="size-4" /></IconBtn>
+                          <IconBtn title="Posting sekarang" onClick={async () => (await confirmDialog({ title: "Posting sekarang?", description: `Video “${j.title || "Video"}” (${j.label}) langsung diunggah ke ${siteOf(j.platform).name.replace(" Studio", "")} ${j.platform === "youtube" || j.platform === "facebook" ? "" : "@"}${j.username}${j.productId ? " dengan produk keranjang" : ""}. Postingan tidak bisa dibatalkan dari sini.`, confirmLabel: "Posting sekarang" })) && run(j.id, () => runUploadNow(j.id, false), "Video terposting")} disabled={pending}><Send className="size-4" /></IconBtn>
                           <IconBtn title="Batalkan" onClick={() => run(j.id, () => cancelUpload(j.id))} disabled={pending}><X className="size-4" /></IconBtn>
                         </>
                       )}
                       {j.status === "failed" && (
-                        <IconBtn title="Ulangi (masuk antrean sekarang). Cek TikTok Studio dulu kalau upload sempat terputus." onClick={() => run(j.id, () => retryUpload(j.id), "Masuk antrean lagi")} disabled={pending}><RotateCcw className="size-4" /></IconBtn>
+                        <IconBtn title={`Ulangi (masuk antrean lagi). Cek ${siteOf(j.platform).name} dulu kalau upload sempat terputus.`} onClick={() => run(j.id, () => retryUpload(j.id), "Masuk antrean lagi")} disabled={pending}><RotateCcw className="size-4" /></IconBtn>
                       )}
                       {(j.status === "failed" || j.status === "cancelled" || j.status === "done") && (
                         <IconBtn title="Hapus dari daftar" onClick={() => run(j.id, () => deleteUploads([j.id]))} disabled={pending}><Trash2 className="size-4" /></IconBtn>

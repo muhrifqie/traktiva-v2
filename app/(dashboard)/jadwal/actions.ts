@@ -120,7 +120,10 @@ export async function deleteUploads(ids: number[]) {
 }
 
 /** Upload sekarang (posts!) or Uji coba (dryRun: attaches, writes the caption, links the product, but never presses Post). */
+/** Dry-run or post one job now; returns how it really ended (the runner records failures on the job, it doesn't throw). */
 export async function runUploadNow(id: number, dryRun: boolean) {
   await runJobNow(Id.parse(id), z.boolean().parse(dryRun));
   refresh();
+  const j = await db.select({ status: uploadJobs.status, error: uploadJobs.error }).from(uploadJobs).where(eq(uploadJobs.id, id)).get();
+  if (j?.status === "failed") throw new Error(j.error || (dryRun ? "Uji coba gagal." : "Upload gagal."));
 }
