@@ -13,13 +13,12 @@ import { NAV, NAV_GROUPS, PLATFORM_HOME, navBySlug, type NavCounts, type NavItem
 
 type Group = (typeof NAV_GROUPS)[number];
 /**
- * One flat list, no sub-menus: what every seller does first (Beranda, Video Saya, Jadwal Posting), one entry per live
- * platform (its pages are numbered tabs inside it), then "Lainnya"; Pengaturan sits at the bottom next to the user card.
+ * One flat list, no sub-menus: what every seller does first (Beranda, Video Saya, Jadwal Posting, Riset Produk, Galeri), one entry per live
+ * platform (its pages are numbered tabs inside it); Pengaturan sits at the bottom next to the user card.
  */
 const SECTIONS: { label: string | null; groups: Group[] }[] = [
   { label: null, groups: ["Utama"] },
   { label: "Platform", groups: ["Platform"] },
-  { label: "Lainnya", groups: ["Lainnya"] },
   { label: null, groups: ["Pengaturan"] },
 ];
 

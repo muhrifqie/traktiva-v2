@@ -4,14 +4,18 @@ import {
 
 // Single source for sidebar, page headers, command menu and placeholder routes. Add a menu here, then build its page.
 // The sidebar puts what every seller does first: make a video ("Buat video", the big button on top), the videos made
-// and the posting schedule. Then one entry per live platform (TikTok, YouTube), each a place with a few numbered pages
-// (components/platform-tabs.tsx), then "Lainnya". sidebar: false keeps a page out of the list; it stays reachable
+// and the posting schedule, then research and the gallery. Then one entry per live platform (TikTok, YouTube), each a place with a few numbered pages
+// (components/platform-tabs.tsx). Research and the gallery sit right under the schedule. sidebar: false keeps a page out of the list; it stays reachable
 // from its platform's tabs, the command menu and links. A menu without a page folder shows the placeholder page.
 export const NAV = [
   { slug: "beranda", title: "Beranda", icon: LayoutDashboard, group: "Utama", color: "#2fa868", desc: "Yang perlu dikerjakan hari ini: buat video, jadwal posting, dan video terbaru." },
   { slug: "video", title: "Buat Video", icon: Clapperboard, group: "Utama", color: "#f2994a", desc: "Pilih konsep, masukkan produk, AI bikin videonya.", sidebar: false }, // the big button on top
   { slug: "proyek", title: "Video Saya", icon: FolderKanban, group: "Utama", color: "#56ccf2", desc: "Semua video: draf, sedang dibuat, dan yang sudah jadi." },
   { slug: "jadwal", title: "Jadwal Posting", icon: CalendarClock, group: "Utama", color: "#5e6ad2", desc: "Jadwalkan satu video ke beberapa platform sekaligus, dan lihat kalender posting." },
+  { slug: "riset", title: "Riset Produk", icon: TrendingUp, group: "Utama", color: "#26b5ce", desc: "Produk & video terlaris TikTok Shop dan Shopee dari KaloData, plus produk tersimpan." },
+  { slug: "galeri", title: "Galeri", icon: Images, group: "Utama", color: "#f2c94c", desc: "Foto unggahan, gambar AI, dan video jadi di satu tempat, siap dipakai ulang." },
+  { slug: "galeri-video", title: "Galeri Video", icon: Film, group: "Utama", color: "#4ea7fc", desc: "Semua video siap unggah dan riwayatnya.", sidebar: false }, // a tab of Galeri
+  { slug: "gambar-ai", title: "Buat Gambar AI", icon: ImagePlus, group: "Utama", color: "#e535ab", desc: "Bikin gambar produk dan konten dari prompt.", sidebar: false }, // ponytail: not built; AI images live in Galeri → Hasil AI
 
   // TikTok: the account cards; each account has 1 Profil, 2 Etalase
   { slug: "tiktok-shop", title: "Akun TikTok", short: "TikTok", icon: LayoutDashboard, group: "Platform", platform: "tiktok", color: "#ff3b6b", desc: "Akun TikTok yang sudah login. Klik akun untuk melihat profil dan etalasenya." },
@@ -28,15 +32,11 @@ export const NAV = [
   { slug: "instagram", title: "Instagram", icon: Store, group: "Platform", platform: "instagram", status: "Segera", color: "#ff2d7a", desc: "Upload Reels ke akun Instagram Business/Creator dari video yang sama. Sedang dikerjakan." },
   { slug: "facebook", title: "Facebook", icon: Store, group: "Platform", platform: "facebook", status: "Segera", color: "#3b82f6", desc: "Upload Reels ke Facebook Page dari video yang sama. Sedang dikerjakan." },
 
-  { slug: "riset", title: "Riset Produk", icon: TrendingUp, group: "Lainnya", color: "#26b5ce", desc: "Produk & video terlaris TikTok Shop dan Shopee dari KaloData, plus produk tersimpan." },
-  { slug: "galeri", title: "Galeri", icon: Images, group: "Lainnya", color: "#f2c94c", desc: "Foto unggahan, gambar AI, dan video jadi di satu tempat, siap dipakai ulang." },
-  { slug: "galeri-video", title: "Galeri Video", icon: Film, group: "Lainnya", color: "#4ea7fc", desc: "Semua video siap unggah dan riwayatnya.", sidebar: false }, // a tab of Galeri
-  { slug: "gambar-ai", title: "Buat Gambar AI", icon: ImagePlus, group: "Lainnya", color: "#e535ab", desc: "Bikin gambar produk dan konten dari prompt.", sidebar: false }, // ponytail: not built; AI images live in Galeri → Hasil AI
 
   { slug: "pengaturan", title: "Pengaturan", icon: Settings, group: "Pengaturan", color: "#8b7cf6", desc: "Lisensi, akun Google, aturan naskah, suara, dan mesin AI." },
 ] as const;
 
-export const NAV_GROUPS = ["Utama", "Platform", "Lainnya", "Pengaturan"] as const;
+export const NAV_GROUPS = ["Utama", "Platform", "Pengaturan"] as const;
 
 export type NavItem = (typeof NAV)[number];
 export type NavCounts = Partial<Record<string, number>>;
