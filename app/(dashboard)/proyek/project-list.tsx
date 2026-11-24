@@ -28,10 +28,12 @@ export type ProjectView = {
   final: string | null;
   updated: string;
   progress: string | null;
+  /** versions B–E made together with this project ("Jumlah video" > 1), shown inside this card */
+  versions?: { id: number; status: ProjectView["status"]; cover: string | null; final: string | null }[];
 };
 
 const STATUS = {
-  draft: { icon: Clock, label: (s: number) => `Draf · ${s <= 3 ? "Siapkan" : s <= 5 ? "Adegan" : "Hasil"}`, cls: "text-muted-foreground" },
+  draft: { icon: Clock, label: (s: number) => `Draf · ${s <= 3 ? "Persiapan" : s <= 5 ? "Proses render" : "Hasil"}`, cls: "text-muted-foreground" },
   running: { icon: Loader2, label: () => "Sedang dibuat", cls: "text-status-progress" },
   done: { icon: CheckCircle2, label: () => "Video jadi", cls: "text-status-ok" },
   failed: { icon: CircleAlert, label: () => "Perlu dicek", cls: "text-destructive" },
@@ -79,8 +81,12 @@ export function ProjectList({ projects, archive = false }: { projects: ProjectVi
     return k ? projects.filter((p) => `${p.name} ${p.product} ${p.preset}`.toLowerCase().includes(k)) : projects;
   }, [projects, q]);
   const allShown = shown.length > 0 && shown.every((p) => sel.has(p.id));
-  const ids = [...sel].filter((id) => projects.some((p) => p.id === id));
-  const runningSel = projects.filter((p) => sel.has(p.id) && p.status === "running").length;
+  // a selected group card stands for its main project and all its versions
+  const ids = [...sel].flatMap((id) => {
+    const p = projects.find((x) => x.id === id);
+    return p ? [p.id, ...(p.versions ?? []).map((v) => v.id)] : [];
+  });
+  const runningSel = projects.filter((p) => sel.has(p.id)).flatMap((p) => [p.status, ...(p.versions ?? []).map((v) => v.status)]).filter((s) => s === "running").length;
 
   useEffect(() => {
     if (!picking) return;
@@ -157,7 +163,17 @@ export function ProjectList({ projects, archive = false }: { projects: ProjectVi
                   {on ? <Check className="size-4" /> : <Square className="size-4" />}
                 </button>
                 <Link href={`/video/${p.id}`} onClick={onCard} className="relative grid aspect-[9/14] place-items-center overflow-hidden bg-muted" aria-label={`Buka ${p.name} di Studio`}>
-                  {p.final ? (
+                  {p.versions?.length ? (
+                    // several videos of one product: a mosaic of their covers (A, B, C, D...)
+                    <span className="grid size-full grid-cols-2 gap-px bg-border">
+                      {[{ id: p.id, cover: p.cover, final: p.final }, ...p.versions].slice(0, 6).map((v, i) => (
+                        <span key={v.id} className="relative block overflow-hidden bg-muted">
+                          {v.final ? <video src={`${mediaUrl(v.final)}#t=0.5`} muted preload="metadata" className="size-full object-cover" /> : v.cover ? <img src={mediaUrl(v.cover)} alt="" className="size-full object-cover" /> : null}
+                          <span className="absolute top-1 right-1 rounded bg-black/60 px-1 text-[9px] font-semibold text-white">{String.fromCharCode(65 + i)}</span>
+                        </span>
+                      ))}
+                    </span>
+                  ) : p.final ? (
                     <video src={`${mediaUrl(p.final)}#t=0.5`} muted preload="metadata" className="size-full object-cover" />
                   ) : p.cover ? (
                     <img src={mediaUrl(p.cover)} alt="" className="size-full object-cover transition-transform duration-500 group-hover:scale-105" />
@@ -168,6 +184,11 @@ export function ProjectList({ projects, archive = false }: { projects: ProjectVi
                     <s.icon className={`size-3 ${busy ? "animate-spin" : ""}`} />
                     {s.label(p.step)}
                   </span>
+                  {p.versions?.length ? (
+                    <span className="absolute right-2 bottom-2 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                      {p.versions.length + 1} video{p.status !== "done" ? ` · ${[p.final, ...p.versions.map((v) => v.final)].filter(Boolean).length} jadi` : ""}
+                    </span>
+                  ) : null}
                 </Link>
 
                 <DropdownMenu>
@@ -186,10 +207,12 @@ export function ProjectList({ projects, archive = false }: { projects: ProjectVi
                     <DropdownMenuItem
                       variant="destructive"
                       disabled={busy}
-                      onClick={async () =>
-                        (await confirmDialog({ title: `Hapus "${p.name}"?`, description: "Folder gambar dan video proyek ini di perangkat ikut dihapus. Tidak bisa dibatalkan.", danger: true })) &&
-                        act(() => deleteProject(p.id, true), "Proyek dihapus")
-                      }
+                      onClick={async () => {
+                        const n = (p.versions?.length ?? 0) + 1;
+                        const title = n > 1 ? `Hapus "${p.name}" (${n} video)?` : `Hapus "${p.name}"?`;
+                        if (!(await confirmDialog({ title, description: "Folder gambar dan video di perangkat ikut dihapus. Tidak bisa dibatalkan.", danger: true }))) return;
+                        act(() => (n > 1 ? deleteProjects([p.id, ...(p.versions ?? []).map((v) => v.id)]) : deleteProject(p.id, true)), "Proyek dihapus");
+                      }}
                     >
                       <Trash2 className="size-4" /> Hapus
                     </DropdownMenuItem>
@@ -198,7 +221,7 @@ export function ProjectList({ projects, archive = false }: { projects: ProjectVi
 
                 <Link href={`/video/${p.id}`} onClick={onCard} className="space-y-0.5 p-2.5">
                   <p className="truncate text-xs font-medium">{p.name}</p>
-                  <p className="truncate text-[11px] text-muted-foreground">{p.preset} · {p.scenes} adegan</p>
+                  <p className="truncate text-[11px] text-muted-foreground">{p.preset} · {p.versions?.length ? `${p.versions.length + 1} video` : `${p.scenes} scene`}</p>
                   <p className={`truncate text-[11px] ${s.cls}`}>{p.progress ?? p.updated}</p>
                 </Link>
               </article>
@@ -275,7 +298,7 @@ export function NewProjectButton({ label = "Proyek baru" }: { label?: string }) 
             >
               <span className="grid size-9 place-items-center rounded-lg bg-muted text-black dark:text-white">{pending ? <Loader2 className="size-4.5 animate-spin" /> : <PenLine className="size-4.5" />}</span>
               <span className="text-[13px] font-semibold">Racikan sendiri</span>
-              <span className="text-xs text-muted-foreground">Tulis prompt sendiri, pakai gambarmu sendiri, atur adegan bebas.</span>
+              <span className="text-xs text-muted-foreground">Tulis prompt sendiri, pakai gambarmu sendiri, atur scene bebas.</span>
             </button>
           </div>
         </DialogContent>

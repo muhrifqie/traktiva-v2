@@ -8,13 +8,14 @@ import { askGemini, extractJson, type GeminiImage } from "@/lib/platforms/gemini
 import { askWriter } from "@/lib/writer";
 import { writingRules } from "@/lib/settings";
 import { applyRules, rulesPrompt } from "@/lib/writing";
+import { splitScript, withVoiceLine } from "@/lib/voice";
 import { provenHooksPrompt } from "@/lib/insights";
-import { BACKDROPS, EXPLAIN, isSilent, presetById } from "@/lib/presets";
+import { BACKDROPS, castOf, directionOf, EXPLAIN, isSilent, presetById } from "@/lib/presets";
 
 /** The SET line of the writer brief: the chosen backdrop, or a pick-one list when it is "auto". */
 const setLine = (bg?: string) =>
   bg && bg !== "auto"
-    ? `- Use exactly this set: ${bg}.`
+    ? `- Use exactly this set (may be written in Indonesian by the owner; describe it in English in the prompts): ${bg}.`
     : `- Pick ONE set that suits this product and its buyers, then keep it for all scenes:\n${BACKDROPS.slice(1, 10).map((b) => `  • ${b.value}`).join("\n")}`;
 import { CAPTION_ANIMS, CAPTION_FONTS, CAPTION_PRESETS, clamp, type CaptionStyle } from "@/lib/edit";
 
@@ -85,14 +86,15 @@ ${p.product.look ? `- LOOK (read from the product photos; follow it exactly, it 
 - The product photos are given to the image model as references, so always say the product must look exactly like the reference photos (shape, color, logo, packaging).
 
 VIDEO CONCEPT: ${preset?.title ?? p.presetId} — ${preset?.summary ?? ""}
-${p.options.concept ? `OWNER'S OWN CONCEPT "${p.options.conceptName ?? ""}" (written by the seller in Indonesian; it decides the story, shots and mood, follow it closely): ${p.options.concept}\n` : ""}Audience: Indonesian TikTok shoppers. Final video = all scenes joined in order.
+${directionOf(p) ? `CONCEPT DIRECTION (follow it; where it differs from the generic rules below, this wins): ${directionOf(p)}\n` : ""}${castOf(p) && p.options.face ? `CHARACTER FACE: a face photo of the character is given to the image model as the FIRST reference image. Every imagePrompt must say the ${castOf(p)} is exactly the person in the face reference (same face, facial features and skin tone) and keep the face clearly visible; the other reference images are the product.\n` : ""}${p.options.concept ? `OWNER'S OWN CONCEPT "${p.options.conceptName ?? ""}" (written by the seller in Indonesian; it decides the story, shots and mood, follow it closely): ${p.options.concept}\n` : ""}Audience: Indonesian TikTok shoppers. Final video = all scenes joined in order.
 ${longBrief(p)}${p.scenes.length === 1 ? `ONE-CLIP VIDEO (${p.clipSec} s, this single clip IS the whole final video): the product is visible from frame 0; in ${p.clipSec} seconds show the hook, one strong benefit in use, and end on the spoken CTA. Max ${Math.round(p.clipSec * 2.5)} spoken words.` : ""}
+${!p.options.vo && p.options.voStyle ? `VOICE-OVER STYLE chosen by the owner: ${({ hard: "hard selling (direct, urgent, push to buy now)", soft: "soft selling (relaxed personal experience, gentle invitation)", story: "storytelling (short before/after story)", problem: "problem → solution", review: "honest review after using it", edu: "educational tips, the product as the example" } as Record<string, string>)[p.options.voStyle] ?? p.options.voStyle}.\n` : ""}${p.options.vo ? `OWNER'S VOICE-OVER SCRIPT (the seller wrote exactly what is said; use these words as the spoken lines, split across the scenes in order (scene 1 gets the first part, and so on, about the same number of words each) and each scene's motion matching its words; do not add, drop or reword anything, only write numbers as digits): "${p.options.vo.replace(/"/g, "'")}"` : ""}
 ${p.options.angle ? `STORY ANGLE of this version (other versions of this product use other angles, so this one must feel clearly different): ${p.options.angle}` : ""}
 ${p.options.refCaption ? `Caption of the best-selling reference video (match its vibe, never copy it word for word): "${p.options.refCaption}"` : ""}
 Scenes marked hasStyleReference have a frame from a best-selling video attached: the shot should borrow that frame's camera angle and framing (the SET below still decides the background).
 
 SET (tidy "aesthetic product background" like affiliate product shots on Pinterest/TikTok Shop; the SAME set in every scene so the joined video looks like one shoot):
-${setLine(p.options.background)}
+${p.options.bgImage ? "- The owner gave a PHOTO of the set; it is attached to the image model as a reference. Every imagePrompt says the scene takes place in exactly that setting (same place, surfaces, colours and light, described briefly); never invent another set." : setLine(p.options.background)}
 - The product is the hero: in the foreground, sharp, centered or on the rule of thirds, standing neatly on the surface; nothing overlaps it.
 - At most 1–3 soft props behind it, slightly out of focus, colors that match the product; no clutter, no other branded products, no price tags, no text.
 - Clean, styled, calm: soft natural or warm lamp light, gentle shadows, tidy edges; hands (if any) with neat nails and simple sleeves.
@@ -121,8 +123,8 @@ MOTION CONTINUITY (the #1 giveaway of AI video):
 - The product keeps the exact same shape, size, color, logo and number of parts for the whole clip: no morphing, melting, flickering, duplicating, or objects appearing/disappearing. Background, lighting and shadows stay consistent.
 - Hands: anatomically correct, five fingers, a natural grip with believable contact and weight; fingers never pass through the product.
 - Camera: handheld phone with very light natural sway only, or a slow push-in. No spinning, no fast pans, no sudden speed changes.
-- People: prefer hands-only or face partly out of frame; if a face is visible it stays the same person with natural, small expressions.
-- ${silent ? "End with: no speech, no music, soft natural ambient sound only." : `Voice line in casual everyday Indonesian (light Jakarta slang is fine, like talking to a friend), spoken from the very first second at a brisk natural pace of about 2.5 words per second (max ${Math.round(p.clipSec * 2.5)} words, must fit inside the clip), written as: Voice says: "..." — lip movement only if a mouth is visible.`}
+- People: ${castOf(p) ? `the same ${castOf(p)} in every scene with the face clearly visible; identity, hair, makeup and outfit stay consistent, expressions change naturally and smoothly.` : p.options.cast === "none" ? "no people at all, product-only shots." : p.options.cast ? "follow the CONCEPT DIRECTION above for who is on screen and how they are framed." : "prefer hands-only or face partly out of frame; if a face is visible it stays the same person with natural, small expressions."}
+- ${silent ? "End with: no speech, no music, soft natural ambient sound only." : `Voice line in casual everyday Indonesian (light Jakarta slang is fine, like talking to a friend), spoken from the very first second at a brisk natural pace of about 2.5 words per second (max ${Math.round(p.clipSec * 2.5)} words, must fit inside the clip), written as: Voice says: "..." — lip movement only if a mouth is visible. Numbers and prices in the voice line are written with DIGITS copied exactly from the product data (e.g. "Rp179.000", "4,8", "3.915 terjual"), never spelled out in words; the app turns them into correct spoken Indonesian.`}
 
 STORY
 - Keep the scene "label" short (1–3 words, Indonesian).
@@ -234,18 +236,23 @@ ${proven}`)).text);
   if (!Array.isArray(list) || list.length < want) throw new Error("Jawaban Gemini tidak lengkap. Coba lagi.");
   const clean = (list: WrittenScene[]) =>
     list.slice(0, want).map((s, i) => ({
-      label: String(s.label || p.scenes[only ?? i]?.label || `Adegan ${i + 1}`).slice(0, 60),
+      label: String(s.label || p.scenes[only ?? i]?.label || `Scene ${i + 1}`).slice(0, 60),
       imagePrompt: fixLogoWording(String(s.imagePrompt ?? "")).slice(0, 2000),
       motionPrompt: applyRules(fixLogoWording(String(s.motionPrompt ?? "")), writingRules()).slice(0, 2000),
     }));
   let out = clean(list);
   // Gemini sometimes answers too briefly: ask once more, insisting on the length
-  if (out.some((s) => words(s.motionPrompt) < 40 || words(s.imagePrompt) < 60)) {
+  if (out.some((s) => words(s.motionPrompt) < 25 || words(s.imagePrompt) < 40)) {
     const { text: retry } = await askWriter(g.sessionKey, `${brief(p, only)}
 
 Your previous answer was too short. Every imagePrompt must be at least 90 words and every motionPrompt at least 50 words. Output ONLY the JSON.`);
     const again = clean(extractJson<WrittenScene[]>(retry));
     if (again.length >= want) out = again;
+  }
+  // the owner's own script is spoken word for word: each scene gets its part (the writer only plans the shots around it)
+  if (p.options.vo?.trim() && !isSilent(p.presetId, p.options)) {
+    const parts = splitScript(applyRules(p.options.vo, writingRules()), p.scenes.length);
+    out = out.map((s, i) => (parts[only ?? i] ? { ...s, motionPrompt: withVoiceLine(s.motionPrompt, parts[only ?? i]) } : s));
   }
   return out;
 }
@@ -295,4 +302,42 @@ If there is no on-screen text, set found false and still suggest a look that fit
   if (!style.preset && !style.font) throw new Error("Gemini tidak memberi gaya yang bisa dipakai. Coba lagi.");
   const note = String(j.note ?? "").trim().slice(0, 200);
   return { style, note: j.found === false ? `Video referensi tanpa teks; gaya dipilih dari suasananya. ${note}` : note || "Gaya teks disalin dari video laris." };
+}
+
+
+/**
+ * "Tulis pakai AI" in the Studio's voice-over box: a fresh script in the chosen selling style, about the product's
+ * real details, sized to the video (~2.6 words/s). Written by the owner's own writer account (Gemini web with the
+ * Google account already used for Flow, or ChatGPT when set), so it costs the user nothing. `avoid` = the script now
+ * in the box: the new one must open differently.
+ */
+export async function writeVoScript(p: VideoProject, style: { label: string; ai: string }, seconds: number, avoid = "") {
+  const g = await geminiAccount();
+  const target = Math.max(22, Math.round(seconds * 2.6));
+  const prompt = `Write ONE Indonesian voice-over script for a ${Math.round(seconds)}-second vertical TikTok affiliate video, read by one person without pauses.
+Selling style: ${style.ai}.
+Product: ${p.product.name}. Price: ${p.product.price || "-"}.
+Details and selling points (use the most convincing 1-2, concretely, instead of generic praise like "kualitasnya bagus"): ${(p.product.details || "-").slice(0, 700)}
+${p.product.look ? `What it looks like: ${p.product.look.slice(0, 300)}` : ""}
+Rules:
+- About ${target} words and 170-230 characters (never under 160). Casual everyday Indonesian, light Jakarta slang, like talking to a friend.
+- First sentence = a hook that fits the style. Say the product's short spoken name (not the long listing title).
+- Only claim features that are in the details or the name. Never invent specs (battery, USB, size, material, ingredients); with few details, talk about the experience and use instead.
+- End with the spoken call to action from the owner's rules below. No invented discounts, stock limits, medical or absolute claims ("dijamin", "100%", "pasti", "paling"); no "stok terbatas"/"sebelum habis".
+- Write numbers with digits: prices "Rp34.900", ratings "4,8", "5.000+ terjual". Use the product price exactly as given, or no price if there is none.
+${avoid ? `- It must open and flow differently from this earlier script: "${avoid.replace(/"/g, "'").slice(0, 400)}"` : ""}
+${rulesPrompt(writingRules())}
+${await provenHooksPrompt()}
+Output ONLY JSON: {"script":"..."}`;
+  const clean = (t: string) => applyRules(String(extractJson<{ script?: string }>(t)?.script ?? "").replace(/\s+/g, " ").replace(/^["“]|["”]$/g, "").trim(), writingRules());
+  let script = clean((await askWriter(g.sessionKey, prompt)).text);
+  // the Studio needs at least 150 characters (VO_MIN_CHARS): one more try asking for a longer one
+  if (script.length >= 60 && script.length < 160) {
+    const longer = clean((await askWriter(g.sessionKey, `${prompt}
+
+Your last script was too short (${script.length} characters): "${script.replace(/"/g, "'")}". Write it again with one more concrete benefit, 170-230 characters.`)).text);
+    if (longer.length > script.length) script = longer;
+  }
+  if (script.length < 60) throw new Error("Naskah dari AI kosong. Coba lagi.");
+  return script.slice(0, 1000);
 }

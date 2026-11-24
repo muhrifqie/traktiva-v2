@@ -8,7 +8,7 @@ import type { VideoProject } from "@/lib/db/schema";
 import { mediaUrl } from "@/lib/media-url";
 import { renderOverlays } from "@/lib/render-overlays";
 import { openProjectFolder } from "../project-actions";
-import { exportQuick, prepareQuickEdit } from "./quick-actions";
+import { exportQuick, prepareQuickEdit, releaseQuickExport } from "./quick-actions";
 
 type Project = Omit<VideoProject, "updatedAt"> & { updatedAt: number };
 
@@ -18,44 +18,96 @@ const STAGES = ["Menyusun suara & caption", "Menggambar caption", "Membuat video
  * Result tab of a Video Pendek: no timeline editor. The ready-to-post version is prepared and exported on its own,
  * then shown with download / folder / schedule. "Edit di timeline" stays available for manual tweaks.
  */
-export function QuickResult({ p, onEdit }: { p: Project; onEdit: () => void }) {
+export function QuickResult({ p, onEdit, label, href }: { p: Project; onEdit?: () => void; label?: string; href?: string }) {
   const router = useRouter();
   const exported = !!(p.finalPath && p.edit?.exportedAt);
   const [stage, setStage] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const started = useRef<number | null>(null);
-  const waiting = useRef<ReturnType<typeof setInterval> | null>(null);
-  // stop polling once the other run finished (or when leaving the tab)
-  useEffect(() => () => void (waiting.current && clearInterval(waiting.current)), []);
+  // this page's claim on the export lock: "Coba lagi" here takes it again, another tab/window waits for it
+  const [owner] = useState(() => crypto.randomUUID());
+  const waiting = useRef<{ poll: ReturnType<typeof setInterval>; retry: ReturnType<typeof setTimeout> } | null>(null);
+  const stopWaiting = () => {
+    if (!waiting.current) return;
+    clearInterval(waiting.current.poll);
+    clearTimeout(waiting.current.retry);
+    waiting.current = null;
+  };
+  // stop waiting once the other run finished (or when leaving the tab)
+  useEffect(() => () => stopWaiting(), []);
   useEffect(() => {
-    if (exported && waiting.current) clearInterval(waiting.current);
+    if (exported) stopWaiting();
   }, [exported]);
 
   useEffect(() => {
     if (exported || started.current === attempt) return; // dev StrictMode mounts twice: one export per attempt
     started.current = attempt;
     void (async () => {
+      let mine = false; // this page holds the lock (prepare went through)
       try {
-        const r = await prepareQuickEdit(p.id);
+        const r = await prepareQuickEdit(p.id, owner);
         if (r.busy) {
-          // another tab/window (or "Buat video sekarang") is making this video: wait for it, never export twice
+          // another tab/window (or "Buat video sekarang") is making this video: wait for it, never export twice.
+          // If that page was closed halfway its lock runs out: ask again then instead of waiting forever.
           setStage(2);
-          const timer = setInterval(() => router.refresh(), 4000);
-          waiting.current = timer;
+          stopWaiting();
+          waiting.current = {
+            poll: setInterval(() => router.refresh(), 4000),
+            retry: setTimeout(() => {
+              stopWaiting();
+              setAttempt((n) => n + 1);
+            }, Math.max(2000, r.retryAt - Date.now() + 500)),
+          };
           return;
         }
+        mine = true;
         const edit = r.edit;
         setStage(1);
         const overlays = await renderOverlays(edit);
         setStage(2);
-        await exportQuick(p.id, overlays);
+        await exportQuick(p.id, overlays, owner);
         router.refresh();
       } catch (e) {
+        if (mine) void releaseQuickExport(p.id, owner).catch(() => {}); // free the project for "Coba lagi" / other tabs
         setError(e instanceof Error ? e.message : "Gagal membuat video final");
       }
     })();
-  }, [exported, attempt, p.id, router]);
+  }, [exported, attempt, p.id, router, owner]);
+
+  // one of several versions on the Hasil tab: a small card (video, buttons, short caption)
+  if (label) {
+    const ready = exported ? `${mediaUrl(p.finalPath!)}?v=${p.edit!.exportedAt}` : null;
+    return (
+      <section className="flex h-full flex-col gap-2.5 rounded-xl border bg-card p-3">
+        <div className="flex items-center gap-1.5">
+          <p className="text-[13px] font-semibold">{label}</p>
+          {ready ? <Check className="size-3.5 text-status-ok" /> : error ? <CircleAlert className="size-3.5 text-destructive" /> : <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+          {href && <Link href={href} className="ml-auto text-[11px] text-brand-light hover:underline">Buka</Link>}
+        </div>
+        {ready ? (
+          <video src={ready} controls playsInline preload="metadata" className="aspect-[9/16] w-full rounded-lg bg-black object-contain" />
+        ) : (
+          <div className="grid aspect-[9/16] w-full place-items-center rounded-lg border bg-muted/40 px-3 text-center text-[11px] text-muted-foreground">
+            {error ? (
+              <span className="space-y-2">
+                <span className="block">{error}</span>
+                <button type="button" onClick={() => (setError(null), setStage(0), setAttempt((n) => n + 1))} className="mx-auto flex h-7 items-center gap-1 rounded-md bg-primary px-2.5 text-[11px] font-medium text-primary-foreground"><RotateCw className="size-3.5" /> Coba lagi</button>
+              </span>
+            ) : `${STAGES[stage]}...`}
+          </div>
+        )}
+        {ready && (
+          <div className="grid grid-cols-3 gap-1.5">
+            <a href={ready} download={`${(p.title || p.product.name || "video").slice(0, 50)} ${label}.mp4`} title="Unduh" className="flex h-8 items-center justify-center gap-1 rounded-lg bg-primary text-[11px] font-medium text-primary-foreground hover:bg-primary/90"><Download className="size-3.5" /> Unduh</a>
+            <Link href="/jadwal" title="Jadwalkan upload" className="flex h-8 items-center justify-center gap-1 rounded-lg border text-[11px] font-medium hover:bg-accent"><CalendarClock className="size-3.5" /> Jadwal</Link>
+            <button type="button" title="Buka folder" onClick={() => void openProjectFolder(p.id)} className="flex h-8 items-center justify-center gap-1 rounded-lg border text-[11px] font-medium hover:bg-accent"><FolderOpen className="size-3.5" /> Folder</button>
+          </div>
+        )}
+        {p.caption && <p title={p.caption} className="line-clamp-3 text-[11px] text-muted-foreground">{p.caption}</p>}
+      </section>
+    );
+  }
 
   if (!exported) {
     return (
@@ -81,9 +133,11 @@ export function QuickResult({ p, onEdit }: { p: Project; onEdit: () => void }) {
               <RotateCw className="size-4" /> Coba lagi
             </button>
           )}
-          <button type="button" onClick={onEdit} className="flex h-9 items-center gap-1.5 rounded-lg border px-3.5 text-[13px] font-medium hover:bg-accent">
-            <PencilRuler className="size-4" /> Edit di timeline
-          </button>
+          {onEdit && (
+            <button type="button" onClick={onEdit} className="flex h-9 items-center gap-1.5 rounded-lg border px-3.5 text-[13px] font-medium hover:bg-accent">
+              <PencilRuler className="size-4" /> Edit di timeline
+            </button>
+          )}
         </div>
       </section>
     );
@@ -115,9 +169,11 @@ export function QuickResult({ p, onEdit }: { p: Project; onEdit: () => void }) {
             <p className="whitespace-pre-line rounded-lg border bg-background p-3 text-xs text-muted-foreground">{p.caption}</p>
           </div>
         )}
-        <button type="button" onClick={onEdit} className="mt-auto flex w-fit items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-          <PencilRuler className="size-3.5" /> Mau ubah caption atau suara? Edit di timeline
-        </button>
+        {onEdit && (
+          <button type="button" onClick={onEdit} className="mt-auto flex w-fit items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+            <PencilRuler className="size-3.5" /> Mau ubah caption atau suara? Edit di timeline
+          </button>
+        )}
       </div>
     </section>
   );

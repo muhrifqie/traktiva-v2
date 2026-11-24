@@ -5,17 +5,19 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowDown, ArrowLeft, ArrowUp, Check, CheckCircle2, CircleAlert, Crown, Film, Flame, Image as ImageIcon, Link2, ListChecks, Maximize2, Mic, Clapperboard, Clock, FolderOpen, ImagePlus, Images, Library, Loader2, Minus, PenLine, Plus, Save, SlidersHorizontal, Sparkles, Timer, Trash2, Upload, UserRound, Wand2, X, Zap, AlignLeft, BookOpen, LayoutGrid, MonitorPlay, Move, Package, ScanEye, Smartphone, Tag, Trophy, VolumeX, Wallet, Database, Store, ClipboardPaste, Layers, FileText, PackageOpen, Rocket, Scale, Search, TrendingUp,
+  ArrowDown, ArrowLeft, Copy, Lock, ArrowUp, Check, CheckCircle2, CircleAlert, Crown, Film, Flame, Image as ImageIcon, Link2, ListChecks, Maximize2, Mic, Clapperboard, Clock, FolderOpen, ImagePlus, Images, Library, Loader2, Minus, PenLine, Plus, Save, SlidersHorizontal, Sparkles, Timer, Trash2, Upload, UserRound, Wand2, X, Zap, AlignLeft, BookOpen, LayoutGrid, MonitorPlay, Move, Package, ScanEye, Smartphone, Tag, Trophy, VolumeX, Wallet, Database, Store, ClipboardPaste, Layers, PackageOpen, Rocket, Scale, Search, TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import { confirmDialog } from "@/components/confirm-dialog";
 import type { VideoProject } from "@/lib/db/schema";
 import { mediaUrl } from "@/lib/media-url";
-import { CLIP_SECS, EXPLAIN, type ExplainKey, isSilent, PRESETS, PRO_CLIP_SEC, presetById, projectName, suggestFromRef, VERSIONS } from "@/lib/presets";
+import { splitHook, versionHook, VO_MIN_CHARS, VO_STYLES, voTemplate } from "@/lib/vo-templates";
+import { applyRules } from "@/lib/writing";
+import { castOf, CLIP_SECS, EXPLAIN, type ExplainKey, isLocked, isSilent, isVeo, PRO_CLIP_SEC, presetById, projectName, suggestFromRef, VEO_CLIP_SEC, VERSIONS, VIDEO_MODELS } from "@/lib/presets";
 import {
-  addScene, aiOutline, aiWriteScenes, applyShowcaseProduct, etalasePhotos, listEtalase, buildStoryboard, makeVersions, previewScript, quickMake, setSceneLine, deleteProject, generateImages, moveScene, openProjectFolder, pickFromLibrary, removePhoto, removeScene,
+  addScene, aiOutline, aiWriteScenes, applyShowcaseProduct, etalasePhotos, listEtalase, buildStoryboard, makeVersions, quickMake, saveAsDraft, aiVoScript, setSceneLine, deleteProject, generateImages, moveScene, openProjectFolder, pickFromLibrary, removePhoto, removeScene,
   renameProject, renderProject, saveProject, uploadPhotos, uploadSceneImage,
-  applyProductPhoto,
+  applyProductPhoto, cancelProject, duplicateProject, removeBackground, removeFace, uploadBackground, uploadFace,
 } from "../project-actions";
 import { LibraryPicker } from "@/components/library-picker";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -31,15 +33,17 @@ type Project = Omit<VideoProject, "updatedAt"> & { updatedAt: number };
 type Icon = React.ComponentType<{ className?: string }>;
 // 3 steps on screen; the DB keeps the old 1–6 numbers (runners write 4/5/6), mapped here
 const STEPS: { label: string; icon: Icon }[] = [
-  { label: "Siapkan", icon: Package },
-  { label: "Adegan", icon: LayoutGrid },
+  { label: "Persiapan", icon: Package },
+  { label: "Proses render", icon: LayoutGrid },
   { label: "Hasil", icon: Film },
 ];
 const viewOf = (dbStep: number) => (dbStep <= 3 ? 1 : dbStep <= 5 ? 2 : 3);
 const DB_STEP = [0, 1, 4, 6];
 // Flow (Omni 1.2 Flash) video resolutions; 720p is the default (exported at 1080p either way)
+// 360p works through the "-360p" model alias of our flow2api patch (sidecar/flow2api/patches)
+const SHOW_RESOLUTION = true;
 const RESOLUTIONS = [
-  { id: "360p", label: "360p", hint: "Lebih ringan, hasil di TikTok kurang tajam" },
+  { id: "360p", label: "360p", hint: "½ kredit Flow, hasil di TikTok kurang tajam" },
   { id: "720p", label: "720p", hint: "Disarankan · di-export 1080p, tajam di TikTok" },
 ] as const;
 // Gaya → "Video Pendek" / "Video Panjang": each tab has its own quick picks, scene range and clip lengths
@@ -64,7 +68,6 @@ const EXPLAIN_ICONS: Record<ExplainKey, Icon> = { tutorial: BookOpen, compare: S
 const FIELD_ICONS: Record<string, React.ComponentType<{ className?: string }>> = { background: ImageIcon, model: UserRound, voice: Mic };
 const chip = (on: boolean) =>
   `flex h-8 items-center justify-center rounded-md text-xs font-medium transition-colors ${on ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:bg-background hover:text-foreground"}`;
-const pick = (on: boolean) => `relative rounded-lg border p-2.5 text-left transition-colors ${on ? "border-primary bg-primary/10 ring-1 ring-primary/40" : "bg-background hover:border-foreground/20 hover:bg-accent"}`;
 /** Section heading used in every Studio step: icon tile, optional number, title, hint on the right. */
 function SectionTitle({ n, icon: Icon, title, hint }: { n?: number; icon: Icon; title: string; hint?: React.ReactNode }) {
   return (
@@ -109,16 +112,20 @@ const btn = "flex h-9 items-center justify-center gap-1.5 rounded-lg px-3.5 text
 const primary = `${btn} bg-primary text-primary-foreground hover:bg-primary/90`;
 const secondary = `${btn} border bg-background hover:bg-accent`;
 
+/** One version (A–E) of the same product, in full: the Proses render tab shows each one's image and clip together. */
+export type Sibling = { key: string; project: Project; voice: ProjectVoiceState };
+
 export type FamilyItem = { id: number; key: string; status: string; progress: string | null; error: string | null; ready: boolean; images: number; clips: number; scenes: number; cover: string | null };
 
 export function Wizard({
-  project: p, hasGoogle, voice, voices, hasCartesia, family = [],
-}: { project: Project; hasGoogle: boolean; voice: ProjectVoiceState; voices: VoiceOption[]; hasCartesia: boolean; family?: FamilyItem[] }) {
+  project: p, hasGoogle, voice, voices, hasCartesia, family = [], siblings = [],
+}: { project: Project; hasGoogle: boolean; voice: ProjectVoiceState; voices: VoiceOption[]; hasCartesia: boolean; family?: FamilyItem[]; siblings?: Sibling[] }) {
   const voiceLabel = voice.choice === "cartesia" ? `Cartesia · ${voice.voiceName ?? "suara pilihan"}` : voice.choice === "off" ? "tanpa suara" : "Bawaan Flow";
   const router = useRouter();
   const preset = presetById(p.presetId)!;
   const running = p.status === "running";
-  const [step, setStep] = useState(viewOf(p.step));
+  const locked = isLocked(p);
+  const [step, setStep] = useState(locked ? 3 : viewOf(p.step));
   const [busy, start] = useTransition();
 
   // Poll while this video or one of its versions runs; images/clips appear one by one.
@@ -154,12 +161,14 @@ export function Wizard({
   };
 
   const scenesReady = p.scenes.length > 0 && p.scenes.every((s) => s.image);
+  const back = p.options.unsaved === "1" ? { href: "/video", label: "Kembali ke pilihan konsep" } : { href: "/proyek", label: "Kembali ke Proyek Video" };
 
   return (
     <div className="flex flex-1 flex-col gap-5">
       {/* header */}
       <header className="flex flex-wrap items-center gap-3">
-        <Link href="/proyek" className="grid size-9 place-items-center rounded-lg border bg-card hover:bg-accent" aria-label="Kembali ke Proyek"><ArrowLeft className="size-4" /></Link>
+        {/* a project just opened from a concept (not saved yet) goes back to the concepts; a saved one to Proyek Video */}
+        <Link href={back.href} className="grid size-9 place-items-center rounded-lg border bg-card hover:bg-accent" aria-label={back.label} title={back.label}><ArrowLeft className="size-4" /></Link>
         <div className="min-w-0 flex-1">
           <ProjectTitle p={p} act={act} />
           <p className="truncate text-xs text-muted-foreground">Studio · {preset.title}</p>
@@ -174,7 +183,7 @@ export function Wizard({
             if (!(await confirmDialog({ title: "Hapus proyek ini?", description: "Folder gambar dan video proyek ini di perangkat ikut dihapus. Tidak bisa dibatalkan.", danger: true }))) return;
             act(async () => {
               await deleteProject(p.id, true);
-              router.push("/proyek");
+              router.push(back.href);
             });
           }}
         >
@@ -204,8 +213,27 @@ export function Wizard({
         })}
       </nav>
 
+      {locked && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-status-ok/40 bg-status-ok/10 px-4 py-3 text-[13px]">
+          <Lock className="size-4 shrink-0 text-status-ok" />
+          <span className="flex-1">Video sudah jadi, proyek ini dikunci. Persiapan dan Proses render hanya bisa dilihat.</span>
+          <button type="button" disabled={busy} className={secondary} onClick={() => act(async () => router.push(`/video/${await duplicateProject(p.id)}`), "Proyek diduplikat, silakan ubah di salinannya")}>
+            <Copy className="size-4" /> Duplikat untuk diubah
+          </button>
+        </div>
+      )}
+
       {/* run status */}
-      {running && <RunPanel p={p} />}
+      {running && (
+        <RunPanel
+          p={p}
+          versions={siblings.filter((s) => s.project.status === "running").length}
+          onCancel={async () => {
+            if (!(await confirmDialog({ title: "Batalkan proses?", description: "Gambar & klip yang sudah jadi tetap disimpan. Yang sedang dibuat di Flow dihentikan (kreditnya mungkin tetap terpakai), yang masih antre tidak dikirim.", confirmLabel: "Batalkan proses", danger: true }))) return;
+            act(() => cancelProject(p.id), "Proses dibatalkan");
+          }}
+        />
+      )}
       {p.status === "failed" && p.error && (
         <div className="flex items-center gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-[13px]">
           <CircleAlert className="size-4 shrink-0 text-destructive" />
@@ -218,7 +246,8 @@ export function Wizard({
         </Link>
       )}
 
-      <section className="flex-1">
+      {/* locked: steps 1–2 stay visible but every input and button inside is disabled */}
+      <fieldset disabled={locked && step < 3} className="min-w-0 flex-1">
         {step === 1 && (
           <div className="space-y-4">
             <StepProduct key={p.options.showcaseId ?? ""} p={p} act={act} busy={busy} />
@@ -229,7 +258,34 @@ export function Wizard({
         {step === 2 && (
           <div className="space-y-4">
             {family.length > 1 && <FamilyPanel family={family} current={p.id} busy={busy} act={act} />}
-            {p.options.format !== "long" && p.scenes.length === 1 ? (
+            {p.options.format !== "long" && p.scenes.length === 1 && siblings.length > 1 ? (
+              // several finals: one card per version, so every image and clip is visible here
+              // equal rows (auto-rows-fr): every card keeps the same size whatever step it is at
+              <div className="grid auto-rows-fr gap-3 xl:grid-cols-2">
+              {siblings.map((s) =>
+                s.project.scenes.length === 1 ? (
+                  <fieldset key={`${s.project.id}-${s.project.updatedAt}`} disabled={isLocked(s.project)} className="h-full min-w-0">
+                    <ShortScene
+                      p={s.project}
+                      title={`Video ${s.key}${s.project.id === p.id ? " (proyek ini)" : ""}`}
+                      compact
+                      busy={busy || s.project.status === "running"}
+                      act={act}
+                      onResult={() => (s.project.id === p.id ? go(3) : router.push(`/video/${s.project.id}`))}
+                      voice={s.voice}
+                      voices={voices}
+                      hasCartesia={hasCartesia}
+                    />
+                  </fieldset>
+                ) : (
+                  <div key={s.project.id} className="flex h-full items-center gap-2 rounded-xl border bg-card px-4 py-3 text-[13px]">
+                    <Loader2 className="size-4 animate-spin text-muted-foreground" /> Video {s.key}: {s.project.progress ?? "menyiapkan naskah..."}
+                    <Link href={`/video/${s.project.id}`} className="ml-auto text-xs text-brand-light hover:underline">Buka</Link>
+                  </div>
+                ),
+              )}
+              </div>
+            ) : p.options.format !== "long" && p.scenes.length === 1 ? (
               <ShortScene key={p.updatedAt} p={p} busy={busy || running} act={act} onResult={() => go(3)} voice={voice} voices={voices} hasCartesia={hasCartesia} />
             ) : (<>
             <StepStoryboard key={p.updatedAt} p={p} busy={busy || running} act={act} ready={scenesReady} onNext={() => document.getElementById("render")?.scrollIntoView({ behavior: "smooth" })} onBack={() => go(1)} voice={voice} voices={voices} hasCartesia={hasCartesia} />
@@ -237,8 +293,28 @@ export function Wizard({
             </>)}
           </div>
         )}
-        {step === 3 && <StepResult p={p} onBack={() => go(2)} />}
-      </section>
+        {step === 3 && (p.options.format !== "long" && siblings.length > 1 ? (
+          // several finals: every version's ready-to-post video side by side
+          <div className="space-y-3">
+            <p className="flex items-center gap-1.5 text-[13px] font-semibold"><Layers className="size-4 text-brand-light" /> {siblings.length} video final</p>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {siblings.map((s) =>
+                s.project.finalPath ? (
+                  <QuickResult key={s.project.id} p={s.project} label={`Video ${s.key}`} href={s.project.id === p.id ? undefined : `/video/${s.project.id}`} />
+                ) : (
+                  <div key={s.project.id} className="flex aspect-[9/16] flex-col items-center justify-center gap-1.5 rounded-xl border bg-card p-3 text-center text-[11px] text-muted-foreground">
+                    <p className="text-[13px] font-semibold text-foreground">Video {s.key}</p>
+                    {s.project.status === "running" ? <Loader2 className="size-4 animate-spin" /> : <Film className="size-4" />}
+                    {s.project.status === "running" ? s.project.progress ?? "Sedang dibuat..." : s.project.status === "failed" ? s.project.error ?? "Gagal dibuat" : "Belum dirender"}
+                  </div>
+                ),
+              )}
+            </div>
+          </div>
+        ) : (
+          <StepResult p={p} locked={locked} onBack={() => go(2)} />
+        ))}
+      </fieldset>
     </div>
   );
 }
@@ -275,10 +351,10 @@ function ProjectTitle({ p, act }: { p: Project; act: Act }) {
   );
 }
 
-function Card({ title, desc, icon: Icon, children, footer }: { title: string; desc?: string; icon: Icon; children: React.ReactNode; footer?: React.ReactNode }) {
+function Card({ title, desc, icon: Icon, children, footer, compact }: { title: string; desc?: string; icon: Icon; children: React.ReactNode; footer?: React.ReactNode; compact?: boolean }) {
   return (
-    <div className="rounded-xl border bg-card">
-      <div className="space-y-5 p-4 sm:p-5">
+    <div className={`rounded-xl border bg-card ${compact ? "h-full" : ""}`}>
+      <div className={compact ? "space-y-3 p-3.5" : "space-y-5 p-4 sm:p-5"}>
         <div className="flex items-start gap-3">
           <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-black dark:text-white"><Icon className="size-4.5" /></span>
           <div className="min-w-0">
@@ -293,6 +369,117 @@ function Card({ title, desc, icon: Icon, children, footer }: { title: string; de
   );
 }
 
+/**
+ * One reference image the owner can give (upload or paste): the character's face or the background. Empty = the AI
+ * makes/picks it. Shown next to "Foto produk" in the "1. Produk" card.
+ */
+function ImageSlot({ icon: I, title, path, note, texts, uploadLabel, busy, onSend, onRemove }: {
+  icon: Icon; title: string; path?: string; note: string; texts: { empty: string; filled: string }; uploadLabel: string;
+  busy: boolean; onSend: (f: File, ok: string) => void; onRemove: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const pick = (files: FileList | null) => {
+    const f = files?.[0];
+    if (ref.current) ref.current.value = "";
+    if (f) onSend(f, `${title} dipakai di semua scene`);
+  };
+  /** "Tempel foto": an image copied from a browser, chat or screenshot. */
+  const paste = async () => {
+    try {
+      for (const it of await navigator.clipboard.read()) {
+        const type = it.types.find((t) => /^image\/(png|jpeg|webp)$/.test(t)) ?? it.types.find((t) => t.startsWith("image/"));
+        if (!type) continue;
+        const ok = type === "image/png" || type === "image/jpeg" || type === "image/webp";
+        return onSend(new File([await it.getType(type)], `tempel-${Date.now()}.${ok ? type.split("/")[1] : "png"}`, { type: ok ? type : "image/png" }), `${title} ditempel`);
+      }
+      toast.error("Clipboard tidak berisi gambar. Salin gambarnya dulu (klik kanan → Salin gambar).");
+    } catch {
+      toast.error("Clipboard tidak bisa dibaca. Coba upload gambarnya saja.");
+    }
+  };
+  return (
+    <section className="space-y-2.5 rounded-lg border bg-background/40 p-3">
+      <FieldLabel icon={I} note={note}>{title}</FieldLabel>
+      <div className="flex gap-3">
+        {path ? (
+          <div className="group relative size-20 shrink-0 overflow-hidden rounded-lg border bg-muted">
+            <img src={mediaUrl(path)} alt={title} onClick={() => openLightbox([{ src: path, kind: "image", label: title }])} className="size-full cursor-zoom-in object-cover" />
+            <button type="button" aria-label={`Hapus ${title.toLowerCase()}`} disabled={busy} onClick={onRemove} className="absolute top-1 right-1 grid size-6 place-items-center rounded-md bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100">
+              <X className="size-3.5" />
+            </button>
+          </div>
+        ) : (
+          <button type="button" disabled={busy} onClick={() => ref.current?.click()} className="flex size-20 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-[11px] text-muted-foreground hover:bg-accent">
+            {busy ? <Loader2 className="size-5 animate-spin" /> : <I className="size-5" />}
+            Upload
+          </button>
+        )}
+        <p className="text-[11px] leading-relaxed text-muted-foreground">{path ? texts.filled : texts.empty}</p>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        <button type="button" disabled={busy} onClick={() => ref.current?.click()} className="flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium hover:bg-accent disabled:opacity-60">
+          <Upload className="size-3.5" /> {uploadLabel}
+        </button>
+        <button type="button" disabled={busy} onClick={() => void paste()} className="flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium hover:bg-accent disabled:opacity-60" title="Tempel gambar dari clipboard">
+          <ClipboardPaste className="size-3.5" /> Tempel foto
+        </button>
+      </div>
+      <input ref={ref} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => pick(e.target.files)} />
+    </section>
+  );
+}
+
+/** Character concepts: the model's face. Uploaded by the owner, or made by AI (automatically when left empty). */
+function FaceSlot({ p, busy, act }: { p: Project; busy: boolean; act: Act }) {
+  const face = p.options.face;
+  const ai = p.options.faceAi === "1";
+  return (
+    <ImageSlot
+      icon={UserRound}
+      title="Wajah karakter"
+      path={face}
+      note={face ? (ai ? "dibuat AI" : "fotomu") : "otomatis AI"}
+      texts={{
+        empty: "Upload foto wajah (depan, jelas, sendirian). Kalau dikosongkan, AI otomatis membuat wajah karakter saat video dibuat.",
+        filled: ai ? "Wajah buatan AI, dipakai di semua scene. Ganti dengan fotomu kalau mau." : "Model di semua scene memakai wajah dari fotomu.",
+      }}
+      uploadLabel={face && !ai ? "Ganti foto" : "Upload wajah"}
+      busy={busy}
+      onSend={(f, ok) => {
+        const form = new FormData();
+        form.append("face", f);
+        act(() => uploadFace(p.id, form), ok);
+      }}
+      onRemove={() => act(() => removeFace(p.id), "Wajah karakter dihapus")}
+    />
+  );
+}
+
+/** Any concept: the owner's own background photo (options.bgImage). Empty = the AI picks a set that suits the product. */
+function BackgroundSlot({ p, busy, act }: { p: Project; busy: boolean; act: Act }) {
+  const bg = p.options.bgImage;
+  return (
+    <ImageSlot
+      icon={ImageIcon}
+      title="Background"
+      path={bg}
+      note={bg ? "fotomu" : "otomatis AI"}
+      texts={{
+        empty: "Upload foto tempat/latar (kamar, meja, toko). Kalau dikosongkan, AI memilih background yang cocok dengan produk.",
+        filled: "Semua scene dibuat di tempat ini; produk (dan model) ditaruh ke dalamnya.",
+      }}
+      uploadLabel={bg ? "Ganti gambar" : "Upload background"}
+      busy={busy}
+      onSend={(f, ok) => {
+        const form = new FormData();
+        form.append("background", f);
+        act(() => uploadBackground(p.id, form), ok);
+      }}
+      onRemove={() => act(() => removeBackground(p.id), "Background dihapus, AI yang memilih")}
+    />
+  );
+}
+
 function StepProduct({ p, busy, act }: { p: Project; busy: boolean; act: Act }) {
   // unsaved typing survives navigation; a new product source (Etalase) starts a fresh draft from the saved product
   const [draft, setDraft] = usePersistentState(`studio:${p.id}:product:${p.options.showcaseId ?? ""}`, { name: p.product.name, details: p.product.details, price: p.product.price, look: p.product.look ?? "" });
@@ -303,6 +490,7 @@ function StepProduct({ p, busy, act }: { p: Project; busy: boolean; act: Act }) 
   const setDetails = (v: string) => setDraft((d) => ({ ...d, details: v }));
   const setPrice = (v: string) => setDraft((d) => ({ ...d, price: v }));
   const custom = !!presetById(p.presetId)?.custom;
+  const character = !!castOf(p);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // saved when a field loses focus, so the buttons below always use what was typed
@@ -356,9 +544,56 @@ function StepProduct({ p, busy, act }: { p: Project; busy: boolean; act: Act }) 
 
   return (
     <Card icon={Package} title="1. Produk">
-      <div className="grid gap-5 lg:grid-cols-[1fr_260px]">
+      <div className="space-y-4">
+        {/* media first: picking a product from Etalase fills the photos and the fields below */}
+        <div className={`grid gap-3 md:grid-cols-2 ${character ? "xl:grid-cols-3" : ""}`}>
+          <section className="space-y-2.5 rounded-lg border bg-background/40 p-3">
+            <FieldLabel icon={ImagePlus} note={`${p.product.photos.length}/3`}>Foto produk</FieldLabel>
+            <div className="flex flex-wrap gap-2">
+              {p.product.photos.map((rel) => (
+                <div key={rel} className="group relative size-20 overflow-hidden rounded-lg border bg-muted">
+                  <img src={mediaUrl(rel)} alt="" onClick={() => openLightbox(p.product.photos.map((x, i) => ({ src: x, kind: "image" as const, label: `Foto produk ${i + 1}` })), p.product.photos.indexOf(rel))} className="size-full cursor-zoom-in object-cover" />
+                  <button
+                    type="button"
+                    aria-label="Hapus foto"
+                    onClick={() => act(() => removePhoto(p.id, rel))}
+                    className="absolute top-1 right-1 grid size-6 place-items-center rounded-md bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              ))}
+              {p.product.photos.length < 3 && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => fileRef.current?.click()}
+                  className="flex size-20 flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-[11px] text-muted-foreground hover:bg-accent"
+                >
+                  {busy ? <Loader2 className="size-5 animate-spin" /> : <ImagePlus className="size-5" />}
+                  Tambah foto
+                </button>
+              )}
+            </div>
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={(e) => upload(e.target.files)} />
+            <div className="flex flex-wrap gap-1.5">
+              <button type="button" disabled={busy} onClick={() => setEtalase(true)} className="flex h-8 items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 text-xs font-medium text-brand-light hover:bg-primary/15 disabled:opacity-60" title="Isi nama, harga, keunggulan, dan foto dari produk etalase TikTok">
+                <Store className="size-3.5" /> Dari Etalase
+              </button>
+              <button type="button" disabled={busy || room <= 0} onClick={() => void pasteClipboard()} className="flex h-8 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium hover:bg-accent disabled:opacity-60" title="Tempel gambar dari clipboard (atau tekan Ctrl+V)">
+                <ClipboardPaste className="size-3.5" /> Tempel gambar
+              </button>
+            </div>
+            {!custom && !p.product.photos.length && <p className="flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><CircleAlert className="mt-px size-3.5 shrink-0" /> Tambahkan minimal 1 foto supaya bisa lanjut.</p>}
+            {p.options.showcaseId && <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><Database className="size-3" /> Detail lengkap produk dari Etalase dipakai AI</p>}
+            <EtalasePicker open={etalase} onClose={() => setEtalase(false)} onPick={(sid, photos) => act(async () => { const r = await applyShowcaseProduct(p.id, sid, photos); toast.success(`Produk terisi dari Etalase · ${r.photos} foto`); })} />
+          </section>
+          {character && <FaceSlot p={p} busy={busy} act={act} />}
+          <BackgroundSlot p={p} busy={busy} act={act} />
+        </div>
+
         <section className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-[1fr_130px]">
+          <div className="grid gap-3 sm:grid-cols-[1fr_160px]">
             <label className="block space-y-1.5">
               <FieldLabel icon={Tag}>Nama produk</FieldLabel>
               <input className={input} value={name} onChange={(e) => setName(e.target.value)} onBlur={saveDraft} maxLength={200} placeholder="Contoh: Lipstik Matte Velvet" />
@@ -380,47 +615,6 @@ function StepProduct({ p, busy, act }: { p: Project; busy: boolean; act: Act }) 
           ) : (
             <button type="button" onClick={() => setMore(true)} className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"><Plus className="size-3" /> Koreksi tampilan produk (opsional)</button>
           )}
-        </section>
-        <section className="space-y-2">
-          <FieldLabel icon={ImagePlus} note={`${p.product.photos.length}/3`}>Foto produk</FieldLabel>
-          <div className="grid grid-cols-3 gap-2">
-            {p.product.photos.map((rel) => (
-              <div key={rel} className="group relative aspect-square overflow-hidden rounded-lg border bg-muted">
-                <img src={mediaUrl(rel)} alt="" onClick={() => openLightbox(p.product.photos.map((x, i) => ({ src: x, kind: "image" as const, label: `Foto produk ${i + 1}` })), p.product.photos.indexOf(rel))} className="size-full cursor-zoom-in object-cover" />
-                <button
-                  type="button"
-                  aria-label="Hapus foto"
-                  onClick={() => act(() => removePhoto(p.id, rel))}
-                  className="absolute top-1 right-1 grid size-6 place-items-center rounded-md bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
-                >
-                  <X className="size-3.5" />
-                </button>
-              </div>
-            ))}
-            {p.product.photos.length < 3 && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => fileRef.current?.click()}
-                className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-xs text-muted-foreground hover:bg-accent"
-              >
-                {busy ? <Loader2 className="size-5 animate-spin" /> : <ImagePlus className="size-5" />}
-                Tambah foto
-              </button>
-            )}
-          </div>
-          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={(e) => upload(e.target.files)} />
-          <div className="grid grid-cols-2 gap-1.5">
-            <button type="button" disabled={busy} onClick={() => setEtalase(true)} className="flex h-8 items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 text-xs font-medium text-brand-light hover:bg-primary/15 disabled:opacity-60" title="Isi nama, harga, keunggulan, dan foto dari produk etalase TikTok">
-              <Store className="size-3.5" /> Dari Etalase
-            </button>
-            <button type="button" disabled={busy || room <= 0} onClick={() => void pasteClipboard()} className="flex h-8 items-center justify-center gap-1.5 rounded-lg border text-xs font-medium hover:bg-accent disabled:opacity-60" title="Tempel gambar dari clipboard (atau tekan Ctrl+V)">
-              <ClipboardPaste className="size-3.5" /> Tempel foto
-            </button>
-          </div>
-          {!custom && !p.product.photos.length && <p className="flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><CircleAlert className="mt-px size-3.5 shrink-0" /> Tambahkan minimal 1 foto supaya bisa lanjut.</p>}
-          {p.options.showcaseId && <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><Database className="size-3" /> Detail lengkap produk dari Etalase dipakai AI</p>}
-          <EtalasePicker open={etalase} onClose={() => setEtalase(false)} onPick={(sid, photos) => act(async () => { const r = await applyShowcaseProduct(p.id, sid, photos); toast.success(`Produk terisi dari Etalase · ${r.photos} foto`); })} />
         </section>
       </div>
       {busy && <span className="sr-only">Menyimpan</span>}
@@ -606,6 +800,46 @@ function EtalasePicker({ open, onClose, onPick }: { open: boolean; onClose: () =
   );
 }
 
+/**
+ * Seconds per clip as a slider (like a volume slider): 3–15 s, the Pro range (11+ s, Google AI Plus/Pro/Ultra) shaded
+ * in amber on the track and flagged next to the value.
+ */
+function DurationSlider({ label, min, value, onChange }: { label: string; min: number; value: number; onChange: (sec: number) => void }) {
+  const max = CLIP_SECS[CLIP_SECS.length - 1];
+  const at = (x: number) => ((x - min) / (max - min)) * 100;
+  const pro = value >= PRO_CLIP_SEC;
+  return (
+    <div className="flex min-w-[240px] flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+      <div className="relative flex-1 py-2">
+        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-muted">
+          <div className="absolute inset-y-0 left-0 rounded-full bg-primary" style={{ width: `${at(value)}%` }} />
+          <div className="absolute inset-y-0 right-0 rounded-r-full bg-amber-400/25" style={{ left: `${at(PRO_CLIP_SEC - 0.5)}%` }} />
+        </div>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={1}
+          value={Math.min(max, Math.max(min, value))}
+          onChange={(e) => onChange(Number(e.target.value))}
+          aria-label={label}
+          aria-valuetext={`${value} detik`}
+          className="relative h-5 w-full cursor-pointer appearance-none bg-transparent [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-primary [&::-moz-range-thumb]:bg-background [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-primary [&::-webkit-slider-thumb]:bg-background [&::-webkit-slider-thumb]:shadow"
+        />
+        <div className="pointer-events-none absolute inset-x-0 -bottom-2 flex justify-between text-[10px] text-muted-foreground tabular-nums">
+          <span>{min}</span>
+          <span>{max}</span>
+        </div>
+      </div>
+      <span className={`flex w-16 items-center justify-end gap-1 text-sm font-semibold tabular-nums ${pro ? "text-amber-600 dark:text-amber-400" : ""}`}>
+        {pro && <Crown className="size-3.5" />}
+        {value} dtk
+      </span>
+      {pro && <span className="basis-full text-[11px] text-amber-600 dark:text-amber-400">Di atas 10 dtk butuh Google AI Plus/Pro/Ultra.</span>}
+    </div>
+  );
+}
+
 function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: Act; onDone: () => void }) {
   const preset = presetById(p.presetId)!;
   const refSec = Number(p.options.refDuration) || 0;
@@ -614,19 +848,25 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
   const start = p.options.format ? null : suggestion ?? { format: "short" as const, clips: 1, clipSec: 10 };
   const [options, setOptions] = useState(start ? { ...p.options, format: start.format, clips: String(start.clips) } : p.options);
   const [clipSec, setClipSec] = useState(start?.clipSec ?? p.clipSec);
+  // Veo 3.1 Lite renders a fixed 8 s clip, so its projects ignore the duration picks
+  const veo = isVeo(options);
+  const sec = veo ? VEO_CLIP_SEC : clipSec;
   const baseCount = preset.custom ? Math.max(1, p.scenes.length || 5) : preset.scenes(p.product, options).length;
   const clips = Number(options.clips) || baseCount;
-  const dirty = JSON.stringify(options) !== JSON.stringify(p.options) || clipSec !== p.clipSec;
+  const dirty = JSON.stringify(options) !== JSON.stringify(p.options) || sec !== p.clipSec;
   const needProduct = !p.product.name.trim() ? "Isi nama produk dulu" : !preset.custom && !p.product.photos.length ? "Tambah minimal 1 foto produk" : null;
   const scriptReady = p.options.written === "1" && p.scenes.length > 0 && !dirty;
   const outlineLines = (options.outline ?? "").split("\n").filter((l) => l.trim());
   const [outlining, setOutlining] = useState(false);
-  const total = clips * clipSec;
+  const total = clips * sec;
+  const vo = (options.vo ?? "").trim();
+  const voWords = vo.split(/\s+/).filter(Boolean).length;
+  const voMax = Math.round(total * 2.8); // brisk natural TikTok pace
+  // an own script must be at least VO_MIN_CHARS long (empty = the AI writes it)
+  const voShort = !isSilent(p.presetId, options) && vo.length > 0 && vo.length < VO_MIN_CHARS;
   const isVersion = !!p.options.versionOf;
   const madeVersions = (p.options.versions ?? "").split(",").filter(Boolean);
   const finals = isVersion || madeVersions.length ? 1 : Math.min(VERSIONS.length, Number(options.finals) || 1);
-  const [showPro, setShowPro] = useState(clipSec >= PRO_CLIP_SEC);
-  const [showConcepts, setShowConcepts] = useState(false);
   const toastVersions = (made: { id: number; title: string }[]) =>
     made.length && toast.success(`${made.length} video versi lain dibuat (#${made.map((m) => m.id).join(", #")})`, { description: "AI sedang menulis storyboard-nya. Buka dari halaman Proyek Video.", duration: 8000 });
   const format = options.format === "long" ? "long" : "short";
@@ -648,35 +888,50 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
     setOutlining(true);
     act(async () => {
       try {
-        const lines = await aiOutline(p.id, options, clipSec);
+        const lines = await aiOutline(p.id, options, sec);
         // saved right away: the refresh after this action re-reads the project
-        await saveProject(p.id, { options: { ...options, outline: lines.join("\n") }, clipSec });
+        await saveProject(p.id, { options: { ...options, outline: lines.join("\n") }, clipSec: sec });
       } finally {
         setOutlining(false);
       }
     }, "Kerangka bab siap, cek dan ubah kalau perlu");
   };
-  const preview = () =>
-    act(async () => {
-      toastVersions(await previewScript(p.id, options, clipSec));
-    }, "Naskah siap. Cek di bawah, ubah kalimatnya kalau perlu.");
+  // a project opened from Buat Video Reels / Etalase is not in Proyek Video until it is saved or made
+  const unsaved = p.options.unsaved === "1";
+  // "Tulis pakai AI": a fresh script in the chosen style (falls back to a template when the AI is unavailable)
+  const [voWriting, setVoWriting] = useState(false);
+  const writeVo = async () => {
+    const style = options.voStyle || "soft";
+    setVoWriting(true);
+    try {
+      const r = await aiVoScript(p.id, style, total, options.vo ?? "");
+      setOptions((o) => ({ ...o, voStyle: style, vo: r.script }));
+      if (r.by === "template") toast.warning("AI sedang tidak bisa dipakai, diisi naskah contoh dulu", { description: r.reason });
+      else toast.success("Naskah baru dari AI. Ubah kalimatnya kalau perlu.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Gagal menulis naskah");
+    } finally {
+      setVoWriting(false);
+    }
+  };
+  const saveDraft = () => act(() => saveAsDraft(p.id, options, sec), unsaved ? "Disimpan sebagai draf di Proyek Video" : "Pengaturan video tersimpan");
   const makeNow = async () => {
-    const what = `${finals} video final · ${clips} klip × ${clipSec} dtk (±${mmss(total * 1000)}). Gambar, klip, suara, dan caption dibuat otomatis (±${Math.max(3, clips * finals * 2)} menit), lalu terbuka di editor untuk diekspor.`;
+    const what = `${finals} video final · ${clips} klip × ${sec} dtk (±${mmss(total * 1000)}). Gambar, klip, suara, dan caption dibuat otomatis (±${Math.max(3, clips * finals * 2)} menit), lalu terbuka di editor untuk diekspor.`;
     if (!(await confirmDialog({ title: "Buat video sekarang?", description: `${what} Memakai kuota akun Google di Flow.`, confirmLabel: "Buat video" }))) return;
     act(async () => {
       if (!scriptReady) {
-        await saveProject(p.id, { options, clipSec });
+        await saveProject(p.id, { options, clipSec: sec });
         await buildStoryboard(p.id, { versions: false });
       }
       const r = await quickMake(p.id);
-      toast.success(r.versions ? `${r.versions + 1} video dibuat bersamaan` : "Video sedang dibuat", { description: "Progres tiap video tampil di tab Adegan. Kamu boleh pindah halaman." });
-      onDone(); // straight to the Adegan tab to watch it
+      toast.success(r.versions ? `${r.versions + 1} video dibuat bersamaan` : "Video sedang dibuat", { description: "Progres tiap video tampil di tab Proses render. Kamu boleh pindah halaman." });
+      onDone(); // straight to the Proses render tab to watch it
     });
   };
   const build = async () => {
-    if (p.scenes.length && !(await confirmDialog({ title: "Susun ulang storyboard?", description: "Adegan lama, termasuk gambar yang sudah dibuat, akan diganti dengan susunan baru.", confirmLabel: "Susun ulang" }))) return;
+    if (p.scenes.length && !(await confirmDialog({ title: "Susun ulang storyboard?", description: "Scene lama, termasuk gambar yang sudah dibuat, akan diganti dengan susunan baru.", confirmLabel: "Susun ulang" }))) return;
     act(async () => {
-      await saveProject(p.id, { options, clipSec });
+      await saveProject(p.id, { options, clipSec: sec });
       toastVersions(await buildStoryboard(p.id));
       onDone();
     });
@@ -690,8 +945,8 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
       footer={
         <>
           <p className="mr-auto flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-            {needProduct ? (
-              <span className="flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400"><CircleAlert className="size-3.5" /> {needProduct}</span>
+            {needProduct || voShort ? (
+              <span className="flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400"><CircleAlert className="size-3.5" /> {needProduct ?? `Naskah voice-over minimal ${VO_MIN_CHARS} karakter`}</span>
             ) : (
               <>
                 <span className="font-semibold">{finals} video</span>
@@ -700,44 +955,17 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
               </>
             )}
           </p>
-          <button type="button" className={secondary} disabled={busy || !!needProduct} onClick={preview} title="AI menulis naskahnya dulu, kamu cek sebelum gambar & klip dibuat">
-            {busy ? <Loader2 className="size-4 animate-spin" /> : <FileText className="size-4" />} {scriptReady ? "Tulis ulang naskah" : "Cek naskah dulu"}
+          <button type="button" className={secondary} disabled={busy || (!unsaved && !dirty)} onClick={saveDraft} title={unsaved ? "Simpan proyek ini ke Proyek Video sebagai draf, lanjutkan kapan saja" : "Simpan pengaturan video"}>
+            {busy ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} {unsaved ? "Simpan draft" : "Simpan"}
           </button>
-          <button type="button" className={primary} disabled={busy || !!needProduct || (format === "long" && !outlineLines.length && !scriptReady)} onClick={makeNow} title={format === "long" && !outlineLines.length ? "Susun kerangka bab dulu" : undefined}>
+          <button type="button" className={primary} disabled={busy || !!needProduct || voShort || (format === "long" && !outlineLines.length && !scriptReady)} onClick={makeNow} title={format === "long" && !outlineLines.length ? "Susun kerangka bab dulu" : undefined}>
             <Rocket className="size-4" /> Buat video sekarang
           </button>
         </>
       }
     >
-      {/* concept: one line, the full list only on demand */}
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={`${label} w-20`}>Konsep</span>
-          <span className="text-[13px] font-semibold">{preset.title}</span>
-          <button type="button" onClick={() => setShowConcepts((v) => !v)} className="text-xs text-brand-light hover:underline">{showConcepts ? "Tutup" : "Ganti"}</button>
-          {p.options.refVideo && (
-            <button type="button" onClick={() => openLightbox([{ src: p.options.refVideo, kind: "video", label: "Video terlaris (referensi gaya)" }])} className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
-              <Trophy className="size-3.5 text-amber-500" /> Referensi terlaris
-            </button>
-          )}
-        </div>
-        {showConcepts && (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Konsep">
-            {PRESETS.filter((x) => x.available).map((x) => {
-              const on = x.id === preset.id;
-              return (
-                <button key={x.id} type="button" role="radio" aria-checked={on} disabled={busy}
-                  onClick={() => { setShowConcepts(false); if (!on) act(() => saveProject(p.id, { presetId: x.id }), p.scenes.length ? "Konsep diganti. Buat ulang videonya untuk menerapkan." : undefined); }}
-                  className={pick(on)}>
-                  <span className="line-clamp-1 text-[13px] font-semibold">{x.title}</span>
-                  <span className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">{x.bestFor}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
+      {/* settings in two columns on wide screens (the concept was picked before, on Buat Video Reels) */}
+      <div className="grid gap-x-10 gap-y-5 xl:grid-cols-2">
       {/* format */}
       <div className="flex flex-wrap items-center gap-2">
         <span className={`${label} w-20`}>Format</span>
@@ -751,6 +979,11 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
             );
           })}
         </div>
+        {p.options.refVideo && (
+          <button type="button" onClick={() => openLightbox([{ src: p.options.refVideo, kind: "video", label: "Video terlaris (referensi gaya)" }])} className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+            <Trophy className="size-3.5 text-amber-500" /> Referensi terlaris
+          </button>
+        )}
         {suggestion && !suggested && (
           <button type="button" onClick={applySuggestion} className="flex items-center gap-1 text-[11px] text-brand-light hover:underline">
             <TrendingUp className="size-3.5" /> Saran KaloData: {suggestion.clips} klip × {suggestion.clipSec} dtk
@@ -758,10 +991,26 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
         )}
       </div>
 
-      {/* Flow video resolution (Omni 1.2 Flash offers 360p / 720p), saved as options.resolution.
-          ponytail: UI only for now — flow2api doesn't forward a resolution to Omni yet, so clips still come back
-          720p; wiring it (flow2api + lib/projects.ts render) is Rifq's backend task. */}
+      {/* Flow video model, saved as options.videoModel (Omni by default). Veo 3.1 Lite has no resolution/duration picks. */}
       <div className="flex flex-wrap items-center gap-2">
+        <span className={`${label} w-20`}>Model</span>
+        <div className="inline-flex rounded-lg bg-muted p-0.5" role="radiogroup" aria-label="Model video Flow">
+          {VIDEO_MODELS.map((m) => {
+            const on = (options.videoModel ?? "omni") === m.id;
+            return (
+              <button key={m.id} type="button" role="radio" aria-checked={on} title={m.hint} onClick={() => setOptions({ ...options, videoModel: m.id })} className={`${chip(on)} px-3`}>
+                {m.label}
+              </button>
+            );
+          })}
+        </div>
+        <span className="text-[11px] text-muted-foreground">{VIDEO_MODELS.find((m) => m.id === (options.videoModel ?? "omni"))?.hint}</span>
+      </div>
+
+      {/* Flow video resolution (Omni 1.2 Flash: 360p at half the credits, or 720p), saved as options.resolution and sent
+          as the "-360p" model alias (flowVideoModel). Captured from the Flow web app on 2026-11-22: model key
+          "<key>_360p" plus the output resolution [4]. */}
+      {SHOW_RESOLUTION && !veo && <div className="flex flex-wrap items-center gap-2">
         <span className={`${label} w-20`}>Resolusi</span>
         <div className="inline-flex rounded-lg bg-muted p-0.5" role="radiogroup" aria-label="Resolusi video Flow">
           {RESOLUTIONS.map((r) => {
@@ -774,38 +1023,50 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
           })}
         </div>
         <span className="text-[11px] text-muted-foreground">{RESOLUTIONS.find((r) => r.id === (options.resolution ?? "720p"))?.hint}</span>
-      </div>
+      </div>}
 
-      {/* short = one clip: just pick how many seconds; long = three length picks */}
-      {format === "short" ? (
+      {/* short = one clip: how many seconds (Omni only); long = seconds per scene + number of scenes */}
+      {format === "short" ? (veo ? null : (
         <div className="flex flex-wrap items-center gap-2">
           <span className={`${label} w-20`}>Durasi</span>
-          <div className="flex flex-wrap gap-1 rounded-lg bg-muted p-0.5" role="radiogroup" aria-label="Durasi video">
-            {CLIP_SECS.filter((x) => x < PRO_CLIP_SEC || showPro).map((x) => (
-              <button key={x} type="button" role="radio" aria-checked={clipSec === x} onClick={() => { setClipSec(x); setOptions({ ...options, clips: "1" }); }} className={`${chip(clipSec === x && clips === 1)} min-w-11 gap-1 px-2`}>
-                {x} dtk{x >= PRO_CLIP_SEC && <Crown className="size-3 text-amber-400" />}
-              </button>
-            ))}
-            {!showPro && <button type="button" onClick={() => setShowPro(true)} className="flex h-8 items-center gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground"><Crown className="size-3 text-amber-400" /> 11–15</button>}
-          </div>
-          {clipSec >= PRO_CLIP_SEC && <span className="text-[11px] text-amber-600 dark:text-amber-400">Butuh Google AI Plus/Pro/Ultra</span>}
+          <DurationSlider label="Durasi video" min={CLIP_SECS[0]} value={clipSec} onChange={(x) => { setClipSec(x); if (clips !== 1) setOptions({ ...options, clips: "1" }); }} />
         </div>
-      ) : (
-      <div className="flex flex-wrap items-start gap-2">
-        <span className={`${label} w-20 pt-2`}>Panjang</span>
-        <div className="grid flex-1 grid-cols-3 gap-2" role="radiogroup" aria-label="Panjang video">
-          {F.lengths.map((l) => {
-            const on = clips === l.clips && clipSec === l.sec;
+      )) : (
+      <>
+        {/* long = several clips: seconds per scene and how many scenes, right here (no presets) */}
+        {!veo && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`${label} w-20`}>Durasi</span>
+            <DurationSlider label="Detik per scene" min={6} value={clipSec} onChange={setClipSec} />
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`${label} w-20`}>Scene</span>
+          <div className="flex items-center rounded-lg border bg-background">
+            <button type="button" aria-label="Kurangi scene" disabled={clips <= F.min} onClick={() => setOptions({ ...options, clips: String(clips - 1) })} className="grid size-8 place-items-center rounded-l-lg hover:bg-accent disabled:opacity-40"><Minus className="size-3.5" /></button>
+            <span className="w-9 text-center text-sm font-semibold tabular-nums" aria-live="polite">{clips}</span>
+            <button type="button" aria-label="Tambah scene" disabled={clips >= F.max} onClick={() => setOptions({ ...options, clips: String(clips + 1) })} className="grid size-8 place-items-center rounded-r-lg hover:bg-accent disabled:opacity-40"><Plus className="size-3.5" /></button>
+          </div>
+          <span className="text-[11px] text-muted-foreground">{clips} scene × {sec} dtk = ±{mmss(total * 1000)} · {F.min}–{F.max} scene</span>
+        </div>
+      </>
+      )}
+
+      {/* burned-in subtitles of the final video (options.subtitle = "off" turns them off) */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`${label} w-20`}>Subtitle</span>
+        <div className="inline-flex rounded-lg bg-muted p-0.5" role="radiogroup" aria-label="Subtitle video">
+          {([["on", "Pakai subtitle"], ["off", "Tanpa subtitle"]] as const).map(([v, t]) => {
+            const on = (options.subtitle ?? "on") === v;
             return (
-              <button key={l.id} type="button" role="radio" aria-checked={on} onClick={() => { setClipSec(l.sec); setOptions({ ...options, clips: String(l.clips) }); }} className={pick(on)}>
-                <span className="flex items-center gap-1.5 text-[13px] font-semibold"><l.icon className={`size-4 ${on ? "text-brand-light" : "text-muted-foreground"}`} /> {l.label}</span>
-                <span className="mt-0.5 block text-[11px] text-muted-foreground">±{l.clips * l.sec} dtk</span>
+              <button key={v} type="button" role="radio" aria-checked={on} onClick={() => setOptions({ ...options, subtitle: v })} className={`${chip(on)} px-3`}>
+                {t}
               </button>
             );
           })}
         </div>
+        <span className="text-[11px] text-muted-foreground">{(options.subtitle ?? "on") === "on" ? "Teks ucapan muncul di video" : "Video bersih tanpa teks"}</span>
       </div>
-      )}
 
       {/* number of finals */}
       <div className="flex flex-wrap items-center gap-2">
@@ -830,11 +1091,12 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
           </>
         )}
       </div>
+      </div>
 
       {format === "long" && (
         <div className="space-y-3 rounded-lg border bg-background/40 p-3">
-          <div className="flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label="Jenis penjelasan">
-            <span className={`${label} mr-1`}>Jenis</span>
+          <div className="flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label="Alur video">
+            <span className={`${label} mr-1`} title="Bagaimana video panjang ini bercerita: AI menyusun urutan scene sesuai pilihan ini">Alur video</span>
             {EXPLAIN.map((x) => {
               const on = (options.explain ?? "deep") === x.key;
               const I = EXPLAIN_ICONS[x.key];
@@ -846,12 +1108,13 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
               );
             })}
           </div>
+          <p className="text-[11px] text-muted-foreground">{(EXPLAIN.find((x) => x.key === (options.explain ?? "deep")) ?? EXPLAIN[2]).desc}: AI menyusun urutan scene seperti ini.</p>
           <textarea
             className={`${input} text-xs!`}
             rows={Math.min(12, Math.max(3, outlineLines.length + 1))}
             value={options.outline ?? ""}
             onChange={(e) => setOptions({ ...options, outline: e.target.value })}
-            placeholder={"Kerangka bab: satu baris = satu adegan.\nContoh: Masalahnya: kulit kusam habis seharian di luar"}
+            placeholder={"Kerangka bab: satu baris = satu scene.\nContoh: Masalahnya: kulit kusam habis seharian di luar"}
           />
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" disabled={busy} onClick={outline} className="flex h-8 items-center gap-1.5 rounded-lg border bg-background px-3 text-xs font-medium hover:bg-accent disabled:opacity-60">
@@ -874,7 +1137,7 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
                   <input
                     defaultValue={line}
                     disabled={busy}
-                    aria-label={`Kalimat adegan ${i + 1}`}
+                    aria-label={`Kalimat scene ${i + 1}`}
                     onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== line && act(() => setSceneLine(p.id, i, e.target.value), "Kalimat disimpan")}
                     className="w-full rounded-md border bg-background px-2 py-1.5 text-xs outline-none focus:border-ring"
                   />
@@ -887,12 +1150,79 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
         </div>
       )}
 
+      {/* the owner's own voice-over script (options.vo); empty = the AI writes it */}
+      {!isSilent(p.presetId, options) && (
+        <div className="space-y-1.5 rounded-lg border p-3">
+          <div className="flex items-center gap-2">
+            <FieldLabel icon={Mic} note="opsional">Naskah voice-over</FieldLabel>
+            <span className={`ml-auto text-[11px] tabular-nums ${voShort ? "text-destructive" : voWords > voMax ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>
+              {vo.length} karakter (min {VO_MIN_CHARS}) · {voWords}/{voMax} kata
+            </span>
+          </div>
+          {/* pick a selling style: fills a ready script with the product's name & price, still editable */}
+          <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Gaya naskah">
+            {VO_STYLES.map((st) => {
+              const on = options.voStyle === st.id;
+              return (
+                <button
+                  key={st.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  title={st.hint}
+                  onClick={() => setOptions({ ...options, voStyle: st.id, vo: applyRules(voTemplate(st.id, p.product, options.vo ?? "")) })}
+                  className={`h-7 rounded-full border px-2.5 text-[11px] font-medium ${on ? "border-primary bg-primary/10 text-brand-light" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                >
+                  {st.label}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              disabled={voWriting || busy || !p.product.name.trim()}
+              onClick={() => void writeVo()}
+              title={p.product.name.trim() ? "AI menulis naskah baru dengan gaya yang dipilih, dari keunggulan produk ini (±10-30 dtk)" : "Isi nama produk dulu"}
+              className="ml-auto flex h-7 items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2.5 text-[11px] font-medium text-brand-light hover:bg-primary/15 disabled:opacity-60"
+            >
+              {voWriting ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />} {voWriting ? "AI menulis..." : "Tulis pakai AI"}
+            </button>
+          </div>
+          <textarea
+            className={`${input} resize-y`}
+            rows={3}
+            maxLength={1000}
+            value={options.vo ?? ""}
+            onChange={(e) => setOptions({ ...options, vo: e.target.value })}
+            // words the platforms ban (stamina → performa, …) are swapped as soon as the owner leaves the box
+            onBlur={() => options.vo && applyRules(options.vo) !== options.vo && setOptions({ ...options, vo: applyRules(options.vo) })}
+            placeholder={"Kosongkan = AI yang menulis naskahnya.\nContoh: Lagi rame banget nih, madu herbal buat lambung, cuma Rp42.000! Cek keranjang di bawah ya."}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            {voShort
+              ? `Naskah minimal ${VO_MIN_CHARS} karakter (kurang ${VO_MIN_CHARS - vo.length}). Pilih gaya di atas atau tambah kalimatnya; kosongkan kalau mau AI yang menulis.`
+              : voWords > voMax
+                ? `Terlalu panjang untuk ±${total} dtk (maks ±${voMax} kata), suaranya bisa terpotong.`
+                : "Pilih gaya (klik lagi untuk contoh lain), tekan Tulis pakai AI untuk naskah baru, atau tulis sendiri. Kalimat ini yang diucapkan, persis."}
+            {clips > 1 ? " Dibagi ke tiap scene sesuai urutan." : ""}
+          </p>
+          {finals > 1 && vo && !voShort && (
+            <div className="space-y-1 rounded-md bg-muted/40 p-2 text-[11px]">
+              <p className="font-medium">Hook tiap video (isi naskah sama, kalimat pertama beda):</p>
+              {VERSIONS.slice(0, finals).map((v, i) => (
+                <p key={v.key} className="truncate text-muted-foreground">
+                  <b className="text-foreground">Video {v.key}:</b> {i === 0 ? splitHook(vo).hook : versionHook(vo, v.key, p.product.name)}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* everything else */}
-      <details className="group rounded-lg border">
-        <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground">
+      <div className="rounded-lg border">
+        <p className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-muted-foreground">
           <SlidersHorizontal className="size-3.5" /> Pengaturan lanjutan
-          <span className="ml-auto text-[11px] font-normal">{format === "long" ? `${clips} adegan × ${clipSec} dtk · ` : ""}{preset.fields.map((f) => f.type === "select" ? f.options.find((o) => o.value === (options[f.key] ?? f.default))?.label : null).filter(Boolean).join(" · ")}</span>
-        </summary>
+        </p>
         <div className="space-y-4 border-t p-3">
           {preset.fields.length > 0 && (
             <div className="grid gap-3 sm:grid-cols-2">
@@ -902,6 +1232,7 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
                   {f.type === "select" ? (
                     <select className={input} value={options[f.key] ?? f.default} onChange={(e) => setOptions({ ...options, [f.key]: e.target.value })}>
                       {f.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      {options[f.key] && !f.options.some((o) => o.value === options[f.key]) && <option value={options[f.key]}>{options[f.key].slice(0, 60)}</option>}
                     </select>
                   ) : (
                     <input className={input} value={options[f.key] ?? f.default} placeholder={f.placeholder} onChange={(e) => setOptions({ ...options, [f.key]: e.target.value })} />
@@ -910,37 +1241,17 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
               ))}
             </div>
           )}
-          {format === "long" && (<>
-          <div className="space-y-1.5">
-            <FieldLabel icon={Clock}>Detik per adegan</FieldLabel>
-            <div className="flex flex-wrap gap-1 rounded-lg bg-muted p-0.5" role="radiogroup" aria-label="Detik per adegan">
-              {CLIP_SECS.filter((x) => (format === "long" ? x >= 6 : x < PRO_CLIP_SEC || showPro)).map((x) => (
-                <button key={x} type="button" role="radio" aria-checked={clipSec === x} onClick={() => setClipSec(x)} className={`${chip(clipSec === x)} min-w-10 gap-1 px-2`}>
-                  {x}s{x >= PRO_CLIP_SEC && <Crown className="size-3 text-amber-400" />}
-                </button>
-              ))}
-            </div>
-            {clipSec >= PRO_CLIP_SEC && <p className="flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><CircleAlert className="mt-px size-3.5 shrink-0" /> Di atas 10 dtk butuh Google AI Plus/Pro/Ultra.</p>}
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <FieldLabel icon={Clapperboard}>Jumlah adegan</FieldLabel>
-            <div className="flex items-center rounded-lg border bg-background">
-              <button type="button" aria-label="Kurangi adegan" disabled={clips <= F.min} onClick={() => setOptions({ ...options, clips: String(clips - 1) })} className="grid size-8 place-items-center rounded-l-lg hover:bg-accent disabled:opacity-40"><Minus className="size-3.5" /></button>
-              <span className="w-9 text-center text-sm font-semibold tabular-nums" aria-live="polite">{clips}</span>
-              <button type="button" aria-label="Tambah adegan" disabled={clips >= F.max} onClick={() => setOptions({ ...options, clips: String(clips + 1) })} className="grid size-8 place-items-center rounded-r-lg hover:bg-accent disabled:opacity-40"><Plus className="size-3.5" /></button>
-            </div>
-          </div>
-          </>)}
           <div className="flex flex-wrap gap-x-4 gap-y-1 border-t pt-3 text-xs">
-            <button type="button" disabled={busy || !!needProduct} onClick={build} className="flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50"><LayoutGrid className="size-3.5" /> Atur storyboard manual</button>
+            <button type="button" disabled={busy || !!needProduct} onClick={build} title={needProduct ?? "Susun scene sendiri: atur gambar & prompt tiap scene sebelum dibuat"} className="flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50"><LayoutGrid className="size-3.5" /> Atur storyboard manual</button>
+            {needProduct && <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400"><CircleAlert className="size-3.5" /> {needProduct} untuk mengatur storyboard</span>}
             {p.scenes.length > 0 && (
-              <button type="button" disabled={busy} onClick={() => act(async () => { await saveProject(p.id, { options, clipSec, step: 4 }); toastVersions(await makeVersions(p.id)); onDone(); })} className="flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50">
+              <button type="button" disabled={busy} onClick={() => act(async () => { await saveProject(p.id, { options, clipSec: sec, step: 4 }); toastVersions(await makeVersions(p.id)); onDone(); })} className="flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50">
                 <Save className="size-3.5" /> Simpan, pakai storyboard lama
               </button>
             )}
           </div>
         </div>
-      </details>
+      </div>
     </Card>
   );
 }
@@ -969,7 +1280,7 @@ const runScenes = (scenes: Scene[]) => {
   return last ? scenes.filter((s) => s.queuedAt === last) : [];
 };
 
-function RunPanel({ p }: { p: Project }) {
+function RunPanel({ p, versions = 0, onCancel }: { p: Project; versions?: number; onCancel: () => void }) {
   const now = useNow(true);
   const scenes = runScenes(p.scenes);
   const done = scenes.filter((s) => s.state === "done").length;
@@ -984,6 +1295,9 @@ function RunPanel({ p }: { p: Project }) {
         <Loader2 className="size-4 shrink-0 animate-spin text-status-progress" />
         <span className="min-w-0 flex-1 truncate font-medium">{p.progress ?? "Memproses..."}</span>
         {started && <span suppressHydrationWarning className="font-mono text-xs tabular-nums text-muted-foreground">{mmss(now - started)}</span>}
+        <button type="button" onClick={onCancel} className="flex h-7 items-center gap-1 rounded-md border border-destructive/40 bg-background px-2.5 text-[11px] font-medium text-destructive hover:bg-destructive/10">
+          <X className="size-3.5" /> {versions > 1 && !p.options.versionOf ? `Batalkan semua (${versions})` : "Batalkan"}
+        </button>
       </div>
       {scenes.length > 0 && (
         <>
@@ -1080,10 +1394,10 @@ function SceneMedia({ scene, kind, running, scenes }: { scene?: Scene; kind: "im
 }
 
 /**
- * Adegan tab for "Video Pendek" (one clip = the whole video): a big preview and three clear steps
+ * Proses render tab for "Video Pendek" (one clip = the whole video): a big preview and three clear steps
  * (gambar → klip → hasil) with one obvious button each; prompts and voice settings tucked away.
  */
-function ShortScene({ p, busy, act, onResult, voice, voices, hasCartesia }: { p: Project; busy: boolean; act: Act; onResult: () => void; voice: ProjectVoiceState; voices: VoiceOption[]; hasCartesia: boolean }) {
+function ShortScene({ p, title = "Video kamu", compact = false, busy, act, onResult, voice, voices, hasCartesia }: { p: Project; title?: string; compact?: boolean; busy: boolean; act: Act; onResult: () => void; voice: ProjectVoiceState; voices: VoiceOption[]; hasCartesia: boolean }) {
   const router = useRouter();
   const sc = p.scenes[0];
   const running = p.status === "running";
@@ -1139,21 +1453,22 @@ function ShortScene({ p, busy, act, onResult, voice, voices, hasCartesia }: { p:
     : <span className={`grid size-7 place-items-center rounded-full text-xs font-semibold ${st === "todo" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>{i + 1}</span>;
 
   return (
-    <Card icon={Clapperboard} title="Video kamu" desc={`1 klip ${p.clipSec} dtk = 1 video jadi. Ikuti 3 langkah di kanan.`}>
+    <Card compact={compact} icon={Clapperboard} title={title} desc={compact ? `1 klip ${p.clipSec} dtk` : `1 klip ${p.clipSec} dtk = 1 video jadi. Ikuti 3 langkah di kanan.`}>
       <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => upload(e.target.files)} />
-      <div className="grid gap-6 md:grid-cols-[220px_1fr]">
-        <div className="mx-auto w-full max-w-[220px] space-y-2">
+      {/* compact = one of several versions side by side: smaller media, no help lines */}
+      <div className={compact ? "grid grid-cols-[104px_1fr] gap-3.5" : "grid gap-6 md:grid-cols-[220px_1fr]"}>
+        <div className={compact ? "w-full space-y-2" : "mx-auto w-full max-w-[220px] space-y-2"}>
           <SceneMedia scene={sc} kind={sc.clip ? "video" : "image"} running={running} scenes={p.scenes} />
           {sc.styleRef && <p className="text-center text-[10px] text-muted-foreground">Gaya meniru video terlaris</p>}
         </div>
-        <div className="min-w-0 space-y-5">
+        <div className={`min-w-0 ${compact ? "space-y-3" : "space-y-5"}`}>
           <ol className="space-y-0">
             {steps.map((x, i) => (
-              <li key={x.title} className="relative flex gap-3 pb-4 last:pb-0">
+              <li key={x.title} className={`relative flex gap-3 last:pb-0 ${compact ? "pb-2.5" : "pb-4"}`}>
                 {i < steps.length - 1 && <span className={`absolute top-8 bottom-0 left-3.5 w-px ${x.st === "done" ? "bg-status-ok/40" : "bg-border"}`} aria-hidden />}
                 {dot(x.st, i)}
-                <div className="min-w-0 flex-1 space-y-1.5 pt-0.5">
-                  <p className="text-[13px] font-semibold">{x.title}</p>
+                <div className={`min-w-0 flex-1 pt-0.5 ${compact ? "space-y-1" : "space-y-1.5"}`}>
+                  <p className={compact ? "text-xs font-semibold" : "text-[13px] font-semibold"}>{x.title}</p>
                   <p className={`text-[11px] ${x.hint.startsWith("⚠") ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>{x.hint}</p>
                   {x.action && !working && x.action}
                 </div>
@@ -1162,7 +1477,7 @@ function ShortScene({ p, busy, act, onResult, voice, voices, hasCartesia }: { p:
           </ol>
 
           {!silent && (
-            <div className="space-y-1.5 rounded-lg border bg-background/40 p-3">
+            <div className={`space-y-1.5 rounded-lg border bg-background/40 ${compact ? "p-2.5" : "p-3"}`}>
               <div className="flex items-center gap-2">
                 <FieldLabel icon={Mic}>Kalimat di video</FieldLabel>
                 <button type="button" disabled={busy} onClick={() => act(() => aiWriteScenes(p.id, 0), "Naskah ditulis ulang AI")} className="ml-auto flex items-center gap-1 text-[11px] text-brand-light hover:underline disabled:opacity-50"><Wand2 className="size-3" /> Tulis ulang AI</button>
@@ -1173,9 +1488,9 @@ function ShortScene({ p, busy, act, onResult, voice, voices, hasCartesia }: { p:
                 disabled={busy}
                 placeholder="Kalimat yang diucapkan di video"
                 onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== line && act(() => setSceneLine(p.id, 0, e.target.value), "Kalimat disimpan")}
-                className="w-full rounded-md border bg-background px-2.5 py-2 text-[13px] outline-none focus:border-ring"
+                className={`w-full rounded-md border bg-background px-2.5 outline-none focus:border-ring ${compact ? "py-1.5 text-xs" : "py-2 text-[13px]"}`}
               />
-              <p className="text-[10px] text-muted-foreground">Maks ±{Math.round(p.clipSec * 2.5)} kata supaya muat {p.clipSec} dtk. Mengubah kalimat membuat klip perlu dibuat ulang.</p>
+              {!compact && <p className="text-[10px] text-muted-foreground">Maks ±{Math.round(p.clipSec * 2.5)} kata supaya muat {p.clipSec} dtk. Mengubah kalimat membuat klip perlu dibuat ulang.</p>}
             </div>
           )}
 
@@ -1229,7 +1544,7 @@ function StepStoryboard({
       } finally {
         setWriting(null);
       }
-    }, index != null ? "Prompt adegan ditulis ulang AI" : "Semua prompt ditulis ulang AI");
+    }, index != null ? "Prompt scene ditulis ulang AI" : "Semua prompt ditulis ulang AI");
   };
 
   const upload = (files: FileList | null) => {
@@ -1243,7 +1558,7 @@ function StepStoryboard({
 
   if (!p.scenes.length) {
     return (
-      <Card icon={LayoutGrid} title="Storyboard" desc="Gambar dan prompt tiap adegan.">
+      <Card icon={LayoutGrid} title="Storyboard" desc="Gambar dan prompt tiap scene.">
         <Empty icon={LayoutGrid} title="Storyboard masih kosong" desc="Atur videonya di langkah Siapkan, lalu tekan Buat video sekarang atau Atur storyboard manual." action={<button type="button" className={`${primary} mt-2`} onClick={onBack}><Package className="size-4" /> Ke langkah Siapkan</button>} />
       </Card>
     );
@@ -1257,8 +1572,8 @@ function StepStoryboard({
       icon={LayoutGrid}
       title="Storyboard"
       desc={custom
-        ? "Racik tiap adegan: tulis prompt sendiri, pasang gambarmu, atau minta AI membuatkan. Atur urutannya sesukamu."
-        : "Cek gambar tiap adegan sebelum dirender. Mau beda? Ubah prompt, pasang gambarmu sendiri, atau tambah adegan."}
+        ? "Racik tiap scene: tulis prompt sendiri, pasang gambarmu, atau minta AI membuatkan. Atur urutannya sesukamu."
+        : "Cek gambar tiap scene sebelum dirender. Mau beda? Ubah prompt, pasang gambarmu sendiri, atau tambah scene."}
       footer={
         <>
           {dirty && <button type="button" className={secondary} disabled={busy} onClick={() => act(() => saveProject(p.id, { scenes }), "Tersimpan")}><Save className="size-4" /> Simpan perubahan</button>}
@@ -1270,7 +1585,7 @@ function StepStoryboard({
               <Sparkles className="size-4" /> {missing === p.scenes.length ? "Buat semua gambar (AI)" : `Buat ulang ${aiTodo.length} gambar AI`}
             </button>
           )}
-          <button type="button" className={primary} disabled={busy || !ready || dirty} onClick={onNext} title={!ready ? "Semua adegan perlu gambar" : undefined}>
+          <button type="button" className={primary} disabled={busy || !ready || dirty} onClick={onNext} title={!ready ? "Semua scene perlu gambar" : undefined}>
             Ke render <ArrowDown className="size-4" />
           </button>
         </>
@@ -1287,7 +1602,7 @@ function StepStoryboard({
         locked={silentConcept ? "Konsep ini tanpa suara (video disinkronkan ke musik di CapCut)." : null}
         onSaved={() => router.refresh()}
       />
-      <SectionTitle n={2} icon={Images} title="Adegan" hint={missing ? `${p.scenes.length - missing}/${p.scenes.length} punya gambar` : `${p.scenes.length} adegan siap`} />
+      <SectionTitle n={2} icon={Images} title="Scene" hint={missing ? `${p.scenes.length - missing}/${p.scenes.length} punya gambar` : `${p.scenes.length} scene siap`} />
       <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
         {scenes.map((s, i) => {
           const server = p.scenes[i];
@@ -1298,7 +1613,7 @@ function StepStoryboard({
                   <SceneMedia scene={server} kind="image" running={p.status === "running"} scenes={p.scenes} />
                   {server?.own && server.image && <span className="absolute top-1 left-1 rounded bg-black/65 px-1.5 py-px text-[9px] font-medium text-white">Gambarmu</span>}
                   {server?.check && !server.check.ok && p.status !== "running" && p.product.photos.length > 0 && (
-                    <button type="button" onClick={() => act(() => applyProductPhoto(p.id, i), "Foto produk asli dipakai untuk adegan ini")} className="mt-1 w-full rounded-md border border-amber-500/50 bg-amber-500/10 px-1.5 py-1 text-[10px] font-medium text-amber-700 hover:bg-amber-500/20 dark:text-amber-300" title="Klipnya nanti dibuat dari foto produk asli, jadi produknya pasti sama">
+                    <button type="button" onClick={() => act(() => applyProductPhoto(p.id, i), "Foto produk asli dipakai untuk scene ini")} className="mt-1 w-full rounded-md border border-amber-500/50 bg-amber-500/10 px-1.5 py-1 text-[10px] font-medium text-amber-700 hover:bg-amber-500/20 dark:text-amber-300" title="Klipnya nanti dibuat dari foto produk asli, jadi produknya pasti sama">
                       Pakai foto produk asli
                     </button>
                   )}
@@ -1326,13 +1641,13 @@ function StepStoryboard({
                     maxLength={60}
                     disabled={busy}
                     onChange={(e) => edit(i, "label", e.target.value)}
-                    aria-label="Nama adegan"
+                    aria-label="Nama scene"
                     className="min-w-28 flex-1 rounded-md bg-transparent px-1 py-0.5 text-xs font-semibold outline-none hover:bg-accent focus:bg-accent"
                   />
                   <button
                     type="button"
-                    aria-label="Tulis prompt adegan ini dengan AI"
-                    title="Tulis ulang prompt adegan ini dengan AI"
+                    aria-label="Tulis prompt scene ini dengan AI"
+                    title="Tulis ulang prompt scene ini dengan AI"
                     disabled={busy}
                     onClick={() => aiWrite(i)}
                     className="grid size-6 place-items-center rounded-md text-black dark:text-white hover:bg-accent disabled:opacity-30"
@@ -1343,9 +1658,9 @@ function StepStoryboard({
                   <button type="button" aria-label="Geser ke bawah" disabled={busy || i === scenes.length - 1} onClick={() => saveThen(() => moveScene(p.id, i, 1))} className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"><ArrowDown className="size-3.5" /></button>
                   <button
                     type="button"
-                    aria-label="Hapus adegan"
+                    aria-label="Hapus scene"
                     disabled={busy || scenes.length <= 1}
-                    onClick={async () => (await confirmDialog({ title: `Hapus adegan "${s.label}"?`, description: "Gambar dan klip adegan ini dilepas dari proyek.", danger: true })) && saveThen(() => removeScene(p.id, i))}
+                    onClick={async () => (await confirmDialog({ title: `Hapus scene "${s.label}"?`, description: "Gambar dan klip scene ini dilepas dari proyek.", danger: true })) && saveThen(() => removeScene(p.id, i))}
                     className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive disabled:opacity-30"
                   >
                     <Trash2 className="size-3.5" />
@@ -1358,7 +1673,7 @@ function StepStoryboard({
                     rows={4}
                     disabled={busy}
                     value={s.imagePrompt}
-                    placeholder="Gambarkan adegannya: siapa, memegang apa, di mana, cahaya seperti apa. Contoh: tangan wanita memegang botol serum di meja marmer, cahaya pagi, foto vertikal realistis"
+                    placeholder="Gambarkan scene-nya: siapa, memegang apa, di mana, cahaya seperti apa. Contoh: tangan wanita memegang botol serum di meja marmer, cahaya pagi, foto vertikal realistis"
                     onChange={(e) => edit(i, "imagePrompt", e.target.value)}
                   />
                 </label>
@@ -1381,17 +1696,17 @@ function StepStoryboard({
         <button
           type="button"
           disabled={busy || scenes.length >= 12}
-          onClick={() => saveThen(() => addScene(p.id), "Adegan ditambah")}
+          onClick={() => saveThen(() => addScene(p.id), "Scene ditambah")}
           className="flex min-h-40 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed text-xs text-muted-foreground transition-colors hover:border-ring/40 hover:bg-accent hover:text-foreground disabled:opacity-50"
         >
-          <Plus className="size-5" /> Tambah adegan
-          <span className="text-[11px]">{scenes.length}/12 adegan</span>
+          <Plus className="size-5" /> Tambah scene
+          <span className="text-[11px]">{scenes.length}/12 scene</span>
         </button>
       </div>
       <LibraryPicker
         open={picking != null}
         onClose={() => setPicking(null)}
-        title="Pilih gambar untuk adegan"
+        title="Pilih gambar untuk scene"
         onPick={(rel) => {
           const i = picking;
           if (i != null) saveThen(() => pickFromLibrary(p.id, rel, { kind: "scene", index: i }), "Gambar dipasang");
@@ -1406,8 +1721,8 @@ function StepRender({ p, busy, act, ready, onBack, voiceLabel }: { p: Project; b
   const silent = isSilent(p.presetId, p.options);
   if (!p.scenes.length)
     return (
-      <Card icon={Clapperboard} title="Render" desc="Buat klip tiap adegan, lalu gabung jadi satu video.">
-        <Empty icon={Clapperboard} title="Belum ada adegan untuk dirender" desc="Susun storyboard dan buat gambar tiap adegan dulu." action={<button type="button" className={`${primary} mt-2`} onClick={onBack}><LayoutGrid className="size-4" /> Ke storyboard</button>} />
+      <Card icon={Clapperboard} title="Render" desc="Buat klip tiap scene, lalu gabung jadi satu video.">
+        <Empty icon={Clapperboard} title="Belum ada scene untuk dirender" desc="Susun storyboard dan buat gambar tiap scene dulu." action={<button type="button" className={`${primary} mt-2`} onClick={onBack}><LayoutGrid className="size-4" /> Ke storyboard</button>} />
       </Card>
     );
   return (
@@ -1415,7 +1730,7 @@ function StepRender({ p, busy, act, ready, onBack, voiceLabel }: { p: Project; b
     <Card
       icon={Clapperboard}
       title="Render"
-      desc="Flow membuat klip tiap adegan, lalu semuanya digabung jadi satu video. Klip yang sudah jadi tidak dibuat ulang."
+      desc="Flow membuat klip tiap scene, lalu semuanya digabung jadi satu video. Klip yang sudah jadi tidak dibuat ulang."
       footer={
         <>
           <button type="button" className={secondary} onClick={onBack}><ArrowLeft className="size-4" /> Storyboard</button>
@@ -1425,7 +1740,7 @@ function StepRender({ p, busy, act, ready, onBack, voiceLabel }: { p: Project; b
         </>
       }
     >
-      {!ready && <p className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"><CircleAlert className="size-4 shrink-0" /> Semua adegan perlu gambar dulu. <button type="button" onClick={onBack} className="font-semibold underline underline-offset-2">Kembali ke storyboard</button></p>}
+      {!ready && <p className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"><CircleAlert className="size-4 shrink-0" /> Semua scene perlu gambar dulu. <button type="button" onClick={onBack} className="font-semibold underline underline-offset-2">Kembali ke storyboard</button></p>}
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         <Stat icon={Clapperboard} label="Klip" value={`${p.scenes.length} × ${p.clipSec} dtk`} />
         <Stat icon={Timer} label="Durasi video" value={`±${mmss(p.scenes.length * p.clipSec * 1000)}`} />
@@ -1433,7 +1748,7 @@ function StepRender({ p, busy, act, ready, onBack, voiceLabel }: { p: Project; b
         <Stat icon={CheckCircle2} label="Klip jadi" value={`${doneClips}/${p.scenes.length}`} />
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden><div className="h-full rounded-full bg-status-ok transition-all" style={{ width: `${p.scenes.length ? (doneClips / p.scenes.length) * 100 : 0}%` }} /></div>
-      <SectionTitle icon={Film} title="Klip per adegan" />
+      <SectionTitle icon={Film} title="Klip per scene" />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-6">
         {p.scenes.map((s, i) => (
           <div key={i} className="space-y-1.5">
@@ -1450,7 +1765,7 @@ function StepRender({ p, busy, act, ready, onBack, voiceLabel }: { p: Project; b
   );
 }
 
-function StepResult({ p, onBack }: { p: Project; onBack: () => void }) {
+function StepResult({ p, locked, onBack }: { p: Project; locked: boolean; onBack: () => void }) {
   // Video Pendek: straight to the finished video (no timeline); the editor only on request. Video Panjang: editor.
   const [manual, setManual] = useState(false);
   if (!p.finalPath) {
@@ -1460,6 +1775,7 @@ function StepResult({ p, onBack }: { p: Project; onBack: () => void }) {
       </Card>
     );
   }
+  if (locked) return <QuickResult p={p} />; // final video only, no timeline
   if (p.options.format !== "long" && !manual) return <QuickResult p={p} onEdit={() => setManual(true)} />;
   return <TimelineEditor p={p} />;
 }

@@ -1,4 +1,5 @@
 import "server-only";
+import { jobSignal, throwIfCancelled } from "@/lib/jobs";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -249,21 +250,55 @@ export async function checkFlow2Api(cfg: Flow2ApiConfig) {
 
 export type BrowserCookie = { name: string; value: string; domain: string; path: string; expires: number; httpOnly: boolean; secure: boolean; sameSite?: string };
 
-/** Register (or refresh) a Google/Flow session in flow2api. Returns the flow2api token id, email and credits. */
-export async function upsertFlowSession(input: { tokenId?: number | null; st: string; cookies: BrowserCookie[]; remark: string }) {
+/**
+ * Register (or refresh) a Google/Flow session in flow2api. Returns the flow2api token id, email and credits.
+ * The saved token id is only reused when flow2api still has that session for the same account: after flow2api's
+ * own database was reset (fresh sidecar, reinstall) a PUT to a missing id answers 200 without saving anything, and
+ * the id may by then belong to another account. In both cases the session is registered anew.
+ */
+export async function upsertFlowSession(input: { tokenId?: number | null; email: string; st: string; cookies: BrowserCookie[]; remark: string }) {
   const cfg = await requireFlow2Api();
   const body = JSON.stringify({ st: input.st, google_cookies: JSON.stringify(input.cookies), remark: input.remark, video_enabled: true, image_enabled: true });
-  if (input.tokenId) {
-    await admin(cfg, `/api/tokens/${input.tokenId}`, { method: "PUT", body });
-    const credits = await refreshFlowCredits(input.tokenId).catch(() => null);
-    return { id: input.tokenId, email: null as string | null, credits };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- flow2api JSON
+  const tokens: any[] = await admin(cfg, "/api/tokens").then((t) => (Array.isArray(t) ? t : []));
+  const mine = (t: { email?: string; remark?: string }) => String(t.email ?? "").toLowerCase() === input.email.toLowerCase() || t.remark === input.remark;
+  // the saved id when it is still this account's, else this account's session under another id (no duplicate)
+  const id = Number((tokens.find((t) => Number(t.id) === input.tokenId && mine(t)) ?? tokens.find(mine))?.id) || null;
+  if (id) {
+    await admin(cfg, `/api/tokens/${id}`, { method: "PUT", body });
+    const credits = await refreshFlowCredits(id).catch(() => null);
+    return { id, email: null as string | null, credits };
   }
   const j = await admin(cfg, "/api/tokens", { method: "POST", body });
   return { id: Number(j.token.id), email: (j.token.email as string) ?? null, credits: j.token.credits != null ? Number(j.token.credits) : null };
 }
 
+/**
+ * Remove flow2api sessions that no Google account in this app owns (e.g. deleted in Pengaturan while flow2api was
+ * off). flow2api picks any session it has for each generation, so a leftover one (another laptop's account) would
+ * be used silently: its credits drop unseen and the same account runs on two laptops at once.
+ * Sessions younger than 5 minutes are kept: a login that is still being saved has no account row yet.
+ */
+export async function pruneOrphanFlowSessions() {
+  const cfg = await requireFlow2Api();
+  const owned = new Set((await db.select({ t: googleAccounts.flowTokenId }).from(googleAccounts)).map((a) => a.t).filter((t): t is number => t != null));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- flow2api JSON
+  const tokens: any[] = await admin(cfg, "/api/tokens");
+  const removed: string[] = [];
+  for (const t of Array.isArray(tokens) ? tokens : []) {
+    const id = Number(t.id);
+    const age = t.created_at ? Date.now() - Date.parse(t.created_at) : Infinity;
+    if (!id || owned.has(id) || age < 5 * 60_000) continue;
+    await admin(cfg, `/api/tokens/${id}`, { method: "DELETE" });
+    removed.push(String(t.email ?? id));
+  }
+  if (removed.length) console.log(`[flow2api] sesi tanpa akun di app dihapus: ${removed.join(", ")}`);
+  return removed;
+}
+
 /** Re-read the Flow credits of every active Google account (after a render used some). */
 export async function syncAllFlowCredits() {
+  await pruneOrphanFlowSessions().catch((e) => console.error("[flow2api] gagal membersihkan sesi:", e));
   const list = await db.select().from(googleAccounts).where(eq(googleAccounts.status, "active"));
   for (const a of list) {
     if (!a.flowTokenId) continue;
@@ -301,13 +336,19 @@ function humanize(line: string) {
 export type ChatContent = string | ({ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } })[];
 
 /** Streamed chat completion against flow2api (generation takes minutes). Returns the full assistant text. */
+/** The request's own timeout, plus the project's "Batalkan" when it runs inside a job. */
+function cancelOr(timeout: AbortSignal) {
+  const job = jobSignal();
+  return job ? AbortSignal.any([timeout, job]) : timeout;
+}
+
 async function flowChat(model: string, content: ChatContent, onProgress?: Progress) {
   const cfg = await requireFlow2Api();
   const res = await fetch(`${cfg.baseUrl}/v1/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${cfg.apiKey}` },
     body: JSON.stringify({ model, messages: [{ role: "user", content }], stream: true }),
-    signal: AbortSignal.timeout(30 * 60_000),
+    signal: cancelOr(AbortSignal.timeout(30 * 60_000)),
   });
   if (!res.ok || !res.body) throw new Error(`flow2api ${res.status}: ${(await res.text()).slice(0, 300)}`);
 
@@ -423,6 +464,7 @@ async function captchaRetry<T>(fn: () => Promise<T>, onProgress?: Progress) {
   try {
     return await fn();
   } catch (e) {
+    throwIfCancelled(); // "Batalkan": no captcha fallback or retry
     if (process.platform !== "win32" || !(e instanceof Error)) throw e;
     const raw = `${e.message} ${String(e.cause ?? "")}`;
     if (state.gen !== gen || state.running) {
