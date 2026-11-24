@@ -9,6 +9,10 @@ import { accounts, uploadJobs, videoProjects } from "@/lib/db/schema";
 import { resolveMedia } from "@/lib/media";
 import { projectName } from "@/lib/presets";
 import { kickUploads, runJobNow } from "@/lib/uploads";
+import { allResults, cleanTitle, resultTitle } from "@/lib/youtube-editor";
+
+/** Pseudo project id of the YouTube Editor renders in the scheduling form (stored as no project). */
+const EDITOR = 0;
 
 const Id = z.number().int().positive();
 const refresh = () => revalidatePath("/jadwal");
@@ -16,7 +20,7 @@ const refresh = () => revalidatePath("/jadwal");
 /** Opening line of a one-take voice-over (what the hook stats group by). */
 const firstLine = (t?: string | null) => (t ?? "").trim().match(/^.+?[.!?](?:\s|$)/)?.[0]?.trim() ?? (t ?? "").split(/\s+/).slice(0, 10).join(" ");
 
-export type Uploadable = { projectId: number; title: string; video: string; label: string; hook: string | null; caption: string; productId: string | null; productTitle: string };
+export type Uploadable = { projectId: number; title: string; video: string; label: string; hook: string | null; caption: string; productId: string | null; productTitle: string; judul?: string };
 
 /** Every exported video ready to post: final.mp4 plus hook variants (final-A.mp4 …) of each project. */
 export async function listUploadable(): Promise<Uploadable[]> {
@@ -35,12 +39,18 @@ export async function listUploadable(): Promise<Uploadable[]> {
       out.push({ ...base, video: `${p.folder}/${f}`, label: variant ? `Varian ${variant}` : "Video utama", hook: variant ? side?.hook ?? null : firstLine(p.edit?.voices[0]?.text) || null });
     }
   }
+  // YouTube Editor renders: one group; each video brings its own Short title for "{judul}"
+  for (const r of allResults().slice(0, 100)) {
+    const judul = cleanTitle(resultTitle(r.rel)) || "Video";
+    out.push({ projectId: EDITOR, title: "Hasil YouTube Editor", video: r.rel, label: judul.slice(0, 40), hook: null, caption: "", productId: null, productTitle: "", judul });
+  }
   return out;
 }
 
 const NewJobs = z.object({
   accountId: Id,
-  items: z.array(z.object({ projectId: Id, video: z.string().min(3).max(400), label: z.string().max(40), hook: z.string().max(300).nullish() })).min(1).max(10),
+  // projectId 0 = a YouTube Editor render (no project); judul = that video's title for "{judul}" in title/caption
+  items: z.array(z.object({ projectId: z.number().int().min(0), video: z.string().min(3).max(400), label: z.string().max(40), hook: z.string().max(300).nullish(), judul: z.string().max(200).nullish() })).min(1).max(50),
   caption: z.string().max(2200),
   productId: z.string().regex(/^\d{10,22}$/).nullish(),
   productTitle: z.string().max(60).nullish(),
@@ -49,11 +59,13 @@ const NewJobs = z.object({
   startAt: z.number().int(), // epoch ms
   gapMinutes: z.number().int().min(20).max(24 * 60),
   // YouTube channels: video title + tags/visibility/audience/AI label (caption = description)
-  videoTitle: z.string().max(100).nullish(),
+  videoTitle: z.string().max(200).nullish(), // may hold "{judul}", filled per video
   meta: z
     .object({ tags: z.array(z.string().max(100)).max(30), visibility: z.enum(["public", "unlisted", "private"]), madeForKids: z.boolean(), aiContent: z.boolean() })
     .nullish(),
 });
+
+const fill = (t: string, judul?: string | null) => (judul ? t.replaceAll("{judul}", judul) : t);
 
 /** Schedule one or more videos for an account, spaced by gapMinutes (A/B variants go out at different times). */
 export async function createUploadJobs(input: z.input<typeof NewJobs>) {
@@ -67,16 +79,16 @@ export async function createUploadJobs(input: z.input<typeof NewJobs>) {
   await db.insert(uploadJobs).values(
     d.items.map((it, i) => ({
       accountId: acc.id,
-      projectId: it.projectId,
+      projectId: it.projectId || null,
       video: it.video,
       label: it.label,
       hook: it.hook ?? null,
-      caption: d.caption.trim(),
+      caption: fill(d.caption, it.judul).trim(),
       productId: yt ? null : d.productId || null,
       productTitle: yt ? null : d.productTitle || null,
       music: yt ? false : d.music,
       musicVolume: d.musicVolume,
-      videoTitle: yt ? d.videoTitle!.trim() : null,
+      videoTitle: yt ? fill(d.videoTitle!, it.judul).trim().slice(0, 100) : null,
       meta: yt ? d.meta ?? null : null,
       scheduledAt: new Date(start + i * d.gapMinutes * 60_000),
     })),

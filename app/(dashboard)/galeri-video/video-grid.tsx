@@ -122,7 +122,7 @@ export function VideoGrid({ videos }: { videos: GalleryVideo[] }) {
                   )}
                   <a href={`${mediaUrl(v.rel)}?download`} title="Unduh" className="grid size-7 place-items-center rounded-md border hover:bg-accent"><Download className="size-3.5" /></a>
                   {v.source === "youtube" && v.status !== "terposting" && (
-                    <Link href={`/youtube-editor?jadwal=${encodeURIComponent(v.rel)}`} className="flex h-7 flex-1 items-center justify-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/90">
+                    <Link href={`/jadwal?video=${encodeURIComponent(v.rel)}`} className="flex h-7 flex-1 items-center justify-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/90">
                       <CalendarClock className="size-3.5" /> {v.status === "terjadwal" ? "Jadwalkan lagi" : "Jadwalkan"}
                     </Link>
                   )}
