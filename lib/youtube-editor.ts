@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import ffmpegPath from "ffmpeg-static";
+import { listMusic } from "@/lib/audio-library";
 import { MEDIA_DIR, toRel } from "@/lib/media";
 
 const run = promisify(execFile);
@@ -135,15 +136,28 @@ export function layoutFilter(o: EditorSettings) {
   );
 }
 
-/** ffmpeg audio filter → [aout] mixing both sounds at their volumes, or null when nothing is heard. */
-export function audioFilter(o: EditorSettings, has: { original: boolean; game: boolean }) {
+/** ffmpeg audio filter → [aout] mixing the sounds at their volumes (music = input 2, fading out over the last 2 s of
+ *  `len` when given), or null when nothing is heard. */
+export function audioFilter(o: EditorSettings, has: { original: boolean; game: boolean; music?: boolean }, len = 0) {
   const parts: string[] = [];
   if (has.original && o.volOriginal > 0) parts.push(`[0:a]volume=${(o.volOriginal / 100).toFixed(2)}`);
   if (has.game && o.volGame > 0) parts.push(`[1:a]volume=${(o.volGame / 100).toFixed(2)}`);
+  if (has.music && o.volMusic > 0) parts.push(`[2:a]volume=${(o.volMusic / 100).toFixed(2)}${len > 4 ? `,afade=t=out:st=${(len - 2).toFixed(2)}:d=2` : ""}`);
   if (!parts.length) return null;
   if (parts.length === 1) return `${parts[0]}[aout]`;
-  return `${parts[0]}[a0];${parts[1]}[a1];[a0][a1]amix=inputs=2:duration=first:normalize=0[aout]`;
+  // the mix ends with the first sound (the original, or the overlay when the original is silent); music loops under it
+  const tags = parts.map((_, i) => `[x${i}]`);
+  return `${parts.map((p, i) => `${p}${tags[i]}`).join(";")};${tags.join("")}amix=inputs=${parts.length}:duration=first:normalize=0[aout]`;
 }
+
+/** The track behind "*" / a picked one: a media path, or null for no music. */
+export async function resolveMusic(choice: string) {
+  if (!choice) return null;
+  const list = await listMusic();
+  if (choice === "*") return list.length ? list[Math.floor(Math.random() * list.length)].src : null;
+  return list.some((m) => m.src === choice) ? choice : null;
+}
+const musicInput = (rel: string | null) => (rel ? ["-stream_loop", "-1", "-i", path.resolve(MEDIA_DIR, rel)] : []);
 
 /** One still of the result at `at` seconds (overlay at its start + at, or 5 s further in) with these settings: the Editor's live preview. */
 export async function renderPreview(original: string, gameplay: string, o: EditorSettings, at = 2) {
@@ -167,7 +181,8 @@ export async function renderPreviewClip(original: string, gameplay: string, o: E
   fs.mkdirSync(dir, { recursive: true });
   const out = path.join(dir, `preview-${Date.now()}.mp4`);
   for (const f of fs.readdirSync(dir)) if (/^preview-\d+\.mp4$/.test(f)) fs.rmSync(path.join(dir, f), { force: true }); // keep only the newest
-  const sound = audioFilter(o, { original: a.audio, game: b.audio });
+  const music = await resolveMusic(o.music);
+  const sound = audioFilter(o, { original: a.audio, game: b.audio, music: !!music });
   const start = Math.max(0, Math.min(at, a.len - 1));
   const gameAt = o.gameStart >= 0 ? o.gameStart + start : start + 5;
   await run(
@@ -176,6 +191,7 @@ export async function renderPreviewClip(original: string, gameplay: string, o: E
       "-y", "-hide_banner", "-loglevel", "error",
       "-ss", start.toFixed(2), "-i", original,
       "-stream_loop", "-1", "-ss", (b.len ? gameAt % b.len : 0).toFixed(2), "-i", gameplay,
+      ...musicInput(music),
       "-filter_complex", sound ? `${layoutFilter(o)};${sound}` : layoutFilter(o),
       "-map", "[v]", ...(sound ? ["-map", "[aout]", "-c:a", "aac", "-b:a", "128k"] : ["-an"]),
       "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26", "-pix_fmt", "yuv420p", "-t", String(secs), "-movflags", "+faststart",
@@ -191,16 +207,17 @@ export type EditorJob = { total: number; done: { name: string; rel: string }[]; 
 const g = globalThis as { __ytEditor?: EditorJob; __ytEditorProc?: ReturnType<typeof spawn> };
 export const editorJob = () => g.__ytEditor ?? null;
 
-async function renderOne(original: string, gameplay: string, o: EditorSettings, out: string, title: string) {
+async function renderOne(original: string, gameplay: string, o: EditorSettings, out: string, title: string, music: string | null) {
   const [a, b] = await Promise.all([probe(original), probe(gameplay)]);
   const len = a.len;
   // the overlay starts where the user chose, or somewhere random (it loops) so two renders with the same clip differ
   const offset = o.gameStart >= 0 ? Math.min(o.gameStart, Math.max(0, b.len - 1)) : b.len > len + 5 ? Math.random() * (b.len - len - 2) : 0;
-  const sound = audioFilter(o, { original: a.audio, game: b.audio });
+  const sound = audioFilter(o, { original: a.audio, game: b.audio, music: !!music }, len);
   const args = [
     "-y", "-hide_banner", "-loglevel", "error",
     "-i", original,
     "-stream_loop", "-1", "-ss", offset.toFixed(2), "-i", gameplay,
+    ...musicInput(music),
     "-filter_complex", sound ? `${layoutFilter(o)};${sound}` : layoutFilter(o),
     "-map", "[v]", ...(sound ? ["-map", "[aout]", "-c:a", "aac", "-b:a", "160k"] : ["-an"]),
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
@@ -241,7 +258,7 @@ export async function startRender(c: { originals: string[]; gameplay: string[]; 
       const stamp = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 19).replace(/[-:T]/g, ""); // WIB wall clock
       const out = path.join(OUT(), `${stamp} ${name.replace(/[<>:"/\\|?*]+/g, "").slice(0, 60)}.mp4`);
       try {
-        await renderOne(abs(rel), abs(game), c.settings, out, name);
+        await renderOne(abs(rel), abs(game), c.settings, out, name, await resolveMusic(c.settings.music));
         job.done.push({ name, rel: toRel(out) });
         markRendered(rel, toRel(out));
       } catch (e) {

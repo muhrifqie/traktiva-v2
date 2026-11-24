@@ -3,6 +3,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { z } from "zod";
+import { addMusic, listMusic } from "@/lib/audio-library";
 import { resolveMedia } from "@/lib/media";
 import { updateSettings } from "@/lib/settings";
 import { cancelRender, editorJob, GAMEPLAY_DIR, listGameplay, listRendered, listResults, probe, renderPreview, renderPreviewClip, SIZES, startRender, type EditorSettings } from "@/lib/youtube-editor";
@@ -35,6 +36,8 @@ const Settings = z.object({
   pipBorder: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
   pipBorderColor: z.enum(["white", "black"]),
   gameStart: z.number().min(-1).max(36_000),
+  music: z.string().max(300),
+  volMusic: z.number().int().min(0).max(100),
   volOriginal: z.number().int().min(0).max(150),
   volGame: z.number().int().min(0).max(100),
   flipOriginal: z.enum(["none", "h", "v", "hv"]),
@@ -76,6 +79,20 @@ export const renderVideos = async (input: { originals: string[]; gameplay: strin
   });
 
 export const renderStatus = async () => editorJob();
+
+// ---- music: the shared Pustaka library (same tracks as in Buat Video) ----
+export const musicList = async () => (await listMusic()).map((m) => ({ src: m.src, name: m.name, dur: m.dur }));
+const AUDIO_EXT = /\.(mp3|wav|m4a|aac|ogg)$/i;
+export const uploadEditorMusic = async (form: FormData) =>
+  safe(async () => {
+    const f = form.get("music");
+    if (!(f instanceof File) || !f.size) throw new Error("Pilih file musik.");
+    const ext = AUDIO_EXT.exec(f.name)?.[0].toLowerCase();
+    if (!ext) throw new Error("Format musik harus MP3, WAV, M4A, AAC, atau OGG.");
+    if (f.size > 25 * 1024 * 1024) throw new Error("Ukuran musik maksimal 25 MB.");
+    const m = await addMusic(Buffer.from(await f.arrayBuffer()), f.name, ext);
+    return { src: m.src, name: m.name, dur: m.dur };
+  });
 export const stopRender = async () => cancelRender();
 export const refreshLists = async () => ({ gameplay: listGameplay(), results: listResults(), rendered: listRendered() });
 

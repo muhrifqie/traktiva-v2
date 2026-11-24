@@ -4,13 +4,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, Blend, Check, Frame, Layers, Maximize2, Move, Play, Scissors, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Columns2, Crop, FlipHorizontal2, FolderOpen, Loader2, Palette, PictureInPicture2,
-  Plus, Ratio, RefreshCw, Rows2, Search, Shuffle, Square, Timer, Upload, Video, Volume2, VolumeX, X, type LucideIcon,
+  Music, Plus, Ratio, RefreshCw, Rows2, Search, Shuffle, Square, Timer, Upload, Video, Volume2, VolumeX, X, type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { mediaUrl } from "@/lib/media-url";
 import type { EditorJob, SourceFile } from "@/lib/youtube-editor";
 import { ASPECTS, PIP_RANGE, pipBox, RATIO_RANGE, SIZES, type Aspect, type EditorSettings, type Fill, type Fit, type Flip, type Seam, type Shape, type Size } from "@/lib/youtube-editor-config";
-import { clipLengths, openMediaFolder, previewClip, previewFrame, refreshLists, renderStatus, renderVideos, saveEditorSettings, stopRender } from "./actions";
+import { clipLengths, musicList, openMediaFolder, previewClip, previewFrame, refreshLists, renderStatus, renderVideos, saveEditorSettings, stopRender, uploadEditorMusic } from "./actions";
 
 // YouTube → Editor, full screen over the app (sidebar hidden): media on the left, the live monitor in the middle,
 // settings on the right. Click Shorts to pick them, drag the divider (or the reaction overlay) on the monitor, press Render.
@@ -89,10 +89,10 @@ const FLIPS: { v: Flip; label: string; title: string }[] = [
 ];
 
 export function VideoEditor({
-  originals, initialGameplay, initialResults, initialJob, initialSettings, initialRendered,
+  originals, initialGameplay, initialResults, initialJob, initialSettings, initialRendered, initialMusic,
 }: {
   originals: { channel: string; files: SourceFile[] }[]; initialGameplay: SourceFile[]; initialResults: SourceFile[]; initialJob: EditorJob | null;
-  initialSettings: EditorSettings; initialRendered: Record<string, string>;
+  initialSettings: EditorSettings; initialRendered: Record<string, string>; initialMusic: { src: string; name: string; dur: number }[];
 }) {
   const [tab, setTab] = useState<Tab>("asli");
   const [channel, setChannel] = useState(originals[0]?.channel ?? "");
@@ -109,6 +109,34 @@ export function VideoEditor({
   const [job, setJob] = useState(initialJob);
   const [preview, setPreview] = useState<{ url: string | null; busy: boolean; error: string | null }>({ url: null, busy: false, error: null });
   const [vid, setVid] = useState<{ url: string | null; key: string; busy: boolean }>({ url: null, key: "", busy: false });
+  const [music, setMusic] = useState(initialMusic);
+  const [uploading, setUploading] = useState(false);
+  const [listening, setListening] = useState<string | null>(null);
+  const ear = useRef<HTMLAudioElement>(null);
+  const listen = (src: string) => {
+    const a = ear.current!;
+    if (listening === src) {
+      a.pause();
+      setListening(null);
+      return;
+    }
+    a.src = mediaUrl(src);
+    a.volume = 0.6;
+    void a.play();
+    setListening(src);
+  };
+  const upload = async (file: File | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    const fd = new FormData();
+    fd.set("music", file);
+    const r = await uploadEditorMusic(fd);
+    setUploading(false);
+    if ("error" in r) return toast.error(r.error);
+    setMusic(await musicList());
+    set("music", r.ok!.src);
+    toast.success(`Musik "${r.ok!.name}" ditambahkan`);
+  };
   const [drag, setDrag] = useState<number | null>(null);
   // reaction overlay being moved/resized on the monitor (committed on release)
   const [ov, setOv] = useState<{ x: number; y: number; size: number } | null>(null);
@@ -681,18 +709,39 @@ export function VideoEditor({
               </Row>
             ))}
           </Section>
-          <Section icon={Volume2} tone="bg-emerald-500/15 text-emerald-500" title="Suara">
-            {([["volOriginal", "Video asli", Video, 150, 100], ["volGame", "Overlay", Layers, 100, 40]] as const).map(([k, label, Icon, max, unmute]) => (
-              <Row key={k} icon={Icon} label={label}>
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => set(k, cfg[k] ? 0 : unmute)} disabled={running} title={cfg[k] ? "Bisukan" : "Nyalakan"} className="grid size-7 shrink-0 place-items-center rounded-md hover:bg-accent">
-                    {cfg[k] ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5 text-muted-foreground" />}
-                  </button>
-                  <Slider label={`Volume ${label}`} value={cfg[k]} min={0} max={max} onChange={(v) => set(k, v)} disabled={running} />
-                  <span className="w-9 shrink-0 text-right text-[11px] tabular-nums">{cfg[k]}%</span>
-                </div>
-              </Row>
-            ))}
+          <Section icon={Music} tone="bg-emerald-500/15 text-emerald-500" title="Musik" value={!cfg.music ? "tanpa" : cfg.music === "*" ? "acak" : `${cfg.volMusic}%`}>
+            <div className="space-y-1">
+              {[{ src: "", name: "Tanpa musik", dur: 0 }, { src: "*", name: "Acak dari Pustaka", dur: 0 }, ...music].map((m) => {
+                const on = cfg.music === m.src;
+                const track = m.src !== "" && m.src !== "*";
+                return (
+                  <div key={m.src || "none"} className={`flex items-center gap-1 rounded-lg border pr-1 transition-colors ${on ? ON : "border-transparent hover:bg-accent"}`}>
+                    <button type="button" onClick={() => set("music", m.src)} disabled={running || (m.src === "*" && !music.length)} aria-pressed={on} className="flex h-9 min-w-0 flex-1 items-center gap-2 px-2.5 text-left text-xs disabled:opacity-50">
+                      {m.src === "" ? <VolumeX className="size-3.5 shrink-0" /> : m.src === "*" ? <Shuffle className="size-3.5 shrink-0" /> : <Music className="size-3.5 shrink-0" />}
+                      <span className="truncate">{m.name}</span>
+                      {m.dur > 0 && <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">{fmt(m.dur)}</span>}
+                    </button>
+                    {track && (
+                      <button type="button" onClick={() => listen(m.src)} aria-label={listening === m.src ? "Hentikan" : "Dengarkan"} title={listening === m.src ? "Hentikan" : "Dengarkan"} className="grid size-7 shrink-0 place-items-center rounded-full hover:bg-background">
+                        {listening === m.src ? <Square className="size-3 fill-current" /> : <Play className="size-3 fill-current" />}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <label className={`flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed text-xs hover:bg-accent ${uploading ? "pointer-events-none opacity-60" : ""}`}>
+              {uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />} {uploading ? "Mengunggah…" : "Unggah musik (MP3, WAV, M4A)"}
+              <input type="file" accept="audio/*" hidden onChange={(e) => (void upload(e.target.files?.[0]), (e.target.value = ""))} />
+            </label>
+            <Row icon={Volume2} label="Volume">
+              <div className="flex items-center gap-2">
+                <Slider label="Volume musik" value={cfg.volMusic} min={0} max={100} onChange={(v) => set("volMusic", v)} disabled={running || !cfg.music} />
+                <span className="w-9 shrink-0 text-right text-[11px] tabular-nums">{cfg.volMusic}%</span>
+              </div>
+            </Row>
+            <p className="text-[11px] text-muted-foreground">Musik diulang sepanjang video dan memudar di 2 detik terakhir. Lagu yang sama ada di Pustaka Buat Video. Pakai musik bebas royalti.</p>
+            <audio ref={ear} onEnded={() => setListening(null)} hidden />
           </Section>
           <p className="px-4 py-3 text-[11px] text-muted-foreground">Metadata hasil dirapikan (judul & tanggal). Semua setelan tersimpan otomatis.</p>
         </section>

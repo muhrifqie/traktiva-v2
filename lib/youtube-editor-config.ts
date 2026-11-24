@@ -36,6 +36,8 @@ export type EditorSettings = {
   pipBorder: 0 | 1 | 2 | 3; // frame: none, thin, medium, thick
   pipBorderColor: "white" | "black";
   gameStart: number; // where the overlay video starts (s); -1 = a random point each render
+  music: string; // background music from Pustaka: "" none, "*" a random track per video, else its media path
+  volMusic: number; // 0–100 (%)
   volOriginal: number; // 0–150 (%)
   volGame: number; // 0–100 (%)
   flipOriginal: Flip;
@@ -61,6 +63,8 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   pipBorder: 1,
   pipBorderColor: "white",
   gameStart: -1,
+  music: "",
+  volMusic: 25,
   volOriginal: 100,
   volGame: 0,
   flipOriginal: "none",
