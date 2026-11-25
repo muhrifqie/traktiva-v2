@@ -299,14 +299,14 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
     <span className={`absolute right-0.5 bottom-0.5 left-0.5 flex items-center gap-0.5 rounded bg-black/65 px-0.5 py-px ${small ? "" : "text-[10px]"}`}>
       <i className="size-1.5 shrink-0 rounded-full" style={{ background: accountColor(it.channelId) }} />
       <PlatformIcon platform={acc(it.channelId)?.platform ?? "tiktok"} className="size-2.5 shrink-0" />
-      <span className={`truncate font-medium text-white tabular-nums ${small ? "text-[9px]" : ""}`}>{dot(it.time)}</span>
+      {!small && <span className="truncate font-medium text-white tabular-nums">{dot(it.time)}</span>}
     </span>
   );
 
-  /** A planned video: its still, hour, account; drafts can be dragged, re-timed and removed; click plays it. */
-  const card = (it: Item, big?: boolean) => {
+  /** A planned video as a still (ring = status); drafts can be dragged to another day/hour or removed; click plays it. */
+  const card = (it: Item) => {
     const s = STATUS[stateOf(it)];
-    return !big ? (
+    return (
       <button
         key={it.key}
         type="button"
@@ -314,49 +314,26 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
         {...hoverProps(it)}
         onClick={() => play(it)}
         aria-label={`${it.title}, ${name(it.channelId)} ${dot(it.time)}`}
-        className={`relative overflow-hidden rounded ring-2 ring-offset-1 ring-offset-card transition-transform duration-150 hover:z-10 hover:scale-105 ${it.draft ? "cursor-grab opacity-80" : ""} ${s.ring} ${it.job?.status === "cancelled" ? "opacity-40 grayscale" : ""}`}
+        className={`group/still relative overflow-hidden rounded ring-2 ring-offset-1 ring-offset-card transition-transform duration-150 hover:z-10 hover:scale-105 ${it.draft ? "cursor-grab opacity-80" : ""} ${s.ring} ${it.job?.status === "cancelled" ? "opacity-40 grayscale" : ""}`}
       >
         <Thumb rel={it.rel} className="aspect-[9/16] w-full rounded-none" />
         {badge(it, true)}
         {it.job?.status === "failed" && <AlertTriangle className="absolute top-0.5 right-0.5 size-3 text-destructive drop-shadow" />}
-      </button>
-    ) : (
-      <div
-        key={it.key}
-        {...dragProps(it)}
-        {...hoverProps(it)}
-        className={`group relative flex items-center gap-1.5 overflow-hidden rounded-md border bg-background p-1 ${it.draft ? "cursor-grab border-dashed" : "bg-muted/50"}`}
-        style={{ borderColor: accountColor(it.channelId) }}
-      >
-        <button type="button" onClick={() => play(it)} aria-label={`Putar ${it.title}`} className={`relative shrink-0 rounded ring-2 ${s.ring}`}>
-          <Thumb rel={it.rel} className="h-16 w-9" />
-        </button>
-        <div className="min-w-0 flex-1 leading-tight">
-          <div className="flex items-center gap-1 text-[10px]">
-            <PlatformIcon platform={acc(it.channelId)?.platform ?? "tiktok"} className="size-3 shrink-0" />
-            {it.draft ? (
-              <select
-                value={it.time}
-                onChange={(e) => setDrafts((list) => list.map((y) => (y.id === it.draft!.id ? { ...y, time: e.target.value } : y)))}
-                aria-label="Jam tayang"
-                className="bg-transparent font-medium tabular-nums outline-none"
-              >
-                {[...new Set([...sortedSlots, it.time])].sort().map((t) => <option key={t} value={t}>{dot(t)}</option>)}
-              </select>
-            ) : (
-              <span className="font-medium tabular-nums">{dot(it.time)}</span>
-            )}
-            <span className={`ml-auto rounded px-1 text-[9px] font-semibold ${s.badge}`}>{s.label}</span>
-          </div>
-          <p className="line-clamp-2 text-[11px]">{it.title}</p>
-          <p className="truncate text-[10px] text-muted-foreground">{name(it.channelId)}</p>
-        </div>
         {it.draft && (
-          <button type="button" onClick={() => setDrafts((list) => list.filter((y) => y.id !== it.draft!.id))} aria-label="Hapus draf" className="absolute top-0.5 right-0.5 grid size-4 place-items-center rounded bg-background/90 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive">
+          <span
+            role="button"
+            aria-label="Hapus draf"
+            onClick={(e) => {
+              e.stopPropagation();
+              setHover(null);
+              setDrafts((list) => list.filter((y) => y.id !== it.draft!.id));
+            }}
+            className="absolute top-0 right-0 hidden size-4 place-items-center rounded-bl bg-black/75 text-white group-hover/still:grid hover:text-destructive"
+          >
             <X className="size-3" />
-          </button>
+          </span>
         )}
-      </div>
+      </button>
     );
   };
 
@@ -645,62 +622,65 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
           </div>
 
           {view === "week" ? (
-            // week: a column per day, a row per upload hour (+ other hours); drop on an hour = that hour
-            <div className="no-scrollbar min-h-0 flex-1 overflow-auto">
-              <div className="grid min-w-[760px]" style={{ gridTemplateColumns: `64px repeat(7, minmax(0, 1fr))` }}>
-                <div className="sticky top-0 z-10 border-b bg-card" />
-                {weekDays.map((d) => {
-                  const k = dayKey(d);
-                  const z = dropZone(k);
-                  return (
-                    <div key={k} {...z.on} className={`sticky top-0 z-10 border-b border-l bg-card px-2 py-1.5 text-center ${z.past ? "opacity-50" : ""} ${z.active ? "bg-primary/10" : ""}`}>
-                      <p className="text-[11px] text-muted-foreground">{DAYS[(d.getDay() + 6) % 7]}</p>
-                      <p className={`mx-auto grid size-7 place-items-center rounded-full text-sm font-semibold tabular-nums ${k === today ? "bg-primary text-primary-foreground" : ""}`}>{d.getDate()}</p>
-                    </div>
-                  );
-                })}
-                {[...sortedSlots, "lain"].map((slot) => (
-                  <div key={slot} className="contents">
-                    <div className="border-b px-2 py-2 text-right text-[11px] font-medium tabular-nums text-muted-foreground">{slot === "lain" ? "Lainnya" : dot(slot)}</div>
-                    {weekDays.map((d) => {
-                      const k = dayKey(d);
-                      const here = (items.get(k) ?? []).filter((it) => (slot === "lain" ? !sortedSlots.includes(it.time) : it.time === slot));
-                      const z = dropZone(k, slot === "lain" ? undefined : slot);
-                      return (
-                        <div key={k} {...z.on} className={`min-h-24 space-y-1 border-b border-l p-1 transition-colors ${z.past ? "bg-muted/30" : ""} ${z.active ? "bg-primary/10 ring-2 ring-primary/50 ring-inset" : ""}`}>
-                          {here.map((it) => card(it, true))}
-                          {!here.length && !z.past && slot !== "lain" && <p className="grid h-full min-h-20 place-items-center text-[10px] text-muted-foreground/40">Tarik ke sini</p>}
-                        </div>
-                      );
-                    })}
+            // week: a column per day, a row per upload hour (+ other hours) sharing the height; drop on an hour = that hour
+            <div
+              className="grid min-h-0 flex-1"
+              style={{ gridTemplateColumns: "52px repeat(7, minmax(0, 1fr))", gridTemplateRows: `auto repeat(${sortedSlots.length}, minmax(0, 1fr)) minmax(0, 0.6fr)` }}
+            >
+              <div className="border-b" />
+              {weekDays.map((d) => {
+                const k = dayKey(d);
+                const z = dropZone(k);
+                return (
+                  <div key={k} {...z.on} className={`flex items-center justify-center gap-1.5 border-b border-l py-1.5 ${z.past ? "opacity-50" : ""} ${z.active ? "bg-primary/10" : ""}`}>
+                    <span className="text-[11px] text-muted-foreground">{DAYS[(d.getDay() + 6) % 7]}</span>
+                    <span className={`grid size-6 place-items-center rounded-full text-xs font-semibold tabular-nums ${k === today ? "bg-primary text-primary-foreground" : ""}`}>{d.getDate()}</span>
                   </div>
-                ))}
-              </div>
+                );
+              })}
+              {[...sortedSlots, "lain"].map((slot) => (
+                <div key={slot} className="contents">
+                  <div className="border-b px-1.5 py-1.5 text-right text-[11px] font-medium tabular-nums text-muted-foreground">{slot === "lain" ? "Lain" : dot(slot)}</div>
+                  {weekDays.map((d) => {
+                    const k = dayKey(d);
+                    const here = (items.get(k) ?? []).filter((it) => (slot === "lain" ? !sortedSlots.includes(it.time) : it.time === slot));
+                    const z = dropZone(k, slot === "lain" ? undefined : slot);
+                    return (
+                      <div key={k} {...z.on} className={`no-scrollbar min-h-0 overflow-y-auto border-b border-l p-1.5 transition-colors ${z.past ? "bg-muted/30" : ""} ${z.active ? "bg-primary/10 ring-2 ring-primary/50 ring-inset" : ""}`}>
+                        {here.length ? (
+                          <div className="grid grid-cols-[repeat(auto-fill,minmax(30px,1fr))] gap-1.5">{here.map((it) => card(it))}</div>
+                        ) : (
+                          !z.past && slot !== "lain" && <p className="grid h-full place-items-center text-[10px] text-muted-foreground/40">Tarik ke sini</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
           ) : (
-            // month: compact; each day shows its videos as stills (columns follow the cell's width)
-            <div className="no-scrollbar flex min-h-0 flex-1 flex-col overflow-auto">
+            // month: every week shares the height; stills shrink with the cell, the count opens that week (all of them)
+            <div className="flex min-h-0 flex-1 flex-col">
               <div className="grid grid-cols-7 border-b text-center text-[11px] font-medium text-muted-foreground">
                 {DAYS.map((d) => <div key={d} className="py-1.5">{d}</div>)}
               </div>
-              <div className="grid auto-rows-[minmax(96px,auto)] grid-cols-7">
+              <div className="grid min-h-0 flex-1 grid-cols-7" style={{ gridTemplateRows: `repeat(${monthWeeks.length}, minmax(0, 1fr))` }}>
                 {monthWeeks.flat().map((d) => {
                   const k = dayKey(d);
                   const inMonth = d.getMonth() === base.getMonth();
                   const here = items.get(k) ?? [];
                   const z = dropZone(k);
                   return (
-                    <div key={k} {...z.on} className={`@container flex flex-col gap-1 border-r border-b p-1.5 [&:nth-child(7n)]:border-r-0 ${inMonth ? "" : "bg-muted/30"} ${z.past ? "opacity-60" : ""} ${z.active ? "bg-primary/10 ring-2 ring-primary/50 ring-inset" : ""}`}>
+                    <div key={k} {...z.on} className={`flex min-h-0 flex-col gap-1 overflow-hidden border-r border-b p-1 [&:nth-child(7n)]:border-r-0 ${inMonth ? "" : "bg-muted/30"} ${z.past ? "opacity-60" : ""} ${z.active ? "bg-primary/10 ring-2 ring-primary/50 ring-inset" : ""}`}>
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className={`grid size-6 place-items-center rounded-full tabular-nums ${k === today ? "bg-primary font-semibold text-primary-foreground" : inMonth ? "" : "text-muted-foreground"}`}>{d.getDate()}</span>
-                        {here.length > 0 && <span className="text-muted-foreground tabular-nums">{here.length} video</span>}
+                        <span className={`grid size-5 place-items-center rounded-full tabular-nums ${k === today ? "bg-primary font-semibold text-primary-foreground" : inMonth ? "" : "text-muted-foreground"}`}>{d.getDate()}</span>
+                        {here.length > 0 && (
+                          <button type="button" onClick={() => (setCursor(d), setView("week"))} title="Buka minggu ini" className="rounded px-1 text-[10px] text-muted-foreground tabular-nums hover:bg-accent hover:text-foreground">{here.length} video</button>
+                        )}
                       </div>
-                      <div className="grid grid-cols-2 gap-1.5 p-0.5 @[150px]:grid-cols-3 @[240px]:grid-cols-4">
-                        {here.slice(0, 6).map((it) => card(it))}
+                      <div className="grid min-h-0 grid-cols-[repeat(auto-fill,minmax(22px,1fr))] content-start gap-1.5 overflow-hidden p-0.5">
+                        {here.map((it) => card(it))}
                       </div>
-                      {here.length > 6 && (
-                        <button type="button" onClick={() => (setCursor(d), setView("week"))} className="text-left text-[10px] text-muted-foreground hover:text-foreground">+{here.length - 6} lagi · buka minggu ini</button>
-                      )}
                     </div>
                   );
                 })}
