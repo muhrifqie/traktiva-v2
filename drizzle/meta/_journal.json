@@ -134,6 +134,13 @@
       "when": 1795543981406,
       "tag": "0018_lying_the_hand",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1795616169180,
+      "tag": "0019_known_korath",
+      "breakpoints": true
     }
   ]
 }

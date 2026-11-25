@@ -15,7 +15,7 @@ export type HourTip = { hour: number; avgViews: number | null; posts: number };
 export type AccountTips = { hours: HourTip[]; fromHistory: boolean; slots: number[]; postsToday: number };
 
 /** Best posting hours from the account's own posts (≥ 6 posts with a time), else the general prime time. */
-async function bestHours(accountId: number): Promise<{ hours: HourTip[]; fromHistory: boolean }> {
+export async function bestHours(accountId: number): Promise<{ hours: HourTip[]; fromHistory: boolean }> {
   const posts = await db.select({ views: accountPosts.views, postedAt: accountPosts.postedAt }).from(accountPosts).where(and(eq(accountPosts.accountId, accountId), isNotNull(accountPosts.postedAt)));
   if (posts.length >= 6) {
     const by = new Map<number, number[]>();

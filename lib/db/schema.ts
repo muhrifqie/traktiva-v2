@@ -279,3 +279,15 @@ export const uploadJobs = sqliteTable("upload_jobs", {
 });
 
 export type UploadJob = typeof uploadJobs.$inferSelect;
+
+// Kalender Upload drafts: a video planned for an account at a day and hour, not queued yet. "Masukkan ke antrean"
+// turns them into upload jobs. The calendar saves the whole list (app/(dashboard)/jadwal/actions.ts saveDrafts).
+export const planDrafts = sqliteTable("plan_drafts", {
+  id: text("id").primaryKey(),
+  accountId: integer("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  video: text("video").notNull(), // MEDIA_DIR-relative mp4
+  title: text("title").notNull().default(""),
+  day: text("day").notNull(), // YYYY-MM-DD (WIB)
+  time: text("time").notNull(), // HH:MM (WIB)
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+});

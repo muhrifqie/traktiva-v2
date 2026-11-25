@@ -4,11 +4,11 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
-import { accountPosts, accounts, showcaseProducts, uploadJobs, videoProjects } from "@/lib/db/schema";
+import { accountPosts, accounts, planDrafts, showcaseProducts, uploadJobs, videoProjects } from "@/lib/db/schema";
 import { provenHashtagsFor } from "@/lib/hashtags";
 import { hookInsights } from "@/lib/insights";
 import { projectName } from "@/lib/presets";
-import { MAX_PER_DAY, scheduleTips } from "@/lib/schedule-tips";
+import { bestHours, MAX_PER_DAY, scheduleTips } from "@/lib/schedule-tips";
 import { pickActive, writingRules, youtubeUploadDefaults } from "@/lib/settings";
 import { uploadLimitUntil } from "@/lib/youtube-limit";
 import { MIN_GAP_MIN } from "@/lib/uploads";
@@ -50,6 +50,13 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
     Promise.all(youtube.map(async (a) => [a.id, await uploadLimitUntil(a.id)] as const)),
   ]);
   const ytLimited = Object.fromEntries(limits.filter(([, u]) => u)) as Record<number, number>;
+  // the Kalender: saved drafts, and each account's best hours for "Susun otomatis"
+  const [plan, best] = view === "kalender"
+    ? await Promise.all([
+        db.select().from(planDrafts),
+        Promise.all(social.map(async (a) => [a.id, (await bestHours(a.id)).hours.map((h) => h.hour)] as const)).then((l) => Object.fromEntries(l) as Record<number, number[]>),
+      ])
+    : [[], {}];
 
   const mapped = jobs.map((j) => ({ ...j.job, scheduledAt: j.job.scheduledAt.getTime(), postedAt: j.job.postedAt?.getTime() ?? null, createdAt: j.job.createdAt.getTime(), username: j.username, platform: j.platform, title: j.project?.presetId ? projectName(j.project as Parameters<typeof projectName>[0]) : null, views: j.views ?? null }));
 
@@ -70,6 +77,8 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
           videos={videos.map((v) => ({ rel: v.video, title: v.judul ?? (v.label === "Video utama" ? v.title : `${v.title} · ${v.label}`), group: v.projectId === 0 ? "editor" : "proyek" }))}
           jobs={mapped.filter((j) => j.status !== "cancelled").map(({ id, scheduledAt, postedAt, status, accountId, video, label, title, videoTitle, caption, views, error, progress }) => ({ id, scheduledAt, postedAt, status, accountId, video, label, title, videoTitle, caption, views, error, progress }))}
           ytDefaults={youtubeUploadDefaults()}
+          initialDrafts={plan.map((d) => ({ id: d.id, rel: d.video, title: d.title, channelId: d.accountId, day: d.day, time: d.time }))}
+          best={best}
         />
       ) : (
       <JadwalBoard

@@ -5,7 +5,7 @@ import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { accounts, showcaseProducts, uploadJobs, videoProjects } from "@/lib/db/schema";
+import { accounts, planDrafts, showcaseProducts, uploadJobs, videoProjects } from "@/lib/db/schema";
 import { resolveMedia } from "@/lib/media";
 import { projectName } from "@/lib/presets";
 import { kickUploads, runJobNow } from "@/lib/uploads";
@@ -147,6 +147,19 @@ export async function queuePlan(input: z.input<typeof Plan>) {
   }
   refresh();
   return { queued, failed };
+}
+
+const DraftRow = z.object({ id: z.string().min(1).max(20), rel: z.string().min(3).max(400), title: z.string().max(200), channelId: Id, day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), time: z.string().regex(/^\d{2}:\d{2}$/) });
+
+/** The Kalender's drafts, saved whole after every change (so they survive another browser, a cleared cache, a restart). */
+export async function saveDrafts(list: z.input<typeof DraftRow>[]) {
+  const rows = z.array(DraftRow).max(1000).parse(list);
+  const known = new Set((await db.select({ id: accounts.id }).from(accounts)).map((a) => a.id));
+  const keep = rows.filter((r) => known.has(r.channelId)).map((r) => ({ id: r.id, accountId: r.channelId, video: r.rel, title: r.title, day: r.day, time: r.time }));
+  await db.transaction(async (tx) => {
+    await tx.delete(planDrafts);
+    if (keep.length) await tx.insert(planDrafts).values(keep);
+  });
 }
 
 export async function cancelUpload(id: number) {

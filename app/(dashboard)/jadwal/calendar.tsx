@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeft, CalendarClock, Check, ListChecks, CalendarDays, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, Clock, Eye, Film, Plus, Search, Sparkles, Trash2, Upload, X } from "lucide-react";
+import {
+  AlertTriangle, ArrowLeft, CalendarClock, CalendarDays, CalendarRange, Check, ChevronDown, ChevronLeft, ChevronRight, CircleQuestionMark, Clock, Eye, Film, ListChecks,
+  LoaderCircle, PencilLine, Plus, Rows3, Search, Trash2, Upload, WandSparkles, X, type LucideIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Popover } from "@base-ui/react/popover";
 import { confirmDialog } from "@/components/confirm-dialog";
@@ -13,12 +16,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { accountColor } from "@/lib/account-color";
 import { mediaUrl } from "@/lib/media-url";
 import type { YouTubeUploadDefaults } from "@/lib/settings";
-import { queuePlan } from "./actions";
+import { queuePlan, saveDrafts } from "./actions";
 
-// Kalender Upload: one planner for every account (TikTok, YouTube, Instagram, Facebook). Drag a video from the left onto
-// a day (or a day's hour in the week view): every picked account gets it at that hour, else its next free upload hour.
-// Placements are drafts kept in this browser until "Masukkan ke antrean" turns them into real upload jobs. Queued and
-// posted uploads show as solid stills; hovering any still opens a card with the video playing and every detail.
+// Kalender Upload: one planner for every account (TikTok, YouTube, Instagram, Facebook), filling the window like the
+// Editor: accounts · videos · calendar. Drag a video onto a day or hour: every picked account gets it there (or at its
+// next free upload hour). Drafts are saved in the DB until "Masukkan ke antrean" turns them into upload jobs.
+// One meaning per colour: the frame of a still is its ACCOUNT's colour (same as the left column), the small corner icon
+// is its STATUS, a dashed frame is a draft. Hovering a still opens a card with the video playing and every detail.
 
 type Platform = "tiktok" | "instagram" | "facebook" | "youtube" | "shopee";
 type Account = { id: number; name: string; platform: Platform; avatar: string | null; active: boolean };
@@ -38,27 +42,30 @@ export type CalJob = {
   error: string | null;
   progress: string | null;
 };
-type Draft = { id: string; rel: string; title: string; channelId: number; day: string; time: string };
-type View = "week" | "month";
-type Saved = { drafts: Draft[]; slots: string[]; picked: number[]; view: View };
+export type Draft = { id: string; rel: string; title: string; channelId: number; day: string; time: string };
+type View = "week" | "month" | "akun";
+type Saved = { drafts?: Draft[]; slots: string[]; picked: number[]; view: View };
 /** One thing on the calendar: a draft (editable) or an upload job (read-only). */
 type Item = { key: string; rel: string; title: string; channelId: number; day: string; time: string; draft?: Draft; job?: CalJob };
+type State = CalJob["status"] | "draft";
 
-const KEY = "trk-kalender";
-const OLD_KEY = "trk-yt-kalender"; // drafts of the former YouTube-only calendar
+const KEY = "trk-kalender"; // per-browser conveniences (hours, picked accounts, view); drafts moved to the DB
+const OLD_KEY = "trk-yt-kalender";
+const GUIDE_KEY = "trk-kalender-guide";
 const DAYS = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"];
 const MONTH = new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric" });
 const SHORT = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short" });
 const FULL = new Intl.DateTimeFormat("id-ID", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const DEFAULT_SLOTS = ["10:00", "16:00", "19:00"];
+const PLATFORMS: Platform[] = ["tiktok", "youtube", "instagram", "facebook"];
 const SITE: Record<Platform, string> = { tiktok: "TikTok", youtube: "YouTube", instagram: "Instagram", facebook: "Facebook", shopee: "Shopee" };
-const STATUS: Record<CalJob["status"] | "draft", { label: string; ring: string; badge: string }> = {
-  draft: { label: "Draf", ring: "ring-foreground/40 ring-dashed", badge: "bg-foreground text-background" },
-  queued: { label: "Antre", ring: "ring-[#7b86f0]", badge: "bg-[#5e6ad2] text-white" },
-  uploading: { label: "Mengunggah", ring: "ring-amber-500 animate-pulse", badge: "bg-amber-500 text-black" },
-  done: { label: "Terposting", ring: "ring-status-ok", badge: "bg-status-ok text-white" },
-  failed: { label: "Gagal", ring: "ring-destructive", badge: "bg-destructive text-white" },
-  cancelled: { label: "Dibatalkan", ring: "ring-border", badge: "bg-muted text-muted-foreground" },
+const STATUS: Record<State, { label: string; icon: LucideIcon; cls: string; spin?: boolean; hint: string }> = {
+  draft: { label: "Draf", icon: PencilLine, cls: "bg-foreground text-background", hint: "Rencana, belum di antrean. Bingkai putus-putus, bisa digeser atau dihapus." },
+  queued: { label: "Antre", icon: Clock, cls: "bg-[#5e6ad2] text-white", hint: "Sudah di antrean, diunggah otomatis di jamnya." },
+  uploading: { label: "Mengunggah", icon: LoaderCircle, cls: "bg-amber-500 text-black", spin: true, hint: "Sedang diunggah sekarang." },
+  done: { label: "Terposting", icon: Check, cls: "bg-status-ok text-white", hint: "Sudah tayang." },
+  failed: { label: "Gagal", icon: AlertTriangle, cls: "bg-destructive text-white", hint: "Gagal; buka Daftar & riwayat untuk mengulang." },
+  cancelled: { label: "Dibatalkan", icon: X, cls: "bg-muted text-muted-foreground", hint: "Dibatalkan." },
 };
 const pad = (n: number) => String(n).padStart(2, "0");
 const dayKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -71,7 +78,7 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const monday = (d: Date) => addDays(d, -((d.getDay() + 6) % 7));
 const atOf = (d: { day: string; time: string }) => new Date(`${d.day}T${d.time}`).getTime();
-const stateOf = (it: Item) => (it.draft ? "draft" : it.job!.status);
+const stateOf = (it: Item): State => (it.draft ? "draft" : it.job!.status);
 
 /** The video as a 9:16 still (frame at 1 s); plays on hover. A deleted file leaves the dark box. */
 function Thumb({ rel, className }: { rel: string; className: string }) {
@@ -91,10 +98,21 @@ function Thumb({ rel, className }: { rel: string; className: string }) {
   );
 }
 
+/** Status as a small round icon (the same everywhere: stills, legend, guide). */
+function StatusDot({ s, className = "size-3.5" }: { s: State; className?: string }) {
+  const S = STATUS[s];
+  const Icon = S.icon;
+  return (
+    <span className={`grid shrink-0 place-items-center rounded-full ${S.cls} ${className}`}>
+      <Icon className={`size-[70%] ${S.spin ? "animate-spin" : ""}`} strokeWidth={3} />
+    </span>
+  );
+}
+
 type Hover = { it: Item; x: number; y: number };
 const CARD_W = 272;
 
-export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { accounts: Account[]; videos: Video[]; jobs: CalJob[]; ytDefaults: YouTubeUploadDefaults }) {
+export function JadwalCalendar({ accounts, videos, jobs, ytDefaults, initialDrafts, best }: { accounts: Account[]; videos: Video[]; jobs: CalJob[]; ytDefaults: YouTubeUploadDefaults; initialDrafts: Draft[]; best: Record<number, number[]> }) {
   const router = useRouter();
   const [queueOpen, setQueueOpen] = useState(false);
   const [yt, setYt] = useState(ytDefaults); // YouTube: title / description / tags / visibility / audience / AI label
@@ -107,12 +125,16 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
   const [today, setToday] = useState("");
   const [picked, setPicked] = useState<number[]>(() => accounts.filter((a) => a.active).map((a) => a.id).slice(0, 1));
   const [slots, setSlots] = useState<string[]>(DEFAULT_SLOTS);
-  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [drafts, setDrafts] = useState<Draft[]>(initialDrafts.filter((d) => accounts.some((a) => a.id === d.channelId)));
   const [q, setQ] = useState("");
   const [onlyFree, setOnlyFree] = useState(true);
-  const [over, setOver] = useState<string | null>(null); // drop target being dragged over ("day" or "day|time")
+  const [over, setOver] = useState<string | null>(null); // drop target being dragged over
   const [newSlot, setNewSlot] = useState("21:00");
   const [hover, setHover] = useState<Hover | null>(null);
+  const [focus, setFocus] = useState<number | null>(null); // account hovered in the left column: its uploads stand out
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [plan, setPlan] = useState({ start: "", days: 7, perDay: 1, hours: "best" as "best" | "slots", same: true });
   const loaded = useRef(false);
 
   useEffect(() => {
@@ -124,22 +146,33 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
         const s = JSON.parse(localStorage.getItem(KEY) ?? localStorage.getItem(OLD_KEY) ?? "null") as Partial<Saved> | null;
         if (s) {
           if (s.slots?.length) setSlots(s.slots);
-          if (s.drafts) setDrafts(s.drafts.filter((d) => accounts.some((a) => a.id === d.channelId)));
+          // drafts from before they lived in the DB: bring them over once
+          if (s.drafts?.length && !initialDrafts.length) setDrafts(s.drafts.filter((d) => accounts.some((a) => a.id === d.channelId)));
           if (s.picked?.length) setPicked(s.picked.filter((id) => accounts.some((a) => a.id === id)));
           if (s.view) setView(s.view);
+        }
+        if (!localStorage.getItem(GUIDE_KEY)) {
+          setGuideOpen(true); // first visit: the guide explains the page once
+          localStorage.setItem(GUIDE_KEY, "1");
         }
       } catch {}
       loaded.current = true;
     }, 0);
     return () => clearTimeout(t);
-  }, [accounts]);
+  }, [accounts, initialDrafts]);
   useEffect(() => {
     if (!loaded.current) return;
     try {
-      localStorage.setItem(KEY, JSON.stringify({ drafts, slots, picked, view } satisfies Saved));
+      localStorage.setItem(KEY, JSON.stringify({ slots, picked, view } satisfies Saved));
       localStorage.removeItem(OLD_KEY);
     } catch {}
-  }, [drafts, slots, picked, view]);
+  }, [slots, picked, view]);
+  // drafts go to the DB shortly after every change
+  useEffect(() => {
+    if (!loaded.current) return;
+    const t = setTimeout(() => void saveDrafts(drafts).catch((e) => toast.error(`Draf gagal disimpan: ${e instanceof Error ? e.message : e}`)), 500);
+    return () => clearTimeout(t);
+  }, [drafts]);
 
   const sortedSlots = useMemo(() => [...slots].sort(), [slots]);
   const acc = (id: number) => accounts.find((a) => a.id === id);
@@ -156,8 +189,8 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
   }, [jobs, drafts]);
 
   // ---- placing ----
-  /** The hour for the account that day: `want` when free, else the first free upload hour (not in the past today). */
-  const freeSlot = (channelId: number, day: string, list: Draft[], want?: string, skip?: string) => {
+  /** The hour for the account that day: `want` when free, else the first free hour of `hours` (not in the past today). */
+  const freeSlot = (channelId: number, day: string, list: Draft[], want?: string, skip?: string, hours = sortedSlots) => {
     const taken = new Set([
       ...(items.get(day) ?? []).filter((x) => x.job && x.job.status !== "failed" && x.channelId === channelId).map((x) => x.time),
       ...list.filter((d) => d.day === day && d.channelId === channelId && d.id !== skip).map((d) => d.time),
@@ -165,14 +198,15 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
     const nowMin = new Date().getHours() * 60 + new Date().getMinutes() + 30;
     const ok = (t: string) => !taken.has(t) && (day !== today || Number(t.slice(0, 2)) * 60 + Number(t.slice(3)) > nowMin);
     if (want && ok(want)) return want;
-    return sortedSlots.find(ok) ?? null;
+    return hours.find(ok) ?? null;
   };
-  const place = (rel: string, title: string, day: string, want?: string) => {
-    if (!picked.length) return toast.error("Pilih minimal satu akun di atas dulu.");
+  const place = (rel: string, title: string, day: string, want?: string, only?: number) => {
+    const targets = only ? [only] : picked;
+    if (!targets.length) return toast.error("Pilih minimal satu akun di kolom kiri dulu.");
     if (today && day < today) return toast.error("Tanggal yang sudah lewat tidak bisa dipakai.");
     const next = [...drafts];
     const full: string[] = [];
-    for (const channelId of picked) {
+    for (const channelId of targets) {
       const time = freeSlot(channelId, day, next, want);
       if (!time) full.push(name(channelId));
       else next.push({ id: uid(), rel, title, channelId, day, time });
@@ -180,16 +214,17 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
     setDrafts(next);
     if (full.length) toast.warning(`Jam tayang hari itu sudah penuh untuk ${full.join(", ")}. Tambah jam atau pilih tanggal lain.`);
   };
-  const move = (id: string, day: string, want?: string) => {
+  const move = (id: string, day: string, want?: string, toAccount?: number) => {
     const d = drafts.find((x) => x.id === id);
-    if (!d || (d.day === day && (!want || d.time === want))) return;
+    const channelId = toAccount ?? d?.channelId;
+    if (!d || !channelId || (d.day === day && d.channelId === channelId && (!want || d.time === want))) return;
     if (today && day < today) return toast.error("Tanggal yang sudah lewat tidak bisa dipakai.");
-    const time = freeSlot(d.channelId, day, drafts, want, id);
-    if (!time) return toast.warning(`Jam tayang ${name(d.channelId)} di tanggal itu sudah penuh.`);
-    setDrafts((list) => list.map((x) => (x.id === id ? { ...x, day, time } : x)));
+    const time = freeSlot(channelId, day, drafts, want ?? (channelId !== d.channelId ? d.time : undefined), id);
+    if (!time) return toast.warning(`Jam tayang ${name(channelId)} di tanggal itu sudah penuh.`);
+    setDrafts((list) => list.map((x) => (x.id === id ? { ...x, day, time, channelId } : x)));
   };
-  const dropZone = (day: string, want?: string) => {
-    const k = want ? `${day}|${want}` : day;
+  const dropZone = (day: string, want?: string, account?: number) => {
+    const k = `${day}|${want ?? ""}|${account ?? ""}`;
     const past = !!today && day < today;
     const on = {
       onDragOver: (e: React.DragEvent) => {
@@ -205,32 +240,47 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
         setOver(null);
         try {
           const p = JSON.parse(e.dataTransfer.getData("text/plain")) as { kind: "video"; rel: string; title: string } | { kind: "draft"; id: string };
-          if (p.kind === "video") place(p.rel, p.title, day, want);
-          else move(p.id, day, want);
+          if (p.kind === "video") place(p.rel, p.title, day, want, account);
+          else move(p.id, day, want, account);
         } catch {}
       },
     };
     return { on, active: over === k, past };
   };
-  /** Spread the videos not planned yet over the next days: one a day per picked account. */
-  const autoFill = (days = 7) => {
-    if (!picked.length) return toast.error("Pilih minimal satu akun dulu.");
-    const queue = shown.filter((v) => !planned.has(v.rel));
-    if (!queue.length) return toast.info("Semua video di daftar ini sudah punya jadwal.");
+
+  // ---- Susun otomatis: unplanned videos over the coming days, at each account's best hours (or the calendar's) ----
+  const openPlan = () => {
+    if (!picked.length) return toast.error("Pilih minimal satu akun di kolom kiri dulu.");
+    setPlan((p) => ({ ...p, start: p.start && p.start >= today ? p.start : today }));
+    setPlanOpen(true);
+  };
+  const hoursFor = (id: number) => (plan.hours === "best" && best[id]?.length ? [...best[id]].sort((a, b) => a - b).map((h) => `${pad(h)}:00`) : sortedSlots);
+  const runPlan = () => {
+    const pool = videos.filter((v) => !onlyFree || !planned.has(v.rel)); // same rule as the video list
+    if (!pool.length) return toast.info("Semua video sudah punya jadwal. Matikan \"Hanya yang belum dijadwalkan\" kalau mau memakai ulang video.");
     const next = [...drafts];
     let placed = 0;
-    for (let i = 0; i < days && queue.length; i++) {
-      const day = dayKey(addDays(new Date(), i));
-      const v = queue.shift()!;
-      for (const channelId of picked) {
-        const time = freeSlot(channelId, day, next);
-        if (!time) continue;
-        next.push({ id: uid(), rel: v.rel, title: v.title, channelId, day, time });
-        placed++;
+    const [y, m, d0] = plan.start.split("-").map(Number);
+    outer: for (let i = 0; i < plan.days; i++) {
+      const day = dayKey(new Date(y, m - 1, d0 + i));
+      for (let n = 0; n < plan.perDay; n++) {
+        const shared = plan.same ? pool.shift() : undefined;
+        if (plan.same && !shared) break outer;
+        for (const channelId of picked) {
+          const v = shared ?? pool.shift();
+          if (!v) break outer;
+          const hours = hoursFor(channelId);
+          const time = freeSlot(channelId, day, next, hours[n % hours.length], undefined, hours);
+          if (!time) continue;
+          next.push({ id: uid(), rel: v.rel, title: v.title, channelId, day, time });
+          placed++;
+        }
       }
     }
     setDrafts(next);
-    toast.success(`${placed} draf dibuat untuk ${days} hari ke depan`);
+    setPlanOpen(false);
+    if (placed) toast.success(`${placed} draf disusun. Cek dulu, lalu tekan "Masukkan ke antrean".`);
+    else toast.warning("Tidak ada jam kosong di rentang itu. Tambah jam tayang atau pilih tanggal lain.");
   };
 
   // ---- drafts -> real upload jobs ----
@@ -269,11 +319,11 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
     }
     return out;
   })();
-  const step = (n: number) => setCursor((c) => (view === "week" ? addDays(c ?? new Date(), n * 7) : new Date((c ?? new Date()).getFullYear(), (c ?? new Date()).getMonth() + n, 1)));
-  const title = view === "week" ? `${SHORT.format(weekDays[0])} – ${SHORT.format(weekDays[6])} ${weekDays[6].getFullYear()}` : MONTH.format(base);
-  const rangeKeys = new Set((view === "week" ? weekDays : monthWeeks.flat().filter((d) => d.getMonth() === base.getMonth())).map(dayKey));
+  const step = (n: number) => setCursor((c) => (view !== "month" ? addDays(c ?? new Date(), n * 7) : new Date((c ?? new Date()).getFullYear(), (c ?? new Date()).getMonth() + n, 1)));
+  const title = view !== "month" ? `${SHORT.format(weekDays[0])} – ${SHORT.format(weekDays[6])} ${weekDays[6].getFullYear()}` : MONTH.format(base);
+  const rangeKeys = new Set((view !== "month" ? weekDays : monthWeeks.flat().filter((d) => d.getMonth() === base.getMonth())).map(dayKey));
   const inRange = [...items.entries()].filter(([k]) => rangeKeys.has(k)).flatMap(([, l]) => l);
-  const counts = (Object.keys(STATUS) as (keyof typeof STATUS)[]).map((s) => [s, inRange.filter((it) => stateOf(it) === s).length] as const).filter(([, n]) => n);
+  const counts = (Object.keys(STATUS) as State[]).map((s) => [s, inRange.filter((it) => stateOf(it) === s).length] as const).filter(([, n]) => n);
 
   // hover card beside the still (right, or left near the window edge), clamped to the window
   const showCard = (it: Item, el: HTMLElement) => {
@@ -281,44 +331,34 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
     const x = r.right + 10 + CARD_W > window.innerWidth ? r.left - 10 - CARD_W : r.right + 10;
     setHover({ it, x, y: Math.max(8, Math.min(r.top - 40, window.innerHeight - 560)) });
   };
-  const hoverProps = (it: Item) => ({
-    onMouseEnter: (e: React.MouseEvent<HTMLElement>) => showCard(it, e.currentTarget),
-    onMouseLeave: () => setHover(null),
-  });
-  const dragProps = (it: Item) => ({
-    draggable: !!it.draft,
-    onDragStart: (e: React.DragEvent) => {
-      setHover(null);
-      if (!it.draft) return;
-      e.dataTransfer.setData("text/plain", JSON.stringify({ kind: "draft", id: it.draft.id }));
-      e.dataTransfer.effectAllowed = "move";
-    },
-  });
   const play = (it: Item) => openLightbox([{ src: mediaUrl(it.rel), kind: "video", label: it.title }]);
-  const badge = (it: Item, small?: boolean) => (
-    <span className={`absolute right-0.5 bottom-0.5 left-0.5 flex items-center gap-0.5 rounded bg-black/65 px-0.5 py-px ${small ? "" : "text-[10px]"}`}>
-      <i className="size-1.5 shrink-0 rounded-full" style={{ background: accountColor(it.channelId) }} />
-      <PlatformIcon platform={acc(it.channelId)?.platform ?? "tiktok"} className="size-2.5 shrink-0" />
-      {!small && <span className="truncate font-medium text-white tabular-nums">{dot(it.time)}</span>}
-    </span>
-  );
 
-  /** A planned video as a still (ring = status); drafts can be dragged to another day/hour or removed; click plays it. */
+  /** A planned video as a still: frame = account colour (dashed = draft), corner icon = status; click plays it. */
   const card = (it: Item) => {
-    const s = STATUS[stateOf(it)];
+    const s = stateOf(it);
+    const color = accountColor(it.channelId);
+    const dim = focus !== null && it.channelId !== focus;
     return (
       <button
         key={it.key}
         type="button"
-        {...dragProps(it)}
-        {...hoverProps(it)}
+        draggable={!!it.draft}
+        onDragStart={(e) => {
+          setHover(null);
+          if (!it.draft) return;
+          e.dataTransfer.setData("text/plain", JSON.stringify({ kind: "draft", id: it.draft.id }));
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        onMouseEnter={(e) => showCard(it, e.currentTarget)}
+        onMouseLeave={() => setHover(null)}
         onClick={() => play(it)}
-        aria-label={`${it.title}, ${name(it.channelId)} ${dot(it.time)}`}
-        className={`group/still relative overflow-hidden rounded ring-2 ring-offset-1 ring-offset-card transition-transform duration-150 hover:z-10 hover:scale-105 ${it.draft ? "cursor-grab opacity-80" : ""} ${s.ring} ${it.job?.status === "cancelled" ? "opacity-40 grayscale" : ""}`}
+        aria-label={`${it.title}, ${name(it.channelId)} ${dot(it.time)}, ${STATUS[s].label}`}
+        className={`group/still relative rounded transition-[transform,opacity] duration-150 hover:z-10 hover:scale-105 ${it.draft ? "cursor-grab outline-2 outline-offset-1 outline-dashed" : ""} ${s === "cancelled" ? "grayscale" : ""} ${dim ? "opacity-15" : ""}`}
+        style={it.draft ? { outlineColor: color } : { boxShadow: `0 0 0 1px var(--card), 0 0 0 3px ${color}` }}
       >
-        <Thumb rel={it.rel} className="aspect-[9/16] w-full rounded-none" />
-        {badge(it, true)}
-        {it.job?.status === "failed" && <AlertTriangle className="absolute top-0.5 right-0.5 size-3 text-destructive drop-shadow" />}
+        <Thumb rel={it.rel} className={`aspect-[9/16] w-full ${it.draft ? "opacity-75" : ""}`} />
+        <StatusDot s={s} className="absolute -top-1 -left-1 size-3.5 ring-2 ring-card" />
+        <span className="absolute bottom-0.5 left-0.5 grid size-3.5 place-items-center rounded bg-black/70"><PlatformIcon platform={acc(it.channelId)?.platform ?? "tiktok"} className="size-2.5" /></span>
         {it.draft && (
           <span
             role="button"
@@ -328,7 +368,7 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
               setHover(null);
               setDrafts((list) => list.filter((y) => y.id !== it.draft!.id));
             }}
-            className="absolute top-0 right-0 hidden size-4 place-items-center rounded-bl bg-black/75 text-white group-hover/still:grid hover:text-destructive"
+            className="absolute top-0 right-0 hidden size-4 place-items-center rounded-bl rounded-tr bg-black/75 text-white group-hover/still:grid hover:text-destructive"
           >
             <X className="size-3" />
           </span>
@@ -336,6 +376,9 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
       </button>
     );
   };
+  const stills = (list: Item[], min: number) => (
+    <div className="grid content-start gap-2 p-1" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${min}px, 1fr))` }}>{list.map(card)}</div>
+  );
 
   // full window under the header, like the Editor: accounts · videos · calendar
   const shell = "fixed inset-x-0 top-[calc(var(--titlebar-height)+var(--header-height))] bottom-(--statusbar-height) z-40 flex flex-col bg-sidebar";
@@ -357,19 +400,48 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
     );
 
   // accounts grouped by platform; a group header picks or drops the whole platform
-  const groups = (["tiktok", "youtube", "instagram", "facebook"] as Platform[]).map((p) => [p, accounts.filter((a) => a.platform === p)] as const).filter(([, l]) => l.length);
+  const groups = PLATFORMS.map((p) => [p, accounts.filter((a) => a.platform === p)] as const).filter(([, l]) => l.length);
+  const ordered = groups.flatMap(([, l]) => l);
   const toggle = (ids: number[], on: boolean) => setPicked((p) => (on ? [...new Set([...p, ...ids])] : p.filter((x) => !ids.includes(x))));
   const allPicked = picked.length === accounts.length;
+  const avatar = (a: Account, size: string, on = true) =>
+    a.avatar ? (
+      // eslint-disable-next-line @next/next/no-img-element -- remote account avatar
+      <img src={a.avatar} alt="" className={`${size} shrink-0 rounded-md ${on ? "" : "opacity-60 grayscale"}`} />
+    ) : (
+      <span className={`grid ${size} shrink-0 place-items-center rounded-md text-xs font-semibold text-white`} style={{ background: accountColor(a.id) }}>{a.name.replace("@", "").slice(0, 1).toUpperCase()}</span>
+    );
+  // the 3 steps of the page; the current one is lit
+  const stepNow = !picked.length ? 1 : !drafts.length ? 2 : 3;
+  const STEPS = ["Pilih akun", "Tarik video ke kalender", "Masukkan ke antrean"];
 
   return (
     <div className={shell}>
-      {/* ── toolbar ─────────────────────────────────────────────────────────────────────────────── */}
+      {/* ── toolbar: back · steps · list · guide · drafts ───────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         {back}
         <div className="h-5 w-px bg-border" />
         <span className="flex items-center gap-1.5 px-1 text-[13px] font-semibold"><CalendarClock className="size-4 text-[#7b86f0]" /> Kalender Upload</span>
-        <span className="hidden text-xs text-muted-foreground md:inline">Pilih akun di kiri, lalu tarik video ke tanggal atau jam.</span>
+        <ol className="hidden items-center gap-1 lg:flex" aria-label="Langkah">
+          {STEPS.map((label, i) => {
+            const n = i + 1;
+            const done = n < stepNow;
+            const cur = n === stepNow;
+            return (
+              <li key={label} className="flex items-center gap-1">
+                {i > 0 && <ChevronRight className="size-3.5 text-muted-foreground/50" />}
+                <span className={`flex h-7 items-center gap-1.5 rounded-full px-2 text-xs ${cur ? "bg-primary/15 font-semibold text-foreground ring-1 ring-primary/40" : done ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
+                  <span className={`grid size-4 place-items-center rounded-full text-[10px] font-bold ${done ? "bg-status-ok text-white" : cur ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{done ? <Check className="size-3" strokeWidth={3} /> : n}</span>
+                  {label}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
         <div className="ml-auto flex items-center gap-1">
+          <button type="button" onClick={() => setGuideOpen(true)} className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
+            <CircleQuestionMark className="size-4" /> Panduan
+          </button>
           <Link href="/jadwal?tampilan=daftar" className="flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium hover:bg-accent">
             <ListChecks className="size-3.5" /> Daftar & riwayat
           </Link>
@@ -396,13 +468,14 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
               setQueueOpen(true);
             }}
             title={drafts.length ? "Ubah semua draf jadi jadwal upload" : "Tarik video ke kalender dulu"}
-            className="flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+            className={`flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground ${stepNow === 3 ? "ring-2 ring-primary/40 ring-offset-2 ring-offset-sidebar" : ""}`}
           >
             <Upload className="size-3.5" /> Masukkan ke antrean
           </button>
         </div>
       </div>
 
+      {/* ── dialog: drafts -> queue ─────────────────────────────────────────────────────────────── */}
       <Dialog open={queueOpen} onOpenChange={(o) => !queuing && setQueueOpen(o)}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
@@ -464,16 +537,129 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
         </DialogContent>
       </Dialog>
 
+      {/* ── dialog: Susun otomatis ──────────────────────────────────────────────────────────────── */}
+      <Dialog open={planOpen} onOpenChange={setPlanOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><WandSparkles className="size-4 text-primary" /> Susun otomatis</DialogTitle>
+            <DialogDescription>Video yang belum punya jadwal dibagi ke {picked.length} akun terpilih. Hasilnya draf: cek dulu, baru masukkan ke antrean.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 text-xs">
+            <div className="grid grid-cols-3 gap-2">
+              <label className="grid gap-1">
+                <span className="font-medium">Mulai</span>
+                <input type="date" min={today} value={plan.start} onChange={(e) => setPlan({ ...plan, start: e.target.value })} className="h-8 rounded-md border bg-background px-2" />
+              </label>
+              <label className="grid gap-1">
+                <span className="font-medium">Selama</span>
+                <select value={plan.days} onChange={(e) => setPlan({ ...plan, days: Number(e.target.value) })} className="h-8 rounded-md border bg-background px-1.5">
+                  {[3, 7, 14, 30].map((n) => <option key={n} value={n}>{n} hari</option>)}
+                </select>
+              </label>
+              <label className="grid gap-1">
+                <span className="font-medium">Per akun/hari</span>
+                <select value={plan.perDay} onChange={(e) => setPlan({ ...plan, perDay: Number(e.target.value) })} className="h-8 rounded-md border bg-background px-1.5">
+                  {[1, 2, 3].map((n) => <option key={n} value={n}>{n} video</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="grid gap-1.5">
+              <span className="font-medium">Jam tayang</span>
+              {([["best", "Jam terbaik tiap akun", "Dari jam postingan akun itu yang paling banyak ditonton; akun baru memakai jam ramai umum."], ["slots", "Jam tayang kalender", sortedSlots.map(dot).join(" · ")]] as const).map(([v, label, hint]) => (
+                <label key={v} className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2 ${plan.hours === v ? "border-primary bg-primary/5" : "hover:bg-accent/50"}`}>
+                  <input type="radio" checked={plan.hours === v} onChange={() => setPlan({ ...plan, hours: v })} className="mt-0.5 accent-primary" />
+                  <span><b className="font-medium">{label}</b><br /><span className="text-muted-foreground">{hint}</span></span>
+                </label>
+              ))}
+            </div>
+            <label className="flex items-start gap-2">
+              <input type="checkbox" checked={plan.same} onChange={(e) => setPlan({ ...plan, same: e.target.checked })} className="mt-0.5 accent-primary" />
+              <span>Video yang sama untuk semua akun di hari itu<br /><span className="text-muted-foreground">Matikan supaya tiap akun dapat video berbeda (butuh lebih banyak video).</span></span>
+            </label>
+            <p className="rounded-md bg-muted px-2 py-1.5 text-muted-foreground">
+              Video {onlyFree ? "belum terjadwal" : "dipakai"}: <b className="text-foreground tabular-nums">{videos.filter((v) => !onlyFree || !planned.has(v.rel)).length}</b> · Perkiraan draf: <b className="text-foreground tabular-nums">{plan.days * plan.perDay * picked.length}</b>. TikTok: maksimal 3 video/hari per akun.
+            </p>
+          </div>
+          <DialogFooter>
+            <button type="button" onClick={() => setPlanOpen(false)} className="h-8 rounded-lg border px-3 text-xs hover:bg-accent">Batal</button>
+            <button type="button" onClick={runPlan} disabled={!plan.start} className="flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+              <WandSparkles className="size-3.5" /> Susun
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── dialog: guide ───────────────────────────────────────────────────────────────────────── */}
+      <Dialog open={guideOpen} onOpenChange={setGuideOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><CalendarClock className="size-4 text-[#7b86f0]" /> Panduan Kalender Upload</DialogTitle>
+            <DialogDescription>Satu tempat untuk menjadwalkan video ke semua akun: TikTok, YouTube, Instagram, dan Facebook.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-5 text-xs leading-relaxed">
+            <section>
+              <h3 className="mb-2 text-[13px] font-semibold">Alurnya 3 langkah</h3>
+              <ol className="grid gap-2 sm:grid-cols-3">
+                {[
+                  ["Pilih akun", "Centang akun di kolom kiri. Klik nama platform untuk memilih semua akun platform itu."],
+                  ["Tarik video ke kalender", "Seret video dari kolom tengah ke tanggal atau baris jam. Tiap akun terpilih dapat satu draf. Atau pakai Susun otomatis."],
+                  ["Masukkan ke antrean", "Atur caption/judul sekali untuk semua draf, lalu draf jadi jadwal upload sungguhan."],
+                ].map(([t, d], i) => (
+                  <li key={t} className="rounded-lg border bg-card p-2.5">
+                    <span className="mb-1 grid size-5 place-items-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">{i + 1}</span>
+                    <b className="font-semibold">{t}</b>
+                    <p className="mt-0.5 text-muted-foreground">{d}</p>
+                  </li>
+                ))}
+              </ol>
+            </section>
+            <section className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <h3 className="mb-2 text-[13px] font-semibold">Arti tanda</h3>
+                <ul className="grid gap-1.5">
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex gap-1">{ordered.slice(0, 3).map((a) => <i key={a.id} className="size-3 rounded-sm" style={{ boxShadow: `0 0 0 2px ${accountColor(a.id)}` }} />)}</span>
+                    <span><b>Warna bingkai = akun.</b> Sama dengan warna centang di kolom kiri.</span>
+                  </li>
+                  {(Object.keys(STATUS) as State[]).map((s) => (
+                    <li key={s} className="flex items-start gap-2"><StatusDot s={s} className="mt-0.5 size-3.5" /><span><b>{STATUS[s].label}.</b> {STATUS[s].hint}</span></li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <h3 className="mb-2 text-[13px] font-semibold">Tampilan</h3>
+                <ul className="grid gap-1.5 text-muted-foreground">
+                  <li><b className="text-foreground">Minggu:</b> satu baris per jam tayang. Seret ke baris jam = video tayang di jam itu.</li>
+                  <li><b className="text-foreground">Bulan:</b> sebulan penuh. Klik &quot;N video&quot; untuk membuka minggunya.</li>
+                  <li><b className="text-foreground">Per akun:</b> satu baris per akun. Seret ke baris akun = khusus akun itu; draf bisa dipindah antar akun.</li>
+                  <li><b className="text-foreground">Arahkan kursor</b> ke akun di kiri untuk menyorot jadwalnya, ke thumbnail untuk melihat detail dan memutar videonya.</li>
+                </ul>
+                <h3 className="mt-3 mb-2 text-[13px] font-semibold">Tips</h3>
+                <ul className="grid list-disc gap-1 pl-4 text-muted-foreground">
+                  <li>Atur jam di <b className="text-foreground">Jam tayang</b>; draf baru memakai jam kosong pertama.</li>
+                  <li>Aplikasi harus terbuka di jam tayang supaya video terunggah.</li>
+                  <li>TikTok: maksimal 3 video/hari per akun, jarak antar posting minimal 20 menit.</li>
+                  <li>Draf tersimpan otomatis; yang gagal bisa diulang di <b className="text-foreground">Daftar & riwayat</b>.</li>
+                </ul>
+              </div>
+            </section>
+          </div>
+          <DialogFooter>
+            <button type="button" onClick={() => setGuideOpen(false)} className="h-8 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground hover:bg-primary/90">Mengerti</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="grid min-h-0 flex-1 grid-cols-[232px_288px_minmax(0,1fr)]">
-        {/* ── accounts ────────────────────────────────────────────────────────────────────────── */}
+        {/* ── ① accounts ──────────────────────────────────────────────────────────────────────── */}
         <aside className="flex min-h-0 flex-col border-r">
           <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
-            <p className="text-[13px] font-semibold">Posting ke <span className="font-normal text-muted-foreground tabular-nums">{picked.length}/{accounts.length}</span></p>
+            <p className="flex items-center gap-1.5 text-[13px] font-semibold"><span className="grid size-4 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">1</span> Posting ke <span className="font-normal text-muted-foreground tabular-nums">{picked.length}/{accounts.length}</span></p>
             <button type="button" onClick={() => setPicked(allPicked ? [] : accounts.map((a) => a.id))} className="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground">
               {allPicked ? "Kosongkan" : "Pilih semua"}
             </button>
           </div>
-          <div className="no-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto px-2 pb-3">
+          <div className="no-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto px-2 pb-3" onMouseLeave={() => setFocus(null)}>
             {groups.map(([p, list]) => {
               const ids = list.map((a) => a.id);
               const allOn = ids.every((id) => picked.includes(id));
@@ -488,26 +674,23 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
                     {list.map((a) => {
                       const on = picked.includes(a.id);
                       const color = accountColor(a.id);
-                      const n = drafts.filter((d) => d.channelId === a.id).length;
-                      const qn = jobs.filter((j) => j.accountId === a.id && j.status === "queued").length;
+                      const mine = inRange.filter((it) => it.channelId === a.id);
+                      const n = mine.filter((it) => it.draft).length;
+                      const qn = mine.length - n;
                       return (
                         <button
                           key={a.id}
                           type="button"
                           onClick={() => toggle([a.id], !on)}
+                          onMouseEnter={() => setFocus(a.id)}
                           aria-pressed={on}
                           className={`flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors ${on ? "bg-card" : "border-transparent hover:bg-accent/60"} ${a.active ? "" : "opacity-50"}`}
                           style={on ? { borderColor: `${color}80`, boxShadow: `inset 3px 0 0 ${color}` } : undefined}
                         >
-                          {a.avatar ? (
-                            // eslint-disable-next-line @next/next/no-img-element -- remote account avatar
-                            <img src={a.avatar} alt="" className={`size-7 shrink-0 rounded-md ${on ? "" : "opacity-60 grayscale"}`} />
-                          ) : (
-                            <span className="grid size-7 shrink-0 place-items-center rounded-md text-xs font-semibold text-white" style={{ background: color }}>{a.name.replace("@", "").slice(0, 1).toUpperCase()}</span>
-                          )}
+                          {avatar(a, "size-7", on)}
                           <span className="min-w-0 flex-1">
                             <span className={`block truncate text-xs font-medium ${on ? "" : "text-muted-foreground"}`}>{a.name}</span>
-                            <span className="block truncate text-[10px] text-muted-foreground">{!a.active ? "Perlu login ulang" : [n ? `${n} draf` : "", qn ? `${qn} antre` : ""].filter(Boolean).join(" · ") || "Belum ada jadwal"}</span>
+                            <span className="block truncate text-[10px] text-muted-foreground">{!a.active ? "Perlu login ulang" : [qn ? `${qn} jadwal` : "", n ? `${n} draf` : ""].filter(Boolean).join(" · ") || (view === "month" ? "Kosong bulan ini" : "Kosong minggu ini")}</span>
                           </span>
                           <span className={`grid size-4 shrink-0 place-items-center rounded border ${on ? "border-transparent text-white" : "border-muted-foreground/40"}`} style={on ? { background: color } : undefined}>
                             {on && <Check className="size-3" />}
@@ -520,14 +703,15 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
               );
             })}
           </div>
+          <p className="border-t px-3 py-2 text-[10px] leading-snug text-muted-foreground">Arahkan kursor ke akun untuk menyorot jadwalnya di kalender.</p>
         </aside>
 
-        {/* ── videos: one list (project exports and Editor renders) ───────────────────────────── */}
+        {/* ── ② videos: one list (project exports and Editor renders) ─────────────────────────── */}
         <section className="flex min-h-0 flex-col gap-2 border-r p-2.5">
           <div className="flex items-center justify-between px-0.5">
-            <p className="text-[13px] font-semibold">Video <span className="font-normal text-muted-foreground tabular-nums">{shown.length}</span></p>
-            <button type="button" onClick={() => autoFill(7)} className="flex h-7 items-center gap-1 rounded-md border px-2 text-xs font-medium hover:bg-accent" title="Satu video per hari untuk tiap akun terpilih, 7 hari ke depan">
-              <Sparkles className="size-3.5 text-primary" /> Isi 7 hari
+            <p className="flex items-center gap-1.5 text-[13px] font-semibold"><span className="grid size-4 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">2</span> Video <span className="font-normal text-muted-foreground tabular-nums">{shown.length}</span></p>
+            <button type="button" onClick={openPlan} className="flex h-7 items-center gap-1 rounded-md border px-2 text-xs font-medium hover:bg-accent" title="Bagi video yang belum terjadwal ke akun terpilih secara otomatis">
+              <WandSparkles className="size-3.5 text-primary" /> Susun otomatis
             </button>
           </div>
           <label className="flex h-8 items-center gap-1.5 rounded-lg border bg-background px-2.5 text-xs">
@@ -545,38 +729,50 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
                   e.dataTransfer.effectAllowed = "copy";
                 }}
                 className="group relative cursor-grab overflow-hidden rounded-lg border bg-black hover:ring-2 hover:ring-primary/60 active:cursor-grabbing"
-                title={v.title}
+                title={`${v.title}\nSeret ke kalender`}
               >
                 <Thumb rel={v.rel} className="aspect-[9/16] w-full" />
                 <span className="pointer-events-none absolute top-1 left-1 rounded bg-black/65 px-1 text-[9px] font-medium text-white">{v.group === "editor" ? "Editor" : "Proyek"}</span>
                 <span className="pointer-events-none absolute inset-x-0 bottom-0 line-clamp-2 bg-gradient-to-t from-black/90 to-transparent p-1 pt-5 text-[10px] leading-tight text-white">{v.title}</span>
-                {planned.has(v.rel) && <span className="pointer-events-none absolute top-1 right-1 grid size-5 place-items-center rounded-full bg-primary text-primary-foreground"><CalendarClock className="size-3" /></span>}
+                {planned.has(v.rel) && <span className="pointer-events-none absolute top-1 right-1 grid size-5 place-items-center rounded-full bg-primary text-primary-foreground" title="Sudah dijadwalkan"><CalendarClock className="size-3" /></span>}
               </div>
             ))}
             {!shown.length && (
-              <p className="col-span-2 flex flex-col items-center gap-1 p-4 text-center text-xs text-muted-foreground"><Film className="size-5" /> {onlyFree ? "Semua video sudah punya jadwal." : "Belum ada video."}</p>
+              <div className="col-span-2 flex flex-col items-center gap-1.5 p-4 text-center text-xs text-muted-foreground">
+                <Film className="size-5" />
+                {!videos.length ? (
+                  <>Belum ada video. Ekspor proyek atau render di Editor dulu.</>
+                ) : q.trim() ? (
+                  <>Tidak ada video yang cocok dengan &quot;{q.trim()}&quot;.</>
+                ) : (
+                  <>
+                    Semua {videos.length} video sudah dijadwalkan.
+                    <button type="button" onClick={() => setOnlyFree(false)} className="mt-1 rounded-md border px-2 py-1 font-medium text-foreground hover:bg-accent">Tampilkan semua video</button>
+                  </>
+                )}
+              </div>
             )}
           </div>
         </section>
 
-        {/* ── calendar ────────────────────────────────────────────────────────────────────────── */}
+        {/* ── ③ calendar ──────────────────────────────────────────────────────────────────────── */}
         <section className="@container flex min-h-0 flex-col overflow-hidden bg-card">
           <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
             <button type="button" onClick={() => step(-1)} aria-label="Sebelumnya" className="grid size-8 place-items-center rounded-md border hover:bg-accent"><ChevronLeft className="size-4" /></button>
-            <h2 className="min-w-44 text-center text-sm font-semibold capitalize">{cursor ? title : "…"}</h2>
+            <h2 className="min-w-40 text-center text-sm font-semibold capitalize">{cursor ? title : "…"}</h2>
             <button type="button" onClick={() => step(1)} aria-label="Berikutnya" className="grid size-8 place-items-center rounded-md border hover:bg-accent"><ChevronRight className="size-4" /></button>
             <button type="button" onClick={() => setCursor(new Date())} className="h-8 rounded-md border px-2.5 text-xs hover:bg-accent">Hari ini</button>
-            <div className="ml-2 grid grid-cols-2 gap-0.5 rounded-lg bg-muted p-0.5 text-xs font-medium">
-              {([["week", "Minggu", CalendarRange], ["month", "Bulan", CalendarDays]] as const).map(([v, label, Icon]) => (
+            <div className="ml-1 flex gap-0.5 rounded-lg bg-muted p-0.5 text-xs font-medium">
+              {([["week", "Minggu", CalendarRange], ["month", "Bulan", CalendarDays], ["akun", "Per akun", Rows3]] as const).map(([v, label, Icon]) => (
                 <button key={v} type="button" onClick={() => setView(v)} aria-pressed={view === v} className={`flex h-7 items-center gap-1 rounded-md px-2.5 ${view === v ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
                   <Icon className="size-3.5" /> {label}
                 </button>
               ))}
             </div>
-            <div className="hidden flex-wrap items-center gap-x-3 gap-y-1 pl-1 text-[11px] text-muted-foreground @[1000px]:flex">
+            <div className="hidden flex-wrap items-center gap-x-2.5 gap-y-1 pl-1 text-[11px] text-muted-foreground @[1050px]:flex">
               {counts.map(([s, n]) => (
-                <span key={s} className="flex items-center gap-1">
-                  <i className={`size-2 rounded-full ${STATUS[s].badge.split(" ")[0]}`} /> {STATUS[s].label} <b className="font-semibold text-foreground tabular-nums">{n}</b>
+                <span key={s} className="flex items-center gap-1" title={STATUS[s].hint}>
+                  <StatusDot s={s} /> {STATUS[s].label} <b className="font-semibold text-foreground tabular-nums">{n}</b>
                 </span>
               ))}
             </div>
@@ -621,50 +817,16 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
             </Popover.Root>
           </div>
 
-          {view === "week" ? (
-            // week: a column per day, a row per upload hour (+ other hours) sharing the height; drop on an hour = that hour
-            <div
-              className="grid min-h-0 flex-1"
-              style={{ gridTemplateColumns: "52px repeat(7, minmax(0, 1fr))", gridTemplateRows: `auto repeat(${sortedSlots.length}, minmax(0, 1fr)) minmax(0, 0.6fr)` }}
-            >
-              <div className="border-b" />
-              {weekDays.map((d) => {
-                const k = dayKey(d);
-                const z = dropZone(k);
-                return (
-                  <div key={k} {...z.on} className={`flex items-center justify-center gap-1.5 border-b border-l py-1.5 ${z.past ? "opacity-50" : ""} ${z.active ? "bg-primary/10" : ""}`}>
-                    <span className="text-[11px] text-muted-foreground">{DAYS[(d.getDay() + 6) % 7]}</span>
-                    <span className={`grid size-6 place-items-center rounded-full text-xs font-semibold tabular-nums ${k === today ? "bg-primary text-primary-foreground" : ""}`}>{d.getDate()}</span>
-                  </div>
-                );
-              })}
-              {[...sortedSlots, "lain"].map((slot) => (
-                <div key={slot} className="contents">
-                  <div className="border-b px-1.5 py-1.5 text-right text-[11px] font-medium tabular-nums text-muted-foreground">{slot === "lain" ? "Lain" : dot(slot)}</div>
-                  {weekDays.map((d) => {
-                    const k = dayKey(d);
-                    const here = (items.get(k) ?? []).filter((it) => (slot === "lain" ? !sortedSlots.includes(it.time) : it.time === slot));
-                    const z = dropZone(k, slot === "lain" ? undefined : slot);
-                    return (
-                      <div key={k} {...z.on} className={`no-scrollbar min-h-0 overflow-y-auto border-b border-l p-1.5 transition-colors ${z.past ? "bg-muted/30" : ""} ${z.active ? "bg-primary/10 ring-2 ring-primary/50 ring-inset" : ""}`}>
-                        {here.length ? (
-                          <div className="grid grid-cols-[repeat(auto-fill,minmax(30px,1fr))] gap-1.5">{here.map((it) => card(it))}</div>
-                        ) : (
-                          !z.past && slot !== "lain" && <p className="grid h-full place-items-center text-[10px] text-muted-foreground/40">Tarik ke sini</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          ) : (
-            // month: every week shares the height; stills shrink with the cell, the count opens that week (all of them)
+          {view === "month" ? (
+            // month: busy weeks share the height, past empty weeks shrink to a thin row; the count opens that week
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="grid grid-cols-7 border-b text-center text-[11px] font-medium text-muted-foreground">
                 {DAYS.map((d) => <div key={d} className="py-1.5">{d}</div>)}
               </div>
-              <div className="grid min-h-0 flex-1 grid-cols-7" style={{ gridTemplateRows: `repeat(${monthWeeks.length}, minmax(0, 1fr))` }}>
+              <div
+                className="grid min-h-0 flex-1 grid-cols-7"
+                style={{ gridTemplateRows: monthWeeks.map((row) => (today && dayKey(row[6]) < today && row.every((d) => !items.get(dayKey(d))?.length) ? "30px" : "minmax(0, 1fr)")).join(" ") }}
+              >
                 {monthWeeks.flat().map((d) => {
                   const k = dayKey(d);
                   const inMonth = d.getMonth() === base.getMonth();
@@ -678,13 +840,74 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
                           <button type="button" onClick={() => (setCursor(d), setView("week"))} title="Buka minggu ini" className="rounded px-1 text-[10px] text-muted-foreground tabular-nums hover:bg-accent hover:text-foreground">{here.length} video</button>
                         )}
                       </div>
-                      <div className="grid min-h-0 grid-cols-[repeat(auto-fill,minmax(22px,1fr))] content-start gap-1.5 overflow-hidden p-0.5">
-                        {here.map((it) => card(it))}
-                      </div>
+                      <div className="min-h-0 overflow-hidden">{stills(here, 22)}</div>
                     </div>
                   );
                 })}
               </div>
+            </div>
+          ) : (
+            // week: a row per upload hour (+ other hours) · Per akun: a row per account; rows share the height
+            <div
+              className="grid min-h-0 flex-1"
+              style={{
+                gridTemplateColumns: `${view === "akun" ? "168px" : "52px"} repeat(7, minmax(0, 1fr))`,
+                gridTemplateRows: view === "akun" ? `auto repeat(${ordered.length}, minmax(0, 1fr))` : `auto repeat(${sortedSlots.length}, minmax(0, 1fr)) minmax(0, 0.6fr)`,
+              }}
+            >
+              <div className="border-b" />
+              {weekDays.map((d) => {
+                const k = dayKey(d);
+                const z = dropZone(k);
+                return (
+                  <div key={k} {...z.on} className={`flex items-center justify-center gap-1.5 border-b border-l py-1.5 ${z.past ? "opacity-50" : ""} ${z.active ? "bg-primary/10" : ""}`}>
+                    <span className="text-[11px] text-muted-foreground">{DAYS[(d.getDay() + 6) % 7]}</span>
+                    <span className={`grid size-6 place-items-center rounded-full text-xs font-semibold tabular-nums ${k === today ? "bg-primary text-primary-foreground" : ""}`}>{d.getDate()}</span>
+                  </div>
+                );
+              })}
+              {view === "akun"
+                ? ordered.map((a) => (
+                    <div key={a.id} className="contents">
+                      <div
+                        onMouseEnter={() => setFocus(a.id)}
+                        onMouseLeave={() => setFocus(null)}
+                        className="flex min-w-0 items-center gap-2 border-b px-2"
+                        style={{ boxShadow: `inset 3px 0 0 ${accountColor(a.id)}` }}
+                      >
+                        {avatar(a, "size-6")}
+                        <span className="min-w-0">
+                          <span className="block truncate text-xs font-medium">{a.name}</span>
+                          <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><PlatformIcon platform={a.platform} className="size-2.5" /> {SITE[a.platform]}</span>
+                        </span>
+                      </div>
+                      {weekDays.map((d) => {
+                        const k = dayKey(d);
+                        const here = (items.get(k) ?? []).filter((it) => it.channelId === a.id);
+                        const z = dropZone(k, undefined, a.id);
+                        return (
+                          <div key={k} {...z.on} className={`no-scrollbar min-h-0 overflow-y-auto border-b border-l transition-colors ${z.past ? "bg-muted/30" : ""} ${z.active ? "bg-primary/10 ring-2 ring-primary/50 ring-inset" : ""}`}>
+                            {here.length ? stills(here, 26) : !z.past && <p className="grid h-full place-items-center text-[10px] text-muted-foreground/30">+</p>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))
+                : [...sortedSlots, "lain"].map((slot) => (
+                    <div key={slot} className="contents">
+                      <div className="border-b px-1.5 py-1.5 text-right text-[11px] font-medium tabular-nums text-muted-foreground">{slot === "lain" ? "Lain" : dot(slot)}</div>
+                      {weekDays.map((d) => {
+                        const k = dayKey(d);
+                        const here = (items.get(k) ?? []).filter((it) => (slot === "lain" ? !sortedSlots.includes(it.time) : it.time === slot));
+                        const z = dropZone(k, slot === "lain" ? undefined : slot);
+                        return (
+                          <div key={k} {...z.on} className={`no-scrollbar min-h-0 overflow-y-auto border-b border-l transition-colors ${z.past ? "bg-muted/30" : ""} ${z.active ? "bg-primary/10 ring-2 ring-primary/50 ring-inset" : ""}`}>
+                            {here.length ? stills(here, 30) : !z.past && slot !== "lain" && <p className="grid h-full place-items-center text-[10px] text-muted-foreground/40">Tarik ke sini</p>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
             </div>
           )}
         </section>
@@ -699,7 +922,7 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
 function Preview({ h, account }: { h: Hover; account?: Account }) {
   const { it } = h;
   const j = it.job;
-  const s = STATUS[stateOf(it)];
+  const s = stateOf(it);
   return (
     <div
       style={{ left: h.x, top: h.y, width: CARD_W }}
@@ -707,12 +930,12 @@ function Preview({ h, account }: { h: Hover; account?: Account }) {
     >
       <div className="relative bg-black">
         <video src={mediaUrl(it.rel)} autoPlay muted loop playsInline className="mx-auto aspect-[9/16] max-h-80 object-contain" />
-        <span className={`absolute top-2 left-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${s.badge}`}>{s.label}</span>
+        <span className={`absolute top-2 left-2 flex items-center gap-1 rounded-full py-0.5 pr-2 pl-0.5 text-[10px] font-semibold ${STATUS[s].cls}`}><StatusDot s={s} className="size-4 ring-1 ring-white/40" /> {STATUS[s].label}</span>
       </div>
       <div className="space-y-1.5 p-3 text-xs">
         <p className="line-clamp-2 text-[13px] leading-snug font-semibold">{it.title}</p>
         <p className="flex items-center gap-1.5 text-muted-foreground">
-          <i className="size-2 shrink-0 rounded-full" style={{ background: accountColor(it.channelId) }} />
+          <i className="size-2.5 shrink-0 rounded-sm" style={{ background: accountColor(it.channelId) }} />
           <PlatformIcon platform={account?.platform ?? "tiktok"} className="size-3.5 shrink-0" />
           <span className="truncate">{account ? `${SITE[account.platform]} · ${account.name}` : "Akun dihapus"}</span>
         </p>
