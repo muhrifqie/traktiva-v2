@@ -21,7 +21,9 @@ export async function hookInsights(): Promise<HookInsights> {
   const matched: HookInsights["matched"] = [];
   for (const j of jobs) {
     let post = j.postId ? await db.select().from(accountPosts).where(and(eq(accountPosts.accountId, j.accountId), eq(accountPosts.externalId, j.postId))).get() : undefined;
-    if (!post) {
+    // an id from the runner is final even before the profile sync lists it (guessing by caption + time picked an
+    // older post with the same title and overwrote it)
+    if (!post && !j.postId) {
       const t = j.postedAt!.getTime();
       // a post scheduled at TikTok shows up from its upload time, which can be long before t: look from the job's creation
       const from = Math.min(t - 30 * 60_000, j.createdAt.getTime() - 10 * 60_000);
