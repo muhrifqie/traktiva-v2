@@ -10,6 +10,7 @@ import { videoProjects } from "@/lib/db/schema";
 import { createProjectFolder } from "@/lib/media";
 import { CONCEPT_VOICES, defaultOptions, MOODS, presetById } from "@/lib/presets";
 import { getSettings, updateSettings, type MyConcept } from "@/lib/settings";
+import { serverConcepts } from "@/lib/templates";
 import { pruneUnsaved, UNSAVED } from "@/lib/unsaved";
 
 // The owner's own concepts ("+ Buat konsep sendiri"): kept in settings.json, used through the free-form
@@ -44,9 +45,14 @@ export async function deleteMyConcept(id: string) {
 }
 
 /** Start a project from one of the owner's concepts (free-form preset, its scene count, its idea for the AI writer). */
+// Galeri template concepts ("tpl-<id>") run the same way; the project keeps its own copy, so a template the admin
+// changes or removes later never changes a project already made from it.
 export async function createProjectFromConcept(id: string) {
-  const c = getSettings().myConcepts?.find((x) => x.id === id);
-  if (!c) throw new Error("Konsep tidak ditemukan.");
+  const t = id.startsWith("tpl-") ? serverConcepts().find((x) => `tpl-${x.id}` === id) : null;
+  const c: Omit<MyConcept, "id" | "createdAt"> | undefined = t
+    ? { name: t.title, idea: t.data.idea, scenes: t.data.scenes, background: t.data.background || "auto", audio: t.data.voice === "none" ? "off" : "on", cast: t.data.cast, mood: t.data.mood, voice: t.data.voice, hook: t.data.hook }
+    : getSettings().myConcepts?.find((x) => x.id === id);
+  if (!c) throw new Error(id.startsWith("tpl-") ? "Template ini sudah tidak ada di galeri." : "Konsep tidak ditemukan.");
   const preset = presetById("custom")!;
   const options: Record<string, string> = { ...defaultOptions(preset), background: c.background, audio: c.audio, concept: c.idea, conceptName: c.name, [UNSAVED]: "1" };
   if (c.cast) options.cast = c.cast;

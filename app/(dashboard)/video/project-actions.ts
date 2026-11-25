@@ -26,7 +26,9 @@ import { synthesize } from "@/lib/cartesia";
 import { getSettings, updateSettings, writingRules } from "@/lib/settings";
 import { applyRules } from "@/lib/writing";
 import { splitScript, spoken, withVoiceLine } from "@/lib/voice";
-import { versionScript, VO_STYLES, voTemplate } from "@/lib/vo-templates";
+import { NEW_DAYS, scriptStyles, serverStyles, styleTemplate } from "@/lib/templates";
+import { serverInfo } from "@/lib/server-info";
+import { versionScript, VO_STYLES, voTemplate, withScriptStyles } from "@/lib/vo-templates";
 
 const Id = z.number().int().positive();
 const MAX_SCENES = 12;
@@ -99,13 +101,14 @@ export async function saveProject(id: number, patch: z.input<typeof Patch>) {
  */
 export async function aiVoScript(id: number, styleId: string, seconds: number, avoid = "") {
   const p = await get(id);
-  const style = VO_STYLES.find((s) => s.id === styleId) ?? VO_STYLES[1];
+  const extra = scriptStyles(); // Galeri template → Naskah VO
+  const style = withScriptStyles(extra).find((s) => s.id === styleId) ?? VO_STYLES[1];
   if (!p.product.name.trim()) throw new Error("Isi nama produk dulu.");
   try {
     return { script: await writeVoScript(p, style, z.number().min(3).max(600).parse(seconds), avoid), by: "ai" as const };
   } catch (e) {
     console.warn("[vo] AI script failed, using a template:", e instanceof Error ? e.message : e);
-    return { script: voTemplate(style.id, p.product, avoid), by: "template" as const, reason: e instanceof Error ? e.message : "AI gagal" };
+    return { script: voTemplate(style.id, p.product, avoid, extra), by: "template" as const, reason: e instanceof Error ? e.message : "AI gagal" };
   }
 }
 
@@ -956,6 +959,16 @@ export async function aiDirector(id: number, patch: EditPatch, wish: string) {
 
 export async function listEditTemplates(): Promise<EditTemplate[]> {
   return getSettings().editTemplates ?? [];
+}
+
+/** Galeri template (server): editor styles for "Format video laris" and script styles for the voice-over box. */
+export async function galleryForEditor() {
+  const info = serverInfo();
+  return {
+    styles: serverStyles().map((t) => ({ ...styleTemplate(t), fresh: Date.now() / 1000 - t.updatedAt < NEW_DAYS * 86400 })),
+    scripts: scriptStyles(),
+    admin: !info?.plan || info.role === "admin", // dev app (no license) or an admin license: "Salin JSON gaya"
+  };
 }
 
 export async function saveEditTemplate(id: number, patch: EditPatch, name: string) {

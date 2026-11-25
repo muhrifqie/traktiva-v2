@@ -10,7 +10,7 @@ import { useSidebar } from "@/components/ui/sidebar";
 import type { VideoProject } from "@/lib/db/schema";
 import {
   ACCENTS, ANIM_DUR, applyTemplate, DEFAULT_CAPTION_STYLE, beatTimes, CAPTION_FONTS, CAPTION_LOOKS, FONT_MOODS, fontOf, RESEARCH_TEMPLATES, TEXT_COLORS, autoCaptions, blitCaption, CAPTION_ANIMS, CAPTION_PRESETS, clamp, drawCaption, fxAt, layersOf, normalizeEdit, OVERLAY_KINDS, round2,
-  SAFE_PRESETS, exportSize, styleOf, tidyCaptions, TRANSITIONS, uid,
+  SAFE_PRESETS, exportSize, styleOf, tidyCaptions, toTemplate, TRANSITIONS, uid,
   type Box, type CaptionAnim, type CaptionFont, type FontMood, type CaptionPos, type CaptionStyle, type EditCaption, type EditFx, type EditOverlay, type EditTemplate, type Layer,
   type OverlayKind, type ProjectEdit, type SafeArea,
 } from "@/lib/edit";
@@ -19,7 +19,7 @@ import { renderOverlays } from "@/lib/render-overlays";
 import { mediaUrl } from "@/lib/media-url";
 import { voiceLine } from "@/lib/voice";
 import {
-  aiDirector, aiEditTimeline, aiHookVariants, aiMatchCaptionStyle, exportVariant, deleteEditTemplate, exportTimeline, listEditTemplates, openEditor, openProjectFolder, saveEdit, saveEditTemplate, saveProject, uploadMusic,
+  aiDirector, aiEditTimeline, aiHookVariants, aiMatchCaptionStyle, exportVariant, deleteEditTemplate, exportTimeline, galleryForEditor, listEditTemplates, openEditor, openProjectFolder, saveEdit, saveEditTemplate, saveProject, uploadMusic,
 } from "../project-actions";
 import { AudioTools } from "./audio-panel";
 import { playMedia } from "@/lib/play-media";
@@ -772,6 +772,7 @@ export function TimelineEditor({ p }: { p: Project }) {
                 onFx={(patch) => set((e) => ({ ...e, fx: { ...e.fx, ...patch } }))}
                 onSaveTemplate={(name) => saveEditTemplate(p.id, patchOf(edit), name)}
                 onApplyTemplate={(t) => (set((e) => applyTemplate(e, t)), toast.success(`Gaya “${t.name}” dipakai`))}
+                current={() => toTemplate(edit, "")}
               />
             )}
             {tab === "ai" && (
@@ -1714,17 +1715,25 @@ function OverlayPanel({
 
 /** Clip transitions / Ken Burns, plus saved "brand looks" (templates). */
 function FxPanel({
-  fx, onFx, onSaveTemplate, onApplyTemplate,
+  fx, onFx, onSaveTemplate, onApplyTemplate, current,
 }: {
-  fx: EditFx; onFx: (p: Partial<EditFx>) => void; onSaveTemplate: (name: string) => Promise<EditTemplate[]>; onApplyTemplate: (t: EditTemplate) => void;
+  fx: EditFx; onFx: (p: Partial<EditFx>) => void; onSaveTemplate: (name: string) => Promise<EditTemplate[]>; onApplyTemplate: (t: EditTemplate) => void; current: () => EditTemplate;
 }) {
   const [templates, setTemplates] = useState<EditTemplate[] | null>(null);
   const [name, setName] = useState("");
+  // Galeri template (server): new styles without an app update; admins can copy this project's style for the panel
+  const [gallery, setGallery] = useState<{ styles: (EditTemplate & { fresh: boolean })[]; admin: boolean }>({ styles: [], admin: false });
   useEffect(() => {
     let alive = true;
     listEditTemplates().then((t) => alive && setTemplates(t), () => alive && setTemplates([]));
+    galleryForEditor().then((g) => alive && setGallery(g), () => {});
     return () => void (alive = false);
   }, []);
+  const copyStyle = () => {
+    const { captionStyle, fx: f, overlays } = current();
+    const json = JSON.stringify({ captionStyle, fx: f, overlays, captions: "keep", note: "" }, null, 2);
+    navigator.clipboard.writeText(json).then(() => toast.success("JSON gaya disalin. Tempel di Panel admin → Template → Gaya editor."), () => toast.error("Gagal menyalin"));
+  };
   return (
     <div className="space-y-3">
       <div className="space-y-2">
@@ -1745,16 +1754,20 @@ function FxPanel({
         <p className="flex items-center gap-1.5 text-xs font-medium"><Sparkles className="size-3.5" /> Format video laris</p>
         <p className="text-[11px] text-muted-foreground">Dari analisa 30 video terlaris KaloData. Mengatur caption, stiker, dan efek; bisa di-undo (Ctrl+Z).</p>
         <div className="grid gap-1">
-          {RESEARCH_TEMPLATES.map((t) => (
+          {[...gallery.styles, ...RESEARCH_TEMPLATES].map((t) => (
             <div key={t.id} className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[11px]">
               <span className="min-w-0 flex-1">
                 <b className="font-medium">{t.name}</b>
+                {"fresh" in t && t.fresh === true && <span className="ml-1.5 rounded-full bg-primary/90 px-1.5 text-[9px] font-semibold text-primary-foreground">Baru</span>}
                 <span className="block text-muted-foreground">{t.note}</span>
               </span>
               <button type="button" className={secondary} onClick={() => onApplyTemplate(t)}>Pakai</button>
             </div>
           ))}
         </div>
+        {gallery.admin && (
+          <button type="button" className={secondary} onClick={copyStyle} title="Untuk Panel admin → Template → Gaya editor">Salin JSON gaya (admin)</button>
+        )}
       </div>
       <div className="space-y-2 border-t pt-2.5">
         <p className="flex items-center gap-1.5 text-xs font-medium"><Bookmark className="size-3.5" /> Gaya brand</p>

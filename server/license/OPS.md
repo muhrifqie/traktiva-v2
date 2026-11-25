@@ -53,6 +53,13 @@ Server lisensi app desktop Traktiva V2 (aktivasi key, sesi, heartbeat). Desain: 
 - **Lupa password** (`/lupa-password`): kode 6 angka lewat email. Sejak 2026-11-23 dikirim lewat **SMTP Gmail `traktivasite@gmail.com`** (App Password) dari `data/smtp.json` (600: `host, port, user, pass, fromName`; kode dibuat & dicek di server, tabel `email_codes`; `smtp.mjs` tanpa dependensi). Batas: kode 10 menit, 5 salah, kirim ulang 60 dtk, 5 kode/jam/email; Gmail gratis ±500 email/hari. SMTP gagal tercatat di Log sebagai `email_failed`. Tanpa `smtp.json` kembali ke Waroengku Verify (`data/verify.json`). Email tak terdaftar dijawab sama (tanpa kirim). Berhasil → semua sesi lain keluar. Cek kirim manual: `node --input-type=module -e "import {emailGate} from './verify.mjs'; console.log(await emailGate('reset','<email>','cek',''))"`.
 - **Perangkat & sesi** (/pengaturan): `user_sessions` menyimpan `created_at, last_seen, ip, ua`; member bisa mengeluarkan sesi lain.
 
+## Galeri template (belum dideploy, 2026-11-26)
+- Panel → **Template**: konsep video, gaya editor (JSON dari Editor app → "Salin JSON gaya (admin)"), naskah VO (`{nama}`, `{harga}`, `[…]` dibuang kalau tanpa harga). Kode: `templates.mjs` (tabel `templates`, setelan `templates_rev`).
+- Sampai ke app lewat `/v1/session`: app mengirim `templatesRev`, server menjawab daftar lengkap hanya kalau revisinya beda → app menulis `DATA_DIR/templates.json` (`electron/license.js`). App lama (tanpa `templatesRev`) tidak menerima apa-apa.
+- Media: `TEMPLATE_MEDIA_DIR` (default `/srv/traktiva-download/templates`, **harus bisa ditulis user proses pm2 `traktiva-license-internal`**, file 644) → publik di `TEMPLATE_MEDIA_URL` (default `https://download.traktiva.site/templates`). Maks 12 MB (WebP/JPG/PNG/MP4/WebM).
+- nginx: lokasi baru `= /admin/template-media` (13 MB, tanpa buffering) di `traktiva-site-ssl.conf` → salin ke server, `nginx -t && systemctl reload nginx`.
+- Urutan deploy: server lisensi (`traktiva-license` + `traktiva-license-internal`) → web (`traktiva-web`) + nginx → rilis app baru. Tes: `node test.mjs` (termasuk galeri template).
+
 ## Admin (CLI, di server)
 ```bash
 cd /srv/traktiva-license && alias trk='node --disable-warning=ExperimentalWarning admin.mjs'

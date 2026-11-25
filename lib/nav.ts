@@ -1,5 +1,5 @@
 import {
-  CalendarClock, ChartNoAxesColumn, Clapperboard, Columns2, Download, Film, FolderKanban, ImagePlus, Images, LayoutDashboard, Settings, Store, TrendingUp, UserCircle, Users,
+  CalendarClock, ChartNoAxesColumn, Clapperboard, Columns2, Download, Film, FolderKanban, ImagePlus, Images, LayoutDashboard, LayoutTemplate, Settings, Store, TrendingUp, UserCircle, Users,
 } from "lucide-react";
 
 // Single source for sidebar, page headers, command menu and placeholder routes. Add a menu here, then build its page.
@@ -14,6 +14,7 @@ export const NAV = [
   { slug: "jadwal", title: "Kalender Upload", icon: CalendarClock, group: "Buat Konten", color: "#5e6ad2", desc: "Semua upload terjadwal per hari, dan atur kapan video diunggah ke tiap akun." },
   { slug: "gambar-ai", title: "Buat Gambar AI", icon: ImagePlus, group: "Buat Konten", color: "#e535ab", desc: "Bikin gambar produk dan konten dari prompt.", sidebar: false }, // ponytail: not built; AI images live in Galeri → Hasil AI
   { slug: "galeri", title: "Galeri", icon: Images, group: "Pustaka", color: "#f2c94c", desc: "Foto unggahan, gambar AI, dan video jadi di satu tempat, siap dipakai ulang." },
+  { slug: "template", title: "Galeri Template", short: "Template", icon: LayoutTemplate, group: "Pustaka", color: "#8b7cf6", desc: "Konsep video, gaya editor, dan naskah VO terbaru dari Traktiva. Bertambah otomatis tanpa update app." },
   { slug: "galeri-video", title: "Galeri Video", icon: Film, group: "Pustaka", color: "#4ea7fc", desc: "Semua video siap unggah dan riwayatnya.", sidebar: false }, // a tab of Galeri
   { slug: "tiktok-shop", title: "TikTok Shop", short: "Ringkasan", icon: LayoutDashboard, group: "TikTok Shop", platform: "tiktok", color: "#ff3b6b", desc: "Ringkasan semua akun TikTok Shop: login, etalase, antrean upload, dan performa." }, // overview: first branch + the group button
   { slug: "showcase", title: "Etalase TikTok Shop", short: "Etalase", icon: Store, group: "TikTok Shop", color: "#4cb782", desc: "Etalase produk affiliate dan sinkron otomatis dari TikTok Shop." },

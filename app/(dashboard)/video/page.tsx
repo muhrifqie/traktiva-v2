@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { googleAccounts, videoProjects } from "@/lib/db/schema";
 import { loadFlow2ApiConfig } from "@/lib/flow2api";
 import { getSettings } from "@/lib/settings";
+import { galleryCards } from "@/lib/templates";
 import { NewConceptButton, PresetGallery } from "./presets";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +50,7 @@ export default async function VideoPage() {
           </div>
           <NewConceptButton />
         </div>
-        <PresetGallery mine={getSettings().myConcepts ?? []} />
+        <PresetGallery mine={getSettings().myConcepts ?? []} server={galleryCards().concepts} />
       </div>
     </>
   );

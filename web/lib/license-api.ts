@@ -76,6 +76,29 @@ export async function requireAdmin(): Promise<AdminIdentity> {
   redirect("/admin/login");
 }
 
+/** Galeri template: one row as the panel edits it (server/license/templates.mjs). */
+export type TemplateKind = "konsep" | "gaya" | "naskah";
+export type TemplateRow = {
+  id: number; kind: TemplateKind; title: string; summary: string; category: string; cover: string | null; preview: string | null;
+  data: Record<string, unknown>; min_app: string; active: number; sort: number; created_at: number; updated_at: number; actor: string | null;
+};
+
+/** Cover / preview file for a template: the raw body goes straight to the license server, which answers its public URL. */
+export async function uploadTemplateMedia(body: ReadableStream<Uint8Array>, type: string) {
+  const { headers } = await requireAdmin();
+  if (!TOKEN) throw new ApiError("LICENSE_INTERNAL_TOKEN belum diatur di server web.", 500);
+  const res = await fetch(`${BASE}/internal/template-media`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${TOKEN}`, "content-type": type, ...headers },
+    body,
+    duplex: "half",
+    signal: AbortSignal.timeout(120_000),
+  } as RequestInit & { duplex: "half" });
+  const json = (await res.json().catch(() => ({ ok: false, message: "Jawaban server lisensi tidak valid." }))) as { ok: boolean; message?: string; url?: string };
+  if (!json.ok || !json.url) throw new ApiError(json.message ?? "Upload gagal", res.status);
+  return json.url;
+}
+
 /** Call an admin endpoint as the logged-in admin. */
 export async function asAdmin<T>(path: string, opts: { method?: "GET" | "POST"; body?: unknown } = {}) {
   const { headers } = await requireAdmin();

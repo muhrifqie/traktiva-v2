@@ -11,11 +11,11 @@ import { toast } from "sonner";
 import { confirmDialog } from "@/components/confirm-dialog";
 import type { VideoProject } from "@/lib/db/schema";
 import { mediaUrl } from "@/lib/media-url";
-import { splitHook, versionHook, VO_MIN_CHARS, VO_STYLES, voTemplate } from "@/lib/vo-templates";
+import { splitHook, versionHook, VO_MIN_CHARS, voTemplate, withScriptStyles, type ScriptStyle } from "@/lib/vo-templates";
 import { applyRules } from "@/lib/writing";
 import { castOf, CLIP_SECS, EXPLAIN, type ExplainKey, isLocked, isSilent, isVeo, PRO_CLIP_SEC, presetById, projectName, suggestFromRef, VEO_CLIP_SEC, VERSIONS, VIDEO_MODELS } from "@/lib/presets";
 import {
-  addScene, aiOutline, aiWriteScenes, applyShowcaseProduct, etalasePhotos, listEtalase, buildStoryboard, makeVersions, quickMake, saveAsDraft, aiVoScript, setSceneLine, deleteProject, generateImages, moveScene, openProjectFolder, pickFromLibrary, removePhoto, removeScene,
+  addScene, aiOutline, aiWriteScenes, applyShowcaseProduct, etalasePhotos, listEtalase, buildStoryboard, makeVersions, quickMake, saveAsDraft, aiVoScript, galleryForEditor, setSceneLine, deleteProject, generateImages, moveScene, openProjectFolder, pickFromLibrary, removePhoto, removeScene,
   renameProject, renderProject, saveProject, uploadPhotos, uploadSceneImage,
   applyProductPhoto, cancelProject, duplicateProject, removeBackground, removeFace, uploadBackground, uploadFace,
 } from "../project-actions";
@@ -900,6 +900,13 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
   const unsaved = p.options.unsaved === "1";
   // "Tulis pakai AI": a fresh script in the chosen style (falls back to a template when the AI is unavailable)
   const [voWriting, setVoWriting] = useState(false);
+  // Galeri template (server) → Naskah VO: extra selling styles next to the built-in ones
+  const [extraVo, setExtraVo] = useState<ScriptStyle[]>([]);
+  useEffect(() => {
+    let alive = true;
+    galleryForEditor().then((g) => alive && setExtraVo(g.scripts), () => {});
+    return () => void (alive = false);
+  }, []);
   const writeVo = async () => {
     const style = options.voStyle || "soft";
     setVoWriting(true);
@@ -1161,7 +1168,7 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
           </div>
           {/* pick a selling style: fills a ready script with the product's name & price, still editable */}
           <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Gaya naskah">
-            {VO_STYLES.map((st) => {
+            {withScriptStyles(extraVo).map((st) => {
               const on = options.voStyle === st.id;
               return (
                 <button
@@ -1170,7 +1177,7 @@ function StepStyle({ p, busy, act, onDone }: { p: Project; busy: boolean; act: A
                   role="radio"
                   aria-checked={on}
                   title={st.hint}
-                  onClick={() => setOptions({ ...options, voStyle: st.id, vo: applyRules(voTemplate(st.id, p.product, options.vo ?? "")) })}
+                  onClick={() => setOptions({ ...options, voStyle: st.id, vo: applyRules(voTemplate(st.id, p.product, options.vo ?? "", extraVo)) })}
                   className={`h-7 rounded-full border px-2.5 text-[11px] font-medium ${on ? "border-primary bg-primary/10 text-brand-light" : "bg-background text-muted-foreground hover:text-foreground"}`}
                 >
                   {st.label}

@@ -10,6 +10,7 @@ import { appInfo, audit, hwTolerance, createLicenses, DATA_DIR, db, getPlans, ge
 import { createPasswordToken, memberRoutes, queueEmailReminders, runReminders } from "./members.mjs";
 import { EMAIL_DEFAULTS, emailSettings, mails, mailStatus, queueMail, sendNow, startMailer } from "./mail.mjs";
 import { handleWebhook, paymentsConfigured, paymentsReady, syncPendingOrders, testMode } from "./payments.mjs";
+import { templateRoutes } from "./templates.mjs";
 
 const PORT = Number(process.env.INTERNAL_PORT || 3822);
 const HOST = "127.0.0.1";
@@ -516,6 +517,7 @@ const routes = {
 
   // ---- member accounts (website): see members.mjs
   ...memberRoutes({ json, bad, body, sha, now, failsOf, fails, licenseRow, secrets }),
+  ...templateRoutes,
 };
 
 function match(method, pathname) {

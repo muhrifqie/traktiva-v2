@@ -105,9 +105,26 @@ export function spokenPrice(price: string) {
   return n > 0 ? `Rp${n.toLocaleString("id-ID")}` : "";
 }
 
+/**
+ * A script from the server's template gallery (Galeri template → Naskah VO): {nama} / {harga}; a [segment] that holds
+ * {harga} is dropped when the product has no price, other brackets just lose their brackets.
+ */
+export function fillLine(line: string, { name, price }: Fill) {
+  return line
+    .replace(/\[([^\]]*)\]/g, (_, seg: string) => (seg.includes("{harga}") && !price ? "" : seg))
+    .replaceAll("{nama}", name)
+    .replaceAll("{harga}", price || "harga terjangkau")
+    .replace(/\s+([,.!?])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+/** Server script styles (lib/templates.ts scriptStyles) in the same shape as VO_STYLES. */
+export type ScriptStyle = { id: string; label: string; hint: string; ai: string; lines: string[] };
+export const withScriptStyles = (extra: ScriptStyle[] = []) => [...VO_STYLES, ...extra.map((s) => ({ ...s, writes: s.lines.map((l): Write => (f) => fillLine(l, f)) }))];
+
 /** A ready script in this style for the product, a different one from `avoid` (the script in the box now). */
-export function voTemplate(styleId: string, product: { name: string; price: string }, avoid = "") {
-  const s = VO_STYLES.find((x) => x.id === styleId);
+export function voTemplate(styleId: string, product: { name: string; price: string }, avoid = "", extra: ScriptStyle[] = []) {
+  const s = withScriptStyles(extra).find((x) => x.id === styleId);
   if (!s) return "";
   const fill = { name: shortName(product.name), price: spokenPrice(product.price) };
   const all = s.writes.map((w) => w(fill));

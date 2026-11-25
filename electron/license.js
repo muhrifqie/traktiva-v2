@@ -167,7 +167,7 @@ async function session() {
     const n = await post("/v1/nonce", { deviceId: dev.deviceId });
     if (!n.ok) return { ok: false, error: n.error, message: n.message, needKey: NEEDS_KEY.has(n.error) };
     const signature = crypto.sign(null, Buffer.from(`traktiva-session:${n.nonce}`), dev.privateKey).toString("base64");
-    const s = await post("/v1/session", { deviceId: dev.deviceId, nonce: n.nonce, signature, appVersion: app.getVersion(), hw: await hardware() });
+    const s = await post("/v1/session", { deviceId: dev.deviceId, nonce: n.nonce, signature, appVersion: app.getVersion(), hw: await hardware(), templatesRev: templatesRev() });
     if (!s.ok) return { ok: false, error: s.error, message: s.message, needKey: NEEDS_KEY.has(s.error) };
     state.payload = verifyToken(s.token);
     state.token = s.token;
@@ -187,7 +187,27 @@ async function session() {
 // (TRAKTIVA_DATA_DIR in dev = run against another data folder, e.g. the installed app's, with the same license)
 const infoFile = () => path.join(process.env.TRAKTIVA_DATA_DIR || (app.isPackaged ? app.getPath("userData") : path.join(__dirname, "..", "data")), "server-info.json");
 
+// Galeri template: the server sends the whole list only when our revision is older; kept next to server-info.json
+const templatesFile = () => path.join(path.dirname(infoFile()), "templates.json");
+function templatesRev() {
+  try {
+    return Number(JSON.parse(fs.readFileSync(templatesFile(), "utf8")).rev) || 0;
+  } catch {
+    return 0;
+  }
+}
+
 async function writeServerInfo(info) {
+  const { templates, templatesRev: rev, ...rest } = info ?? {};
+  if (Array.isArray(templates)) {
+    try {
+      fs.writeFileSync(`${templatesFile()}.tmp`, JSON.stringify({ rev, at: Date.now(), templates }));
+      fs.renameSync(`${templatesFile()}.tmp`, templatesFile());
+    } catch (e) {
+      console.error("[license] templates:", e instanceof Error ? e.message : e);
+    }
+  }
+  info = rest;
   const file = infoFile();
   const hw = await hardware();
   const data = {

@@ -43,7 +43,7 @@ const verifyMock = http
     });
   })
   .listen(38295, "127.0.0.1");
-const env = { ...process.env, VERIFY_URL: "http://127.0.0.1:38295", VERIFY_KEY: "vk_selftest", LICENSE_DATA_DIR: dir, LICENSE_PORT: "38291", WAROENGPAY_BASE: "http://127.0.0.1:38294", WAROENGPAY_API_KEY: "wp_test_selftest", WAROENGPAY_WEBHOOK_SECRET: WP_SECRET };
+const env = { ...process.env, VERIFY_URL: "http://127.0.0.1:38295", VERIFY_KEY: "vk_selftest", LICENSE_DATA_DIR: dir, LICENSE_PORT: "38291", WAROENGPAY_BASE: "http://127.0.0.1:38294", WAROENGPAY_API_KEY: "wp_test_selftest", WAROENGPAY_WEBHOOK_SECRET: WP_SECRET, TEMPLATE_MEDIA_DIR: path.join(dir, "media"), TEMPLATE_MEDIA_URL: "https://dl.test/templates" };
 const admin = (...a) => execFileSync(process.execPath, [path.join(import.meta.dirname, "admin.mjs"), ...a], { env, encoding: "utf8" });
 const serverPub = admin("init").trim().split("\n").pop();
 const key = admin("create", "--days", "30", "--note", "test").split(" ")[0];
@@ -59,10 +59,10 @@ try {
     const { privateKey, publicKey } = crypto.generateKeyPairSync("ed25519");
     return { privateKey, pub: publicKey.export({ format: "der", type: "spki" }).subarray(-32).toString("base64"), hash: crypto.randomBytes(8).toString("hex") };
   };
-  const login = async (d, deviceId) => {
+  const login = async (d, deviceId, extra = {}) => {
     const { nonce } = await post("/v1/nonce", { deviceId });
     const signature = crypto.sign(null, Buffer.from(`traktiva-session:${nonce}`), d.privateKey).toString("base64");
-    return post("/v1/session", { deviceId, nonce, signature });
+    return post("/v1/session", { deviceId, nonce, signature, ...extra });
   };
 
   assert.equal((await post("/v1/activate", { key: "TRK-AAAA-BBBB-CCCC-DDDD", devicePub: device().pub, deviceHash: "x" })).error, "invalid_key");
@@ -123,6 +123,27 @@ try {
     const info = (await login(pc1, again.deviceId)).info;
     assert.equal(info.announcements[0].title, "Maintenance malam ini");
     assert.deepEqual([info.latest.version, info.latest.mandatory, info.remote.maxParallel], ["1.2.0", 1, 3]);
+
+    // galeri template: validated per kind, media upload, the list reaches the app only when its revision is older
+    assert.equal(info.templates, undefined); // apps that send no revision never get the list
+    assert.match((await ipost("/internal/templates", { kind: "konsep", title: "X", data: { idea: "pendek" } }, ok.session)).message, /Ide video/);
+    assert.match((await ipost("/internal/templates", { kind: "naskah", title: "X", data: { lines: ["kurang"] } }, ok.session)).message, /naskah/);
+    const up = await fetch(ib + "/internal/template-media", { method: "POST", headers: { authorization: `Bearer ${svc}`, "content-type": "image/png", "x-admin-session": ok.session }, body: Buffer.from("89504e47", "hex") }).then((r) => r.json());
+    assert.ok(up.ok && up.url.startsWith("https://dl.test/templates/") && fs.existsSync(path.join(dir, "media", up.url.split("/").pop())), JSON.stringify(up));
+    assert.equal((await fetch(ib + "/internal/template-media", { method: "POST", headers: { authorization: `Bearer ${svc}`, "content-type": "text/html", "x-admin-session": ok.session }, body: "<b>" }).then((r) => r.json())).ok, false);
+    assert.ok((await ipost("/internal/templates", { kind: "konsep", title: "Unboxing ASMR", cover: up.url, data: { idea: "Unboxing pelan di meja kayu, tangan saja.", scenes: 40, mood: "aneh" } }, ok.session)).ok);
+    assert.ok((await ipost("/internal/templates", { kind: "naskah", title: "Penasaran", data: { hint: "Bikin penasaran", lines: ["Aku nyesel baru tahu {nama}[, cuma {harga}]. Cek keranjang di bawah!"] } }, ok.session)).ok);
+    assert.ok((await ipost("/internal/templates", { kind: "gaya", title: "Minimal", data: { captionStyle: { preset: "minimal", accent: "red", "bad key": 1 }, overlays: [{ text: "Hai", y: 9 }], captions: 2 } }, ok.session)).ok);
+    const t1 = (await login(pc1, again.deviceId, { templatesRev: 0 })).info;
+    assert.equal(t1.templates.length, 3);
+    const k = t1.templates.find((t) => t.kind === "konsep");
+    assert.deepEqual([k.data.scenes, k.data.mood, k.data.background, k.cover], [12, "natural", "auto", up.url]); // clamped + defaults
+    const gy = t1.templates.find((t) => t.kind === "gaya").data;
+    assert.deepEqual([gy.captionStyle, gy.overlays[0].y, gy.captions], [{ preset: "minimal" }, 1, 2]); // bad colour / key dropped
+    assert.equal((await login(pc1, again.deviceId, { templatesRev: t1.templatesRev })).info.templates, undefined); // up to date: nothing sent
+    assert.ok((await ipost(`/internal/templates/${k.id}`, { action: "off" }, ok.session)).ok);
+    const t2 = (await login(pc1, again.deviceId, { templatesRev: t1.templatesRev })).info;
+    assert.deepEqual([t2.templatesRev > t1.templatesRev, t2.templates.length], [true, 2]); // switched off = gone from the app
 
     // member accounts: register, wrong password, claim a key, others cannot claim it, self reset with a 7-day cooldown
     const mpost = (p, body, session) =>

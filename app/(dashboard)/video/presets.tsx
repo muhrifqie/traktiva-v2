@@ -10,6 +10,7 @@ import { BACKDROPS, CONCEPT_VOICES, defaultOptions, MOODS, PRESETS } from "@/lib
 import type { MyConcept } from "@/lib/settings";
 import { createMyConcept, createProjectFromConcept, deleteMyConcept } from "./concept-actions";
 import { createProject } from "./project-actions";
+import { ConceptTemplateCard, type ConceptCard } from "../template/cards";
 
 const BADGE = { Stabil: "bg-status-ok/90 text-white", Baru: "bg-primary/90 text-primary-foreground", Segera: "bg-black/60 text-white", Bebas: "bg-[#8b7cf6]/90 text-white" } as const;
 
@@ -195,7 +196,7 @@ function MyConceptCard({ c, busy, onUse }: { c: MyConcept; busy: boolean; onUse:
   );
 }
 
-export function PresetGallery({ mine }: { mine: MyConcept[] }) {
+export function PresetGallery({ mine, server = [] }: { mine: MyConcept[]; server?: ConceptCard[] }) {
   const [pending, start] = useTransition();
   const [picked, setPicked] = useState<string | null>(null);
   const run = (id: string, go: () => Promise<void>) => {
@@ -216,6 +217,8 @@ export function PresetGallery({ mine }: { mine: MyConcept[] }) {
       {mine.map((c) => (
         <MyConceptCard key={c.id} c={c} busy={pending} onUse={() => run(c.id, () => createProjectFromConcept(c.id))} />
       ))}
+      {/* Galeri template from the server: new concepts without an app update */}
+      {server.map((c) => <ConceptTemplateCard key={`tpl-${c.id}`} c={c} />)}
       {/* the free-form preset is reached through "+ Buat konsep sendiri", not as its own card */}
       {PRESETS.filter((p) => !p.custom).map((p) => {
         const scenes = p.available ? p.scenes(DUMMY, defaultOptions(p)).length : 0;

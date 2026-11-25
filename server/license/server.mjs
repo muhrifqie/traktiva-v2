@@ -2,6 +2,7 @@
 // Endpoints: POST /v1/activate, /v1/nonce, /v1/session · GET /health. See docs/license-design.md.
 import crypto from "node:crypto";
 import http from "node:http";
+import { publicTemplates, templatesRev } from "./templates.mjs";
 import { appInfo, audit, db, hashKey, HW_PARTS, hwChanges, hwTolerance, loadSecrets, normalizeKey, signToken, verifyDevice } from "./lib.mjs";
 
 /** Client hardware fingerprint → { part: 24-hex } with known parts only (anything else is dropped). */
@@ -129,7 +130,10 @@ async function session(req, res, ip) {
   // owner = the website account the key is linked to (sidebar profile + greeting in the app); null = not linked
   const u = lic.user_id ? db.prepare("SELECT name, email FROM users WHERE id = ?").get(lic.user_id) : null;
   const owner = u ? { name: (u.name || u.email.split("@")[0]).slice(0, 80), email: u.email } : null;
-  send(res, 200, { ok: true, token: signToken(secrets.signKey, payload), payload, info: { ...appInfo(), owner } });
+  // Galeri template: the whole list only when the app's copy is older (apps that send no revision get nothing)
+  const rev = templatesRev();
+  const templates = typeof b.templatesRev === "number" && b.templatesRev !== rev ? { templatesRev: rev, templates: publicTemplates() } : { templatesRev: rev };
+  send(res, 200, { ok: true, token: signToken(secrets.signKey, payload), payload, info: { ...appInfo(), owner, ...templates } });
 }
 
 // ---------------------------------------------------------------- server
