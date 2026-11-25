@@ -38,7 +38,7 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
       .leftJoin(accountPosts, and(eq(accountPosts.accountId, uploadJobs.accountId), eq(accountPosts.externalId, uploadJobs.postId)))
       .orderBy(desc(uploadJobs.scheduledAt))
       .limit(150),
-    db.select({ id: accounts.id, username: accounts.username, status: accounts.status, platform: accounts.platform, displayName: accounts.displayName }).from(accounts).where(inArray(accounts.platform, ["tiktok", "youtube", "instagram", "facebook"])),
+    db.select({ id: accounts.id, username: accounts.username, status: accounts.status, platform: accounts.platform, displayName: accounts.displayName, avatarUrl: accounts.avatarUrl }).from(accounts).where(inArray(accounts.platform, ["tiktok", "youtube", "instagram", "facebook"])),
     listUploadable(),
     // each account's affiliate showcase (synced in TikTok Shop): the product picker's options
     db
@@ -74,8 +74,10 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
       </PageHeader>
       {view === "kalender" ? (
         <JadwalCalendar
-          jobs={mapped.map(({ id, scheduledAt, status, accountId, username, platform, title }) => ({ id, scheduledAt, status, accountId, username, platform, title }))}
-          today={new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date())}
+          accounts={social.map((a) => ({ id: a.id, platform: a.platform, avatar: a.avatarUrl, active: a.status === "active", name: a.platform === "youtube" || a.platform === "facebook" ? a.displayName || a.username : `@${a.username}` }))}
+          videos={videos.map((v) => ({ rel: v.video, title: v.judul ?? (v.label === "Video utama" ? v.title : `${v.title} · ${v.label}`), group: v.projectId === 0 ? "editor" : "proyek" }))}
+          jobs={mapped.filter((j) => j.status !== "cancelled").map(({ id, scheduledAt, postedAt, status, accountId, video, label, title, videoTitle, caption, views, error, progress }) => ({ id, scheduledAt, postedAt, status, accountId, video, label, title, videoTitle, caption, views, error, progress }))}
+          ytDefaults={youtubeUploadDefaults()}
         />
       ) : (
       <JadwalBoard

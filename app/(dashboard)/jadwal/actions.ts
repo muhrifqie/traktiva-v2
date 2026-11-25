@@ -1,11 +1,11 @@
 "use server";
 
 import fs from "node:fs/promises";
-import { desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { accounts, uploadJobs, videoProjects } from "@/lib/db/schema";
+import { accounts, showcaseProducts, uploadJobs, videoProjects } from "@/lib/db/schema";
 import { resolveMedia } from "@/lib/media";
 import { projectName } from "@/lib/presets";
 import { kickUploads, runJobNow } from "@/lib/uploads";
@@ -96,6 +96,57 @@ export async function createUploadJobs(input: z.input<typeof NewJobs>) {
   );
   refresh();
   kickUploads(); // TikTok: upload now (far-ahead times go to TikTok's schedule); YouTube: at its time (lib/uploads.ts)
+}
+
+const Plan = z.object({
+  drafts: z.array(z.object({ id: z.string().max(20), rel: z.string().min(3).max(400), channelId: Id, at: z.number().int() })).min(1).max(200),
+  caption: z.string().max(2200), // TikTok / Instagram / Facebook; may hold "{judul}"
+  ownCaption: z.boolean(), // a project video's own caption wins over the template
+  yt: z.object({ title: z.string().trim().min(1).max(200), description: z.string().max(2200), tags: z.string().max(500), visibility: z.enum(["public", "unlisted", "private"]), madeForKids: z.boolean(), aiContent: z.boolean() }),
+});
+
+/** Kalender drafts → real upload jobs, each on its own account at its own hour. The video's details (project, title for
+ *  "{judul}", caption, hook, cart product) come from the video itself, not from the browser. */
+export async function queuePlan(input: z.input<typeof Plan>) {
+  const d = Plan.parse(input);
+  const vids = new Map((await listUploadable()).map((v) => [v.video, v]));
+  const accs = new Map((await db.select({ id: accounts.id, platform: accounts.platform }).from(accounts)).map((a) => [a.id, a.platform]));
+  const meta = { tags: d.yt.tags.split(",").map((t) => t.trim()).filter(Boolean).slice(0, 30), visibility: d.yt.visibility, madeForKids: d.yt.madeForKids, aiContent: d.yt.aiContent };
+  const soon = Date.now() + 5 * 60_000;
+  const queued: string[] = [];
+  const failed: { id: string; error: string }[] = [];
+  for (const x of d.drafts) {
+    // a past hour would be posted right away: those stay drafts so they get a new hour first
+    if (x.at < soon) {
+      failed.push({ id: x.id, error: "jamnya sudah lewat" });
+      continue;
+    }
+    const v = vids.get(x.rel);
+    const yt = accs.get(x.channelId) === "youtube";
+    const judul = v?.judul ?? v?.title ?? "Video";
+    // a cart product only where that account's showcase has it (same rule as the scheduling form)
+    const product = !yt && v?.productId
+      ? await db.select({ id: showcaseProducts.productId }).from(showcaseProducts).where(and(eq(showcaseProducts.accountId, x.channelId), eq(showcaseProducts.productId, v.productId), eq(showcaseProducts.inStock, true), eq(showcaseProducts.hidden, false))).get()
+      : undefined;
+    try {
+      await createUploadJobs({
+        accountId: x.channelId,
+        items: [{ projectId: v?.projectId ?? EDITOR, video: x.rel, label: (v?.label ?? judul).slice(0, 40), hook: v?.hook ?? null, judul }],
+        caption: yt ? d.yt.description : (d.ownCaption && v?.caption) || d.caption,
+        productId: product ? v!.productId : null,
+        productTitle: product ? v!.productTitle.slice(0, 60) || null : null,
+        startAt: x.at,
+        gapMinutes: 20,
+        videoTitle: d.yt.title,
+        meta,
+      });
+      queued.push(x.id);
+    } catch (e) {
+      failed.push({ id: x.id, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  refresh();
+  return { queued, failed };
 }
 
 export async function cancelUpload(id: number) {

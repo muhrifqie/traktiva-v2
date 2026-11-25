@@ -1,5 +1,5 @@
 import {
-  CalendarClock, CalendarDays, ChartNoAxesColumn, Clapperboard, Columns2, Download, Film, FolderKanban, ImagePlus, Images, LayoutDashboard, Settings, Store, TrendingUp, UserCircle, Users,
+  CalendarClock, ChartNoAxesColumn, Clapperboard, Columns2, Download, Film, FolderKanban, ImagePlus, Images, LayoutDashboard, Settings, Store, TrendingUp, UserCircle, Users,
 } from "lucide-react";
 
 // Single source for sidebar, page headers, command menu and placeholder routes. Add a menu here, then build its page.
@@ -23,7 +23,6 @@ export const NAV = [
   { slug: "instagram", title: "Instagram", short: "Ringkasan", icon: LayoutDashboard, group: "Instagram", platform: "instagram", color: "#ff2d7a", desc: "Akun Instagram yang tersambung dan sesi loginnya. Upload Reels menyusul." },
   { slug: "facebook", title: "Facebook", short: "Ringkasan", icon: LayoutDashboard, group: "Facebook", platform: "facebook", color: "#3b82f6", desc: "Akun Facebook yang tersambung dan sesi loginnya. Upload Reels ke Page menyusul." },
   { slug: "youtube", title: "YouTube", short: "Ringkasan", icon: LayoutDashboard, group: "YouTube", platform: "youtube", color: "#ff3333", desc: "Channel YouTube yang tersambung, sesi login, dan alat YouTube." }, // overview: first branch + the group button
-  { slug: "youtube-kalender", title: "Kalender YouTube", short: "Kalender", icon: CalendarDays, group: "YouTube", color: "#ff3333", desc: "Tarik video ke tanggal; jam tayang diisi otomatis, untuk beberapa channel sekaligus." },
   { slug: "youtube-channel", title: "Channel YouTube", icon: UserCircle, group: "YouTube", color: "#ff3333", desc: "Ringkasan channel ini, sesi login, dan pengaturan upload.", sidebar: false }, // opened from a channel card
   { slug: "youtube-performa", title: "Performa Channel", short: "Performa", icon: ChartNoAxesColumn, group: "YouTube", color: "#ff3333", desc: "Semua video & Shorts, Insight 28 hari, dan progres monetisasi dari YouTube Studio." },
   { slug: "youtube-shorts", title: "Shorts Downloader", short: "Unduh Shorts", icon: Download, group: "YouTube", color: "#ff3333", desc: "Unduh semua Shorts dari satu channel YouTube ke folder video kamu." },
