@@ -156,7 +156,8 @@ export async function launchProfile(key: string, { headless = false }: { headles
     ];
     child = spawn(exe, args, { stdio: "ignore", windowsHide: headless, detached: false });
     const port = await devtoolsPort(userDir, child);
-    const browser: Browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 30_000 });
+    // isLocal: same PC, so setInputFiles passes the path (as a "remote" browser, uploads over 50 MB failed)
+    const browser: Browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 30_000, isLocal: true });
     const ctx = browser.contexts()[0];
     if (!ctx) throw new Error("Chrome terbuka tanpa jendela.");
 

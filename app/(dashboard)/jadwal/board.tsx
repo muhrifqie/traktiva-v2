@@ -133,6 +133,9 @@ const SITE: Record<string, { name: string; button: string }> = {
   facebook: { name: "Facebook", button: "Posting" },
 };
 const siteOf = (p: string) => SITE[p] ?? SITE.tiktok;
+/** Link to a posted video on its own platform (Instagram/Facebook don't report a post id). */
+const postUrl = (j: { platform: string; username: string; postId: string | null }) =>
+  !j.postId ? null : j.platform === "youtube" ? `https://www.youtube.com/shorts/${j.postId}` : j.platform === "tiktok" ? `https://www.tiktok.com/@${j.username}/video/${j.postId}` : null;
 const MAX_AHEAD_DAYS = 9; // = SCHEDULE_MAX_DAYS in lib/uploads.ts (TikTok Studio schedules ~10 days ahead)
 const SCHEDULED = { label: "Terjadwal di TikTok", cls: "bg-status-ok/12 text-status-ok" };
 const STATUS: Record<Job["status"], { label: string; cls: string }> = {
@@ -653,9 +656,9 @@ export function JadwalBoard({
                       </p>
                       {atTikTok(j) && <p className="truncate text-[11px] text-muted-foreground">Sudah di TikTok Studio. Untuk membatalkan/mengubah, buka TikTok Studio → Postingan.</p>}
                       {j.status === "done" && !atTikTok(j) && (
-                        j.postId ? (
-                          <a href={`https://www.tiktok.com/@${j.username}/video/${j.postId}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-medium text-brand-light hover:underline">
-                            <ExternalLink className="size-3" /> Lihat postingan di TikTok
+                        postUrl(j) ? (
+                          <a href={postUrl(j)!} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-medium text-brand-light hover:underline">
+                            <ExternalLink className="size-3" /> Lihat postingan di {j.platform === "youtube" ? "YouTube" : "TikTok"}
                             {j.views != null && <span className="inline-flex items-center gap-0.5 font-normal text-muted-foreground"><Eye className="size-3" /> {j.views.toLocaleString("id-ID")} penonton</span>}
                           </a>
                         ) : (
@@ -734,9 +737,9 @@ function HistoryCard({ j, scheduled, busy, disabled, onDelete }: { j: Job; sched
         <div className="mt-auto flex items-center gap-1 pt-1.5">
           {scheduled ? (
             <span className="text-[10px] leading-tight text-muted-foreground">Ubah/batal di TikTok Studio → Postingan</span>
-          ) : j.status === "done" && j.postId ? (
-            <a href={`https://www.tiktok.com/@${j.username}/video/${j.postId}`} target="_blank" rel="noreferrer" className="inline-flex min-w-0 items-center gap-1 text-[11px] font-medium text-brand-light hover:underline">
-              <ExternalLink className="size-3 shrink-0" /> Lihat di TikTok
+          ) : j.status === "done" && postUrl(j) ? (
+            <a href={postUrl(j)!} target="_blank" rel="noreferrer" className="inline-flex min-w-0 items-center gap-1 text-[11px] font-medium text-brand-light hover:underline">
+              <ExternalLink className="size-3 shrink-0" /> Lihat di {j.platform === "youtube" ? "YouTube" : "TikTok"}
               {j.views != null && <span className="inline-flex items-center gap-0.5 font-normal text-muted-foreground"><Eye className="size-3" />{j.views.toLocaleString("id-ID")}</span>}
             </a>
           ) : j.status === "done" ? (

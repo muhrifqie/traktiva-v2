@@ -17,9 +17,12 @@ import * as youtube from "@/lib/platforms/youtube";
 const Id = z.number().int().positive();
 
 function refresh() {
-  revalidatePath("/akun");
-  revalidatePath("/beranda");
-  revalidatePath("/profil");
+  // the background auto-sync (lib/profile-autosync.ts) runs outside a request, where revalidatePath throws
+  try {
+    revalidatePath("/akun");
+    revalidatePath("/beranda");
+    revalidatePath("/profil");
+  } catch {}
 }
 
 async function getAccount(id: number) {
