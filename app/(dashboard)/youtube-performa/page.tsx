@@ -3,6 +3,7 @@ import { asc, desc, eq, inArray } from "drizzle-orm";
 import { BadgeDollarSign, ChevronRight, Clock, Compass, ExternalLink, Eye, Film, Flame, Heart, Layers, Loader2, Repeat, UserPlus, Users, UsersRound, Zap, type LucideIcon } from "lucide-react";
 import { AccountAvatar } from "@/components/account-avatar";
 import { PageHeader } from "@/components/page-header";
+import { SyncAllButton } from "../profil/sync-button";
 import { YouTubeTabs } from "@/components/platform-tabs";
 import { PlatformIcon } from "@/components/platform-icon";
 import { db } from "@/lib/db";
@@ -519,6 +520,7 @@ export default async function YouTubePerformaPage({ searchParams }: PageProps<"/
     <>
       <PageHeader slug="youtube-performa" desc={updated}>
         {one?.cache && <YouTubeSyncButton accountId={one.a.id} name={one.a.displayName || one.a.username} />}
+        {!one && channels.length > 1 && <SyncAllButton platform="youtube" />}
         {!one && (
           <ChannelSelect
             current="all"

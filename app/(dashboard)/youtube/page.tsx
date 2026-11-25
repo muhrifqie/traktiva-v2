@@ -3,6 +3,7 @@ import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { CalendarClock, ChartNoAxesColumn, Clock, Columns2, Eye, Film, Repeat, UserCircle, Users } from "lucide-react";
 import { AccountOverviewCard, OverviewEmpty } from "@/components/platform-overview";
 import { PageHeader } from "@/components/page-header";
+import { SyncAllButton } from "../profil/sync-button";
 import { PlatformIcon } from "@/components/platform-icon";
 import { db } from "@/lib/db";
 import { accounts, uploadJobs } from "@/lib/db/schema";
@@ -39,6 +40,7 @@ export default async function YouTubePage() {
         <Link href="/youtube-editor" className="flex h-9 items-center gap-1.5 rounded-lg border bg-card px-3.5 text-[13px] font-medium hover:bg-accent">
           <Columns2 className="size-4" /> Editor Video
         </Link>
+        {list.length > 0 && <SyncAllButton platform="youtube" />}
         {list.length > 0 && <YouTubeConnectButton label="Tambah channel" />}
       </PageHeader>
 

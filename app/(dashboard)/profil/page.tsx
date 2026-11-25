@@ -19,7 +19,7 @@ import type { ShopOverview } from "@/lib/platforms/tiktok-shop";
 import { mediaUrl } from "@/lib/media-url";
 import { getShopCache } from "@/lib/showcase";
 import { pickActive } from "@/lib/settings";
-import { SyncButton } from "./sync-button";
+import { SyncAllButton, SyncButton } from "./sync-button";
 
 export const dynamic = "force-dynamic";
 
@@ -135,6 +135,7 @@ export default async function ProfilPage({ searchParams }: PageProps<"/profil">)
     <>
       <AutoRefresh />
       <PageHeader slug="profil">
+        {list.length > 1 && <SyncAllButton platform="tiktok" />}
         {canSync ? (
           <SyncButton accountId={account.id} username={account.username} primary={!latest} />
         ) : (

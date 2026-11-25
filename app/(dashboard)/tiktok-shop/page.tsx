@@ -3,6 +3,7 @@ import { and, count, desc, eq, gte, inArray } from "drizzle-orm";
 import { Award, CalendarClock, ChartNoAxesColumn, Eye, Plus, Send, Store, Users } from "lucide-react";
 import { AccountOverviewCard, OverviewEmpty } from "@/components/platform-overview";
 import { PageHeader } from "@/components/page-header";
+import { SyncAllButton } from "../profil/sync-button";
 import { PlatformIcon } from "@/components/platform-icon";
 import { contentHealth } from "@/lib/content-health";
 import { db } from "@/lib/db";
@@ -41,6 +42,7 @@ export default async function TikTokShopPage() {
   return (
     <>
       <PageHeader slug="tiktok-shop">
+        {list.length > 0 && <SyncAllButton platform="tiktok" />}
         {list.length > 0 && (
           <Link href="/akun" className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-medium text-primary-foreground hover:bg-primary/90">
             <Plus className="size-4" /> Tambah akun

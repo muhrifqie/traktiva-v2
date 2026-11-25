@@ -303,3 +303,38 @@ export async function setFacebookTarget(id: number, target: string) {
   await setShopCache(a.id, meta.FB_IDENTITIES, { ...cur, target });
   metaPaths("facebook");
 }
+
+/** Statistik semua akun sekaligus (profil TikTok + YouTube Studio): several Chrome profiles at a time instead of one by one. */
+export async function syncAllStats(platform?: "tiktok" | "youtube") {
+  platform = z.enum(["tiktok", "youtube"]).optional().parse(platform);
+  const { syncYouTubeAccount } = await import("../youtube-performa/actions");
+  const list = (
+    await db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.status, "active"), inArray(accounts.platform, platform ? [platform] : ["tiktok", "youtube"])))
+  ).filter((a) => isProfileKey(a.sessionKey) && (a.platform === "tiktok" || a.externalId?.startsWith("UC")));
+  const queue = [...list];
+  const failed: string[] = [];
+  let ok = 0;
+  // ponytail: fixed pool of 4 headless Chromes (RAM); the same profile still waits for its lock (withProfile)
+  await Promise.all(
+    Array.from({ length: Math.min(4, queue.length) }, async () => {
+      for (let a = queue.shift(); a; a = queue.shift()) {
+        try {
+          await (a.platform === "youtube" ? syncYouTubeAccount(a.id) : syncTikTokAccount(a.id));
+          ok++;
+        } catch (e) {
+          failed.push(`${a.displayName || a.username}: ${e instanceof Error ? e.message : "gagal"}`);
+        }
+      }
+    }),
+  );
+  refresh();
+  try {
+    revalidatePath("/youtube");
+    revalidatePath("/youtube-performa");
+    revalidatePath("/tiktok-shop");
+  } catch {}
+  return { ok, total: list.length, failed };
+}
