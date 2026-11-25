@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CalendarClock, CalendarDays, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, Clock, Eye, Film, Plus, Search, Sparkles, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CalendarClock, Check, ListChecks, CalendarDays, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, Clock, Eye, Film, Plus, Search, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Popover } from "@base-ui/react/popover";
 import { confirmDialog } from "@/components/confirm-dialog";
@@ -107,7 +108,6 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
   const [picked, setPicked] = useState<number[]>(() => accounts.filter((a) => a.active).map((a) => a.id).slice(0, 1));
   const [slots, setSlots] = useState<string[]>(DEFAULT_SLOTS);
   const [drafts, setDrafts] = useState<Draft[]>([]);
-  const [tab, setTab] = useState<Video["group"]>(videos.some((v) => v.group === "proyek") ? "proyek" : "editor");
   const [q, setQ] = useState("");
   const [onlyFree, setOnlyFree] = useState(true);
   const [over, setOver] = useState<string | null>(null); // drop target being dragged over ("day" or "day|time")
@@ -253,7 +253,7 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
 
   // ---- content list ----
   const planned = new Set([...drafts.map((d) => d.rel), ...jobs.filter((j) => j.status !== "cancelled" && j.status !== "failed").map((j) => j.video)]); // ponytail: cheap, no memo
-  const shown = videos.filter((v) => v.group === tab && (!q.trim() || v.title.toLowerCase().includes(q.trim().toLowerCase())) && (!onlyFree || !planned.has(v.rel)));
+  const shown = videos.filter((v) => (!q.trim() || v.title.toLowerCase().includes(q.trim().toLowerCase())) && (!onlyFree || !planned.has(v.rel)));
 
   // ---- the shown range ----
   const base = cursor ?? new Date(2000, 0, 1);
@@ -360,57 +360,43 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
     );
   };
 
+  // full window under the header, like the Editor: accounts · videos · calendar
+  const shell = "fixed inset-x-0 top-[calc(var(--titlebar-height)+var(--header-height))] bottom-(--statusbar-height) z-40 flex flex-col bg-sidebar";
+  const back = (
+    <Link href="/beranda" className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
+      <ArrowLeft className="size-4" /> Kembali
+    </Link>
+  );
   if (!accounts.length)
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-10 text-center">
-        <CalendarClock className="size-7 text-muted-foreground" />
-        <p className="text-sm font-medium">Belum ada akun</p>
-        <p className="max-w-sm text-xs text-muted-foreground">Hubungkan akun TikTok, YouTube, Instagram, atau Facebook dulu di Akun Sosial, lalu kembali ke sini untuk menyusun jadwal.</p>
+      <div className={shell}>
+        <div className="p-3">{back}</div>
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
+          <CalendarClock className="size-7 text-muted-foreground" />
+          <p className="text-sm font-medium">Belum ada akun</p>
+          <p className="max-w-sm text-xs text-muted-foreground">Hubungkan akun TikTok, YouTube, Instagram, atau Facebook dulu di Akun Sosial, lalu kembali ke sini untuk menyusun jadwal.</p>
+        </div>
       </div>
     );
 
-  return (
-    <div className="flex min-h-[calc(100vh-190px)] flex-1 flex-col gap-3">
-      {/* ── toolbar: where dropped videos go · the drafts ─────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-2">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-          <span className="px-1.5 text-xs font-medium text-muted-foreground">Posting ke</span>
-          {accounts.map((a) => {
-            const on = picked.includes(a.id);
-            const n = drafts.filter((d) => d.channelId === a.id).length;
-            const color = accountColor(a.id);
-            return (
-              <button
-                key={a.id}
-                type="button"
-                onClick={() => setPicked((p) => (on ? p.filter((x) => x !== a.id) : [...p, a.id]))}
-                aria-pressed={on}
-                title={a.active ? `${SITE[a.platform]} · ${on ? "klik untuk tidak memakai akun ini" : "klik untuk ikut memakai akun ini"}` : "Perlu login ulang"}
-                className={`flex h-8 items-center gap-1.5 rounded-lg pr-2.5 pl-1 text-xs font-medium transition-colors ${on ? "text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"} ${a.active ? "" : "opacity-50"}`}
-                style={on ? { background: `${color}26`, boxShadow: `inset 0 0 0 1px ${color}` } : undefined}
-              >
-                <span className="relative">
-                  {a.avatar ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- remote account avatar
-                    <img src={a.avatar} alt="" className={`size-6 rounded-md ${on ? "" : "opacity-60 grayscale"}`} />
-                  ) : (
-                    <span className="grid size-6 place-items-center rounded-md text-[11px] font-semibold text-white" style={{ background: color }}>{a.name.replace("@", "").slice(0, 1).toUpperCase()}</span>
-                  )}
-                  <span className="absolute -right-1 -bottom-1 grid size-3.5 place-items-center rounded-full bg-card"><PlatformIcon platform={a.platform} className="size-2.5" /></span>
-                </span>
-                {a.name}
-                {n > 0 && <span className="min-w-4 rounded-full bg-background/80 px-1 text-center text-[10px] tabular-nums">{n}</span>}
-              </button>
-            );
-          })}
-          {accounts.length > 1 && (
-            <button type="button" onClick={() => setPicked(picked.length === accounts.length ? [] : accounts.map((a) => a.id))} className="h-8 rounded-lg px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground">
-              {picked.length === accounts.length ? "Kosongkan pilihan" : "Pilih semua"}
-            </button>
-          )}
-        </div>
+  // accounts grouped by platform; a group header picks or drops the whole platform
+  const groups = (["tiktok", "youtube", "instagram", "facebook"] as Platform[]).map((p) => [p, accounts.filter((a) => a.platform === p)] as const).filter(([, l]) => l.length);
+  const toggle = (ids: number[], on: boolean) => setPicked((p) => (on ? [...new Set([...p, ...ids])] : p.filter((x) => !ids.includes(x))));
+  const allPicked = picked.length === accounts.length;
 
-        <div className="flex items-center gap-1 border-l pl-2">
+  return (
+    <div className={shell}>
+      {/* ── toolbar ─────────────────────────────────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
+        {back}
+        <div className="h-5 w-px bg-border" />
+        <span className="flex items-center gap-1.5 px-1 text-[13px] font-semibold"><CalendarClock className="size-4 text-[#7b86f0]" /> Kalender Upload</span>
+        <span className="hidden text-xs text-muted-foreground md:inline">Pilih akun di kiri, lalu tarik video ke tanggal atau jam.</span>
+        <div className="ml-auto flex items-center gap-1">
+          <Link href="/jadwal?tampilan=daftar" className="flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium hover:bg-accent">
+            <ListChecks className="size-3.5" /> Daftar & riwayat
+          </Link>
+          <div className="mx-1 h-5 w-px bg-border" />
           <span className={`px-1.5 text-xs ${drafts.length ? "" : "text-muted-foreground"}`}>
             {drafts.length ? <><b className="tabular-nums">{drafts.length}</b> draf</> : "Belum ada draf"}
           </span>
@@ -501,28 +487,78 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
         </DialogContent>
       </Dialog>
 
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
-        {/* ── content to drag ─────────────────────────────────────────────────────────────────── */}
-        <section className="flex min-h-0 flex-col gap-2 rounded-xl border bg-card p-2.5 lg:max-h-[calc(100vh-250px)]">
-          <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-0.5 text-xs font-medium">
-            {([["proyek", "Video proyek"], ["editor", "Hasil Editor"]] as const).map(([g, label]) => (
-              <button key={g} type="button" onClick={() => setTab(g)} className={`h-7 rounded-md ${tab === g ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-                {label} <span className="text-muted-foreground tabular-nums">{videos.filter((v) => v.group === g).length}</span>
-              </button>
-            ))}
+      <div className="grid min-h-0 flex-1 grid-cols-[232px_288px_minmax(0,1fr)]">
+        {/* ── accounts ────────────────────────────────────────────────────────────────────────── */}
+        <aside className="flex min-h-0 flex-col border-r">
+          <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
+            <p className="text-[13px] font-semibold">Posting ke <span className="font-normal text-muted-foreground tabular-nums">{picked.length}/{accounts.length}</span></p>
+            <button type="button" onClick={() => setPicked(allPicked ? [] : accounts.map((a) => a.id))} className="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground">
+              {allPicked ? "Kosongkan" : "Pilih semua"}
+            </button>
+          </div>
+          <div className="no-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto px-2 pb-3">
+            {groups.map(([p, list]) => {
+              const ids = list.map((a) => a.id);
+              const allOn = ids.every((id) => picked.includes(id));
+              return (
+                <div key={p}>
+                  <button type="button" onClick={() => toggle(ids, !allOn)} title={allOn ? `Lepas semua akun ${SITE[p]}` : `Pilih semua akun ${SITE[p]}`} className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground">
+                    <PlatformIcon platform={p} className="size-3.5" /> {SITE[p]}
+                    <span className="font-normal tabular-nums">{ids.filter((id) => picked.includes(id)).length}/{ids.length}</span>
+                    <span className="ml-auto font-normal">{allOn ? "Lepas" : "Semua"}</span>
+                  </button>
+                  <div className="mt-0.5 space-y-1">
+                    {list.map((a) => {
+                      const on = picked.includes(a.id);
+                      const color = accountColor(a.id);
+                      const n = drafts.filter((d) => d.channelId === a.id).length;
+                      const qn = jobs.filter((j) => j.accountId === a.id && j.status === "queued").length;
+                      return (
+                        <button
+                          key={a.id}
+                          type="button"
+                          onClick={() => toggle([a.id], !on)}
+                          aria-pressed={on}
+                          className={`flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors ${on ? "bg-card" : "border-transparent hover:bg-accent/60"} ${a.active ? "" : "opacity-50"}`}
+                          style={on ? { borderColor: `${color}80`, boxShadow: `inset 3px 0 0 ${color}` } : undefined}
+                        >
+                          {a.avatar ? (
+                            // eslint-disable-next-line @next/next/no-img-element -- remote account avatar
+                            <img src={a.avatar} alt="" className={`size-7 shrink-0 rounded-md ${on ? "" : "opacity-60 grayscale"}`} />
+                          ) : (
+                            <span className="grid size-7 shrink-0 place-items-center rounded-md text-xs font-semibold text-white" style={{ background: color }}>{a.name.replace("@", "").slice(0, 1).toUpperCase()}</span>
+                          )}
+                          <span className="min-w-0 flex-1">
+                            <span className={`block truncate text-xs font-medium ${on ? "" : "text-muted-foreground"}`}>{a.name}</span>
+                            <span className="block truncate text-[10px] text-muted-foreground">{!a.active ? "Perlu login ulang" : [n ? `${n} draf` : "", qn ? `${qn} antre` : ""].filter(Boolean).join(" · ") || "Belum ada jadwal"}</span>
+                          </span>
+                          <span className={`grid size-4 shrink-0 place-items-center rounded border ${on ? "border-transparent text-white" : "border-muted-foreground/40"}`} style={on ? { background: color } : undefined}>
+                            {on && <Check className="size-3" />}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </aside>
+
+        {/* ── videos: one list (project exports and Editor renders) ───────────────────────────── */}
+        <section className="flex min-h-0 flex-col gap-2 border-r p-2.5">
+          <div className="flex items-center justify-between px-0.5">
+            <p className="text-[13px] font-semibold">Video <span className="font-normal text-muted-foreground tabular-nums">{shown.length}</span></p>
+            <button type="button" onClick={() => autoFill(7)} className="flex h-7 items-center gap-1 rounded-md border px-2 text-xs font-medium hover:bg-accent" title="Satu video per hari untuk tiap akun terpilih, 7 hari ke depan">
+              <Sparkles className="size-3.5 text-primary" /> Isi 7 hari
+            </button>
           </div>
           <label className="flex h-8 items-center gap-1.5 rounded-lg border bg-background px-2.5 text-xs">
             <Search className="size-3.5 text-muted-foreground" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari video…" aria-label="Cari video" className="min-w-0 flex-1 bg-transparent outline-none" />
           </label>
-          <div className="flex items-center gap-2 text-xs">
-            <label className="flex items-center gap-1.5 text-muted-foreground"><input type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} className="accent-primary" /> Belum dijadwalkan</label>
-            <button type="button" onClick={() => autoFill(7)} className="ml-auto flex h-7 items-center gap-1 rounded-md border px-2 font-medium hover:bg-accent" title="Satu video per hari untuk tiap akun terpilih, 7 hari ke depan">
-              <Sparkles className="size-3.5 text-primary" /> Isi 7 hari
-            </button>
-          </div>
-          <p className="text-[11px] text-muted-foreground">Tarik video ke tanggal atau jam di kalender. Arahkan kursor untuk memutar.</p>
-          <div className="no-scrollbar -mx-1 grid min-h-0 flex-1 auto-rows-min grid-cols-3 gap-1.5 overflow-y-auto px-1 pb-1">
+          <label className="flex items-center gap-1.5 px-0.5 text-xs text-muted-foreground"><input type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} className="accent-primary" /> Hanya yang belum dijadwalkan</label>
+          <div className="no-scrollbar -mx-1 grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-1.5 overflow-y-auto px-1 pb-1">
             {shown.map((v) => (
               <div
                 key={v.rel}
@@ -535,18 +571,19 @@ export function JadwalCalendar({ accounts, videos, jobs, ytDefaults }: { account
                 title={v.title}
               >
                 <Thumb rel={v.rel} className="aspect-[9/16] w-full" />
+                <span className="pointer-events-none absolute top-1 left-1 rounded bg-black/65 px-1 text-[9px] font-medium text-white">{v.group === "editor" ? "Editor" : "Proyek"}</span>
                 <span className="pointer-events-none absolute inset-x-0 bottom-0 line-clamp-2 bg-gradient-to-t from-black/90 to-transparent p-1 pt-5 text-[10px] leading-tight text-white">{v.title}</span>
                 {planned.has(v.rel) && <span className="pointer-events-none absolute top-1 right-1 grid size-5 place-items-center rounded-full bg-primary text-primary-foreground"><CalendarClock className="size-3" /></span>}
               </div>
             ))}
             {!shown.length && (
-              <p className="col-span-3 flex flex-col items-center gap-1 p-4 text-center text-xs text-muted-foreground"><Film className="size-5" /> {onlyFree ? "Semua video sudah punya jadwal." : "Belum ada video."}</p>
+              <p className="col-span-2 flex flex-col items-center gap-1 p-4 text-center text-xs text-muted-foreground"><Film className="size-5" /> {onlyFree ? "Semua video sudah punya jadwal." : "Belum ada video."}</p>
             )}
           </div>
         </section>
 
         {/* ── calendar ────────────────────────────────────────────────────────────────────────── */}
-        <section className="@container flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card lg:max-h-[calc(100vh-250px)]">
+        <section className="@container flex min-h-0 flex-col overflow-hidden bg-card">
           <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
             <button type="button" onClick={() => step(-1)} aria-label="Sebelumnya" className="grid size-8 place-items-center rounded-md border hover:bg-accent"><ChevronLeft className="size-4" /></button>
             <h2 className="min-w-44 text-center text-sm font-semibold capitalize">{cursor ? title : "…"}</h2>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, Plus } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { PageHeader } from "@/components/page-header";
@@ -18,10 +18,6 @@ import { JadwalCalendar } from "./calendar";
 
 export const dynamic = "force-dynamic";
 
-/** Not live yet: waiting to upload, uploading, or uploaded and waiting for TikTok to publish (request-time helper). */
-function inQueue(j: { status: string; postedAt: Date | null }) {
-  return j.status === "queued" || j.status === "uploading" || (j.status === "done" && !!j.postedAt && j.postedAt.getTime() > Date.now());
-}
 
 export default async function JadwalPage({ searchParams }: { searchParams: Promise<{ project?: string; tampilan?: string; akun?: string; tanggal?: string; video?: string | string[] }> }) {
   const { project, tampilan, akun, tanggal, video } = await searchParams;
@@ -54,24 +50,20 @@ export default async function JadwalPage({ searchParams }: { searchParams: Promi
     Promise.all(youtube.map(async (a) => [a.id, await uploadLimitUntil(a.id)] as const)),
   ]);
   const ytLimited = Object.fromEntries(limits.filter(([, u]) => u)) as Record<number, number>;
-  const queued = jobs.filter((j) => inQueue(j.job)).length;
 
   const mapped = jobs.map((j) => ({ ...j.job, scheduledAt: j.job.scheduledAt.getTime(), postedAt: j.job.postedAt?.getTime() ?? null, createdAt: j.job.createdAt.getTime(), username: j.username, platform: j.platform, title: j.project?.presetId ? projectName(j.project as Parameters<typeof projectName>[0]) : null, views: j.views ?? null }));
 
   return (
     <>
       <AutoRefresh seconds={30} />
-      <PageHeader slug="jadwal">
-        {view === "kalender" ? (
-          <Link href="/jadwal?tampilan=daftar" className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-semibold text-primary-foreground hover:bg-primary/90">
-            <Plus className="size-4" /> Jadwalkan video{queued ? <span className="rounded-full bg-black/15 px-1.5 text-[11px] tabular-nums">{queued} antre</span> : null}
-          </Link>
-        ) : (
+      {/* the calendar fills the window with its own toolbar (calendar.tsx); the list keeps the page header */}
+      {view === "daftar" && (
+        <PageHeader slug="jadwal">
           <Link href="/jadwal" className="flex h-9 items-center gap-1.5 rounded-lg border bg-card px-3.5 text-[13px] font-medium hover:bg-accent">
             <CalendarDays className="size-4" /> Lihat kalender
           </Link>
-        )}
-      </PageHeader>
+        </PageHeader>
+      )}
       {view === "kalender" ? (
         <JadwalCalendar
           accounts={social.map((a) => ({ id: a.id, platform: a.platform, avatar: a.avatarUrl, active: a.status === "active", name: a.platform === "youtube" || a.platform === "facebook" ? a.displayName || a.username : `@${a.username}` }))}
