@@ -1,6 +1,6 @@
 // Traktiva license admin CLI (run on the server, e.g. `ssh traktiva "cd /srv/traktiva-license && node admin.mjs list"`).
 //   node admin.mjs init                                   create signing key + pepper, print the public key for the app
-//   node admin.mjs create [--plan bulanan|tahunan|lifetime] [--days N] [--devices N] [--note "Budi"] [--count 1] [--role admin]
+//   node admin.mjs create [--plan bulanan|6bulan|tahunan|lifetime] [--days N] [--devices N] [--note "Budi"] [--count 1] [--role admin]
 //   node admin.mjs list                                   licenses with device counts
 //   node admin.mjs devices <licenseId>                    devices of one license
 //   node admin.mjs reset <deviceId>                       free a device slot (buyer changed PC)
@@ -31,7 +31,8 @@ switch (cmd) {
   }
   case "create": {
     const { pepper } = loadSecrets();
-    const plan = getPlans().find((p) => p.id === flag("plan", "bulanan"));
+    // "lifetime" is not sold any more but stays available here for owner/admin keys that never expire
+    const plan = getPlans().find((p) => p.id === flag("plan", "bulanan")) ?? (flag("plan") === "lifetime" ? { id: "lifetime", label: "Lifetime", days: null, devices: 1 } : null);
     if (!plan) throw new Error(`Paket tidak dikenal. Pilihan: ${getPlans().map((p) => p.id).join(", ")}`);
     const days = flag("days") != null ? Number(flag("days")) || null : plan.days;
     const devices = Number(flag("devices", plan.devices));

@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { appInfo, audit, hwTolerance, createLicenses, DATA_DIR, db, getPlans, getSetting, hashKey, hashPassword, loadSecrets, normalizeKey, setPlans, setSetting, verifyPassword } from "./lib.mjs";
+import { appInfo, audit, hwTolerance, createLicenses, DATA_DIR, db, getPlans, getSetting, hashKey, hashPassword, loadSecrets, normalizeKey, openKey, setPlans, setSetting, verifyPassword } from "./lib.mjs";
 import { createPasswordToken, memberRoutes, queueEmailReminders, runReminders } from "./members.mjs";
 import { EMAIL_DEFAULTS, emailSettings, mails, mailStatus, queueMail, sendNow, startMailer } from "./mail.mjs";
 import { handleWebhook, paymentsConfigured, paymentsReady, syncPendingOrders, testMode } from "./payments.mjs";
@@ -78,7 +78,13 @@ const failsOf = (ip) => fails.get(ip) ?? { n: 0, until: 0 };
 const plan = (id) => getPlans().find((p) => p.id === id);
 const LICENSE_COLS = `l.*, (SELECT email FROM users u WHERE u.id = l.user_id) AS owner, (SELECT count(*) FROM devices d WHERE d.license_id = l.id AND d.status = 'active') AS used,
                       (SELECT max(last_seen) FROM devices d WHERE d.license_id = l.id) AS last_seen`;
-const licenseRow = (id) => db.prepare(`SELECT ${LICENSE_COLS} FROM licenses l WHERE l.id = ?`).get(id);
+/** A license row for the panel: the full key when it is stored (sealed in key_enc), never the hash or the sealed blob. */
+const forPanel = (row) => {
+  if (!row) return row;
+  const { key_hash: _hash, key_enc, ...rest } = row;
+  return { ...rest, key: openKey(secrets.pepper, key_enc) }; // null = older key, only the last 4 characters are known
+};
+const licenseRow = (id) => forPanel(db.prepare(`SELECT ${LICENSE_COLS} FROM licenses l WHERE l.id = ?`).get(id));
 
 // ---------------------------------------------------------------- routes (open = no admin session needed)
 
@@ -193,7 +199,7 @@ const routes = {
 
   // ---- email (Admin → Email): status, automatic mails, broadcast
   "GET /internal/email": {
-    fn: async (_req, res) => json(res, 200, { ok: true, ...mailStatus(), audiences: Object.fromEntries(Object.keys(AUDIENCES).map((a) => [a, audience(a).length])) }),
+    fn: async (req, res) => json(res, 200, { ok: true, ...mailStatus(Number(new URL(req.url, "http://x").searchParams.get("page")) || 1), audiences: Object.fromEntries(Object.keys(AUDIENCES).map((a) => [a, audience(a).length])) }),
   },
   "POST /internal/email/settings": {
     fn: async (req, res, admin) => {
@@ -286,7 +292,7 @@ const routes = {
       const plan = u.searchParams.get("plan");
       if (plan) (where.push("l.plan = ?"), args.push(plan));
       const rows = db.prepare(`SELECT ${LICENSE_COLS} FROM licenses l ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY l.id DESC LIMIT 500`).all(...args);
-      json(res, 200, { ok: true, licenses: rows, plans: getPlans() });
+      json(res, 200, { ok: true, licenses: rows.map(forPanel), plans: getPlans() });
     },
   },
 
@@ -300,7 +306,8 @@ const routes = {
       const days = p.days == null ? null : Math.min(3650, Math.max(1, Number(b.days) || p.days));
       const note = String(b.note ?? "").trim().slice(0, 200) || null;
       const role = b.role === "admin" ? "admin" : "member";
-      const keys = createLicenses({ pepper: secrets.pepper, plan: p.id, days, devices, note, count, actor: admin.name, role });
+      // keep: the key is also stored sealed, so the panel (and the buyer's account once claimed) can show it again
+      const keys = createLicenses({ pepper: secrets.pepper, plan: p.id, days, devices, note, count, actor: admin.name, role, keep: true });
       json(res, 200, { ok: true, keys, plan: p.label, days, devices, role });
     },
   },

@@ -118,8 +118,9 @@ export function startMailer(everyMs = 4000) {
   setInterval(() => db.prepare("DELETE FROM email_outbox WHERE created_at < unixepoch() - 60 * 86400").run(), 86400_000).unref();
 }
 
-/** Admin → Email: is it set up, what is waiting, what failed, recent mails. */
-export function mailStatus() {
+/** Admin → Email: is it set up, what is waiting, what failed, and one page of the sent/queued mails (newest first). */
+export const MAIL_PAGE = 10;
+export function mailStatus(page = 1) {
   const cfg = smtpConfig();
   const one = (sql, ...a) => db.prepare(sql).get(...a).n;
   return {
@@ -129,7 +130,11 @@ export function mailStatus() {
     sentToday: sentToday(),
     pending: one("SELECT count(*) AS n FROM email_outbox WHERE sent_at IS NULL AND tries < 5"),
     failed: one("SELECT count(*) AS n FROM email_outbox WHERE sent_at IS NULL AND tries >= 5"),
-    recent: db.prepare("SELECT id, to_email, kind, subject, created_at, sent_at, tries, error, batch FROM email_outbox ORDER BY id DESC LIMIT 25").all(),
+    recent: db.prepare("SELECT id, to_email, kind, subject, created_at, sent_at, tries, error, batch FROM email_outbox ORDER BY id DESC LIMIT ? OFFSET ?")
+      .all(MAIL_PAGE, (Math.max(1, Math.floor(page) || 1) - 1) * MAIL_PAGE),
+    recentTotal: one("SELECT count(*) AS n FROM email_outbox"),
+    page: Math.max(1, Math.floor(page) || 1),
+    perPage: MAIL_PAGE,
   };
 }
 

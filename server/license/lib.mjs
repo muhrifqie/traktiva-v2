@@ -154,11 +154,12 @@ export function setAdminPassword(name, password = newPassword()) {
   return password;
 }
 
-/** Plans sold (Pengaturan → Paket). days = null means lifetime; price in rupiah (0 = not set yet). */
+/** Plans sold (Pengaturan → Paket): 1, 6 and 12 months, no lifetime. price in rupiah (0 = not set yet).
+ *  days = null (lifetime) still works for keys made earlier or by hand, it is just not sold. */
 export const DEFAULT_PLANS = [
-  { id: "bulanan", label: "Bulanan", days: 30, devices: 1, price: 0 },
-  { id: "tahunan", label: "Tahunan", days: 365, devices: 1, price: 0 },
-  { id: "lifetime", label: "Lifetime", days: null, devices: 1, price: 0 },
+  { id: "bulanan", label: "1 Bulan", days: 30, devices: 1, price: 0 },
+  { id: "6bulan", label: "6 Bulan", days: 180, devices: 1, price: 0 },
+  { id: "tahunan", label: "1 Tahun", days: 365, devices: 1, price: 0 },
 ];
 export function getPlans() {
   const row = db.prepare("SELECT value FROM settings WHERE key = 'plans'").get();
