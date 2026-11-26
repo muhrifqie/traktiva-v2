@@ -6,6 +6,7 @@ import { CloudDownload, Loader2, LogIn, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { confirmDialog } from "@/components/confirm-dialog";
 import { checkMetaSession, checkTikTokSession, checkYouTubeSession, deleteAccount, syncTikTokAccount } from "./actions";
+import { beginRun } from "./connect-progress";
 import { connectMeta, connectTikTok, connectYouTube } from "./tiktok-connect";
 
 type Props = { id: number; platform: string; username: string; hasSession: boolean; needsLogin: boolean };
@@ -36,36 +37,27 @@ export function AccountActions({ id, platform, username, hasSession, needsLogin 
   }
 
   const relogin = () =>
+    // progress (login, then every scrape step) shows in the connect panel
     run("login", async () => {
-      const t = toast.loading(`Membuka login ${at}...`);
-      try {
-        if (isMeta) {
-          const s = await connectMeta(platform as "instagram" | "facebook", id, (msg) => toast.loading(msg, { id: t }));
-          toast.success(`Sesi ${s.username} diperbarui`, { id: t });
-          return;
-        }
-        if (isYouTube) {
-          const s = await connectYouTube(id, (msg) => toast.loading(msg, { id: t }));
-          toast.success(`Sesi ${s.username} diperbarui`, { id: t });
-          return;
-        }
-        const s = await connectTikTok(id, (msg) => toast.loading(msg, { id: t }));
-        toast.success(`Sesi @${s.username} diperbarui${s.showcaseCount != null ? ` · ${s.showcaseCount} produk etalase` : ""}`, { id: t });
-      } catch (e) {
-        toast.dismiss(t);
-        throw e;
-      }
+      if (isMeta) await connectMeta(platform as "instagram" | "facebook", id);
+      else if (isYouTube) await connectYouTube(id);
+      else await connectTikTok(id);
     });
 
   const sync = () =>
     run("sync", async () => {
-      const t = toast.loading(`Mengambil data @${username} dari TikTok...`);
+      // live progress (videos taken so far) in the connect panel
+      const t = beginRun("tiktok", [["profile", "Profil & video"]], { title: "Sinkron data TikTok", doneTitle: "Sinkron selesai" });
+      t.who(`@${username}`);
+      const stop = t.watch(id, "profile", (p) => (p.stage === "Video" ? `${p.n ?? 0} video diambil` : p.stage === "Menyimpan" ? `Menyimpan ${p.n ?? 0} video...` : `${p.stage}...`));
       try {
         const r = await syncTikTokAccount(id);
-        toast.success(`${r.videos} video & statistik @${username} diperbarui`, { id: t });
+        t.step("profile", "done", `${r.videos} video tersimpan`);
+        t.finish(`${r.videos} video & statistik diperbarui.`);
       } catch (e) {
-        toast.dismiss(t);
-        throw e;
+        t.fail(e instanceof Error ? e.message : "Sinkron gagal");
+      } finally {
+        stop();
       }
     });
 

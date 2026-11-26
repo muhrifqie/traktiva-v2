@@ -107,7 +107,8 @@ export function parseInsightCards(browse: any): InsightCard[] {
   return cards;
 }
 
-export async function syncStudio(sessionKey: string, channelId: string): Promise<StudioSync> {
+/** onProgress: what is being read now ("Daftar video" with a running count, "Insight 28 hari", "Monetisasi"). */
+export async function syncStudio(sessionKey: string, channelId: string, onProgress?: (stage: string, n?: number) => void): Promise<StudioSync> {
   return withProfile(sessionKey, { headless: true }, async (ctx) => {
     /** Open a Studio page and keep the JSON answers of the Studio API calls matching `want`. */
     const visit = async (path: string, want: RegExp, ms = 15_000) => {
@@ -143,6 +144,7 @@ export async function syncStudio(sessionKey: string, channelId: string): Promise
         { url: first.url, headers, body },
       );
       videos.push(...(j.videos ?? []).map(toVideo));
+      onProgress?.("Daftar video", videos.length);
       token = j.nextPageToken;
       if (!token) break;
       await list.page.waitForTimeout(800); // human-ish pace between pages
@@ -150,6 +152,7 @@ export async function syncStudio(sessionKey: string, channelId: string): Promise
     await list.page.close();
 
     // 2. Insight (28 days): overview + the content tab (Shorts); Studio's "browse" answers carry the cards
+    onProgress?.("Insight 28 hari", videos.length);
     const insight = { overview: [] as InsightCard[], shorts: [] as InsightCard[] };
     for (const [key, path] of [["overview", "/analytics/tab-overview/period-default"], ["shorts", "/analytics/tab-content/period-default"]] as const) {
       const v = await visit(path, /youtubei\/v1\/browse/);
@@ -158,6 +161,7 @@ export async function syncStudio(sessionKey: string, channelId: string): Promise
     }
 
     // 3. channel totals + monetization progress
+    onProgress?.("Monetisasi", videos.length);
     const m = await visit("/monetization/overview", /creator\/get_creator_channels/);
     const ch = m.got.map((g) => g.body?.channels?.[0]).find(Boolean);
     await m.page.close();
@@ -189,15 +193,47 @@ export function idNum(s: string | undefined) {
   return Number(m[1].replace(/\./g, "").replace(",", ".")) * ({ rb: 1e3, jt: 1e6, M: 1e9 }[m[2] as "rb"] ?? 1);
 }
 
+/**
+ * Studio's card titles. Chrome asks for Indonesian, but a channel whose YouTube account is set to English gets an
+ * English Studio, so every title is matched in both languages.
+ */
+export const YT_CARD = {
+  views: /^(penayangan|views)$/i,
+  hours: /waktu tonton|watch time/i,
+  newSubs: /^(subscriber|subscribers)$/i,
+  views48: /48 jam|48 hour/i,
+  audience: /audiens|monthly audience/i,
+  interact: /berinteraksi|interact|watch behavior/i,
+  traffic: /menemukan|find your content/i,
+  popular: /konten populer|top content/i,
+  topShorts: /terpopuler|top shorts/i,
+  now: /ditonton sekarang|watched right now/i,
+  totalSubs: /total subscriber/i,
+  recent: /performa video terbaru|recent video performance/i,
+  stayed: /tetap menonton|stayed to watch/i,
+};
+/** English Studio? Its numbers use "2,618" and "30.5" (and K / M / B) instead of "2.618" and "30,5". */
+export const ytIsEnglish = (d: YouTubeCache) => d.insight.overview.some((c) => /^views$|watch time|subscribers/i.test(c.title));
+/** A Studio number in the channel's language: "1,2 rb" / "0,5" (Indonesian) or "2.9K" / "2,618" (English). */
+export function ytNum(s: string | undefined, english: boolean) {
+  if (!english) return idNum(s);
+  const m = s?.match(/(-?[\d.,]+)\s*([KMB])?/i);
+  if (!m) return null;
+  return Number(m[1].replace(/,/g, "")) * ({ K: 1e3, M: 1e6, B: 1e9 }[m[2]?.toUpperCase() as "K"] ?? 1);
+}
+
 /** Headline numbers of one channel's last Studio sync (Ringkasan cards). */
 export function ytSummary(d: YouTubeCache) {
   const cards = [...d.insight.overview, ...d.insight.shorts];
+  const en = ytIsEnglish(d);
+  const card = (re: RegExp) => cards.find((c) => re.test(c.title));
   return {
-    subscribers: d.channel.subscribers,
+    // the channel total from the monetization page; Studio's "Total subscriber" card when that came back empty
+    subscribers: d.channel.subscribers || (ytNum(card(YT_CARD.totalSubs)?.metrics[0]?.value, en) ?? 0),
     shorts: Object.values(d.types).filter((t) => t === "short").length,
     videos: Object.keys(d.types).length,
-    views28: d.insight.overview.find((c) => c.series && /^Penayangan$/i.test(c.title))?.series?.points.reduce((s, [, n]) => s + n, 0) ?? 0,
-    hours28: idNum(cards.find((c) => /waktu tonton/i.test(c.title))?.metrics[0]?.value) ?? 0,
-    stay: cards.flatMap((c) => c.metrics).find((m) => /tetap menonton/i.test(m.label ?? ""))?.value ?? null,
+    views28: d.insight.overview.find((c) => c.series && YT_CARD.views.test(c.title))?.series?.points.reduce((s, [, n]) => s + n, 0) ?? 0,
+    hours28: ytNum(card(YT_CARD.hours)?.metrics[0]?.value, en) ?? 0,
+    stay: cards.flatMap((c) => c.metrics).find((m) => YT_CARD.stayed.test(m.label ?? ""))?.value ?? null,
   };
 }

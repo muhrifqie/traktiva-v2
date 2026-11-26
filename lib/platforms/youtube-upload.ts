@@ -64,7 +64,8 @@ async function checkLimit(page: Page) {
   if (LIMIT.test(text)) throw new UploadLimitError();
 }
 
-const radio = (page: Page, name: string) => page.locator(`${DLG} tp-yt-paper-radio-button[name="${name}"]`).first();
+// Studio can keep a second, hidden ytcp-uploads-dialog in the page: buttons and radios are always taken from the visible one
+const radio = (page: Page, name: string) => page.locator(`${DLG} tp-yt-paper-radio-button[name="${name}"]:visible`).first();
 /**
  * Click; when a Studio popup (hashtag/mention suggestions) covers the target, send the click to the element itself.
  * A click that fails because the form is locked by the daily upload cap reports that instead.
@@ -229,13 +230,18 @@ export async function uploadToYouTube(input: YouTubeUploadInput, onProgress: Upl
 
       // Detail → Elemen video → Pemeriksaan → Visibilitas
       for (let i = 0; i < 3; i++) {
-        await tap(page.locator(`${DLG} #next-button`).first());
+        await tap(page.locator(`${DLG} #next-button:visible`).first());
         await sleep(2500);
       }
       // the runner calls this at the planned time, so visibility applies right away (Studio's own schedule
       // pickers close the upload dialog on keyboard input; not used)
-      await tap(radio(page, RADIO[input.visibility]));
+      const vis = radio(page, RADIO[input.visibility]);
+      await tap(vis);
       await sleep(800);
+      // Studio saves unconfirmed uploads as Private: never press Save unless the chosen radio really is on
+      const on = await vis.getAttribute("aria-checked", { timeout: 5000 }).catch(() => null);
+      if (process.env.TRAKTIVA_UPLOAD_DEBUG) console.warn("[yt-upload] visibility", input.visibility, "aria-checked=", on);
+      if (on !== "true") throw new Error(`Visibilitas "${input.visibility}" tidak berhasil dipilih di YouTube Studio.`);
 
       await waitUploaded(page, onProgress);
       videoId ??= await readId(); // the link can appear only once the upload is under way
@@ -256,15 +262,14 @@ export async function uploadToYouTube(input: YouTubeUploadInput, onProgress: Upl
       }
       onProgress("Menekan Simpan...");
       published = true; // from here on the video may be live: never delete it
-      await tap(page.locator(`${DLG} #done-button`).first());
-      // the share dialog ("Video dipublikasikan / dijadwalkan / disimpan") or the upload dialog closing = accepted
+      const done = page.locator(`${DLG} #done-button:visible`).first();
+      await tap(done);
+      // accepted only when Studio confirms: the share dialog ("Video dipublikasikan / disimpan") or the
+      // still-processing one. A closed/hidden upload dialog alone is not proof (that left 8 Shorts as drafts).
+      const ok = page.locator("ytcp-video-share-dialog:visible, ytcp-uploads-still-processing-dialog:visible").first();
       const deadline = Date.now() + 90_000;
-      while (Date.now() < deadline) {
-        await sleep(2000);
-        if (await page.locator("ytcp-video-share-dialog, ytcp-uploads-still-processing-dialog").first().isVisible().catch(() => false)) break;
-        if (!(await page.locator(DLG).first().isVisible().catch(() => false))) break;
-      }
-      if (await page.locator(DLG).first().isVisible().catch(() => false)) throw new Error("YouTube tidak mengonfirmasi upload dalam 90 detik. Cek YouTube Studio sebelum mencoba lagi.");
+      while (Date.now() < deadline && !(await ok.isVisible().catch(() => false))) await sleep(2000);
+      if (!(await ok.isVisible().catch(() => false))) throw new Error("YouTube tidak mengonfirmasi publikasi dalam 90 detik. Cek YouTube Studio (mungkin masih Draf) sebelum mencoba lagi.");
       return { posted: true, videoId };
     } catch (e) {
       // failed before publishing: remove the private draft Studio already made, so a retry does not pile them up

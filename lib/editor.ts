@@ -11,7 +11,7 @@ import {
 } from "@/lib/edit";
 import { probeMedia, resolveMedia, writeMedia } from "@/lib/media";
 import { concat } from "@/lib/projects";
-import { isSilent } from "@/lib/presets";
+import { isSilent, projectName } from "@/lib/presets";
 import { voiceLine } from "@/lib/voice";
 import { writingRules } from "@/lib/settings";
 import { applyRules, rulesPrompt } from "@/lib/writing";
@@ -134,6 +134,8 @@ function fxFilter(e: ProjectEdit) {
  * wrote it twice at once) is rebuilt from the clips once and the export retried.
  */
 export async function exportEdit(p: VideoProject, src: ProjectEdit, overlays: CaptionOverlay[], name = "final") {
+  const key = `${p.id}:${name}`;
+  exporting.set(key, { projectId: p.id, title: projectName(p), file: `${name}.mp4`, startedAt: Date.now() });
   try {
     return await exportOnce(p, src, overlays, name);
   } catch (e) {
@@ -142,8 +144,15 @@ export async function exportEdit(p: VideoProject, src: ProjectEdit, overlays: Ca
     await fs.rm(resolveMedia(src.base), { force: true });
     await prepareEdit({ ...p, edit: null }); // writes a fresh base.mp4 at the same path (same clips, same timing)
     return exportOnce(p, src, overlays, name);
+  } finally {
+    exporting.delete(key);
   }
 }
+
+type ExportRun = { projectId: number; title: string; file: string; startedAt: number };
+const exporting = ((globalThis as unknown as { __exporting?: Map<string, ExportRun> }).__exporting ??= new Map());
+/** Exports (ffmpeg) running right now, for the status bar. */
+export const activeExports = () => [...exporting.values()];
 
 async function exportOnce(p: VideoProject, src: ProjectEdit, overlays: CaptionOverlay[], name: string) {
   if (!ffmpegPath) throw new Error("ffmpeg tidak tersedia di perangkat ini.");

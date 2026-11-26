@@ -47,7 +47,17 @@ export const YOUTUBE_UPLOAD_DEFAULTS: YouTubeUploadDefaults = {
   madeForKids: false,
   aiContent: true,
 };
-type Settings = { activeAccountId?: number | null /* social account shown in the sidebar */; myConcepts?: MyConcept[]; voice: VoiceSettings; editTemplates?: EditTemplate[]; chatgpt?: ChatgptSettings | null; writing?: WritingRules; youtubeUpload?: Partial<YouTubeUploadDefaults>; youtubeEditor?: Partial<EditorSettings>; youtubeEditorPresets?: EditorPreset[] };
+/**
+ * Pengaturan → Penulis AI: who writes (storyboard, voice-over, AI edits). "auto" = ChatGPT web when connected, else
+ * Gemini. cli = an AI agent installed on this PC (lib/writer-agents.ts); api = an OpenAI-compatible API (key stays here).
+ * Whatever is chosen, ChatGPT and then Gemini take over when it fails, so production never stalls.
+ */
+export type WriterSettings = {
+  mode: "auto" | "cli" | "api" | "gemini";
+  cli?: { id: string; model?: string };
+  api?: { preset: string; baseUrl: string; model: string; apiKey?: string /* secret */; apiKeyEnv?: string };
+};
+type Settings = { activeAccountId?: number | null /* social account shown in the sidebar */; myConcepts?: MyConcept[]; voice: VoiceSettings; editTemplates?: EditTemplate[]; chatgpt?: ChatgptSettings | null; writer?: WriterSettings; writing?: WritingRules; youtubeUpload?: Partial<YouTubeUploadDefaults>; youtubeEditor?: Partial<EditorSettings>; youtubeEditorPresets?: EditorPreset[] };
 const DEFAULTS: Settings = { voice: { provider: "flow" } };
 const FILE = path.join(/* turbopackIgnore: true */ DATA_DIR, "settings.json");
 

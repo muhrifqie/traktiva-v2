@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { accounts, shopCache, showcaseProducts, type ProductDetail } from "@/lib/db/schema";
 import { resolveMedia, saveResult } from "@/lib/media";
 import { fetchProductDetail, fetchShopSnapshot, type ShowcaseProduct } from "@/lib/platforms/tiktok-shop";
+import { reportSync } from "@/lib/sync-progress";
 
 // Local mirror of each TikTok account's showcase + background auto-sync.
 
@@ -18,7 +19,7 @@ export async function getTiktokAccount(accountId: number) {
 }
 
 /** Make the local table equal to TikTok's list (upsert, cache new covers, drop removed products). */
-export async function mirrorShowcase(accountId: number, products: ShowcaseProduct[]) {
+export async function mirrorShowcase(accountId: number, products: ShowcaseProduct[], onCover?: (done: number, total: number) => void) {
   const now = new Date();
   const existing = new Map((await db.select().from(showcaseProducts).where(eq(showcaseProducts.accountId, accountId))).map((r) => [r.productId, r]));
   // covers first, 6 downloads at a time (one by one took most of the ~15 s sync)
@@ -31,6 +32,7 @@ export async function mirrorShowcase(accountId: number, products: ShowcaseProduc
         const coverOk = cover && (await fs.stat(resolveMedia(cover)).then(() => true, () => false));
         if (!coverOk && p.coverUrl) cover = await saveResult(p.coverUrl, `${COVERS}/${p.productId}`, ".jpg").catch(() => null);
         covers.set(p.productId, cover);
+        onCover?.(covers.size, products.length);
       }
     }),
   );
@@ -57,9 +59,11 @@ export async function mirrorShowcase(accountId: number, products: ShowcaseProduc
 /** One headless visit: mirror the showcase and store the account overview (health, LIVE, creator info). */
 export async function syncAccountShowcase(accountId: number) {
   const acc = await getTiktokAccount(accountId);
+  reportSync(acc.id, "Membuka TikTok Shop");
   const { showcase, overview } = await fetchShopSnapshot(acc.sessionKey);
   await setShopCache(acc.id, "overview", overview);
-  return mirrorShowcase(acc.id, showcase.products);
+  reportSync(acc.id, "Foto produk", 0, showcase.products.length);
+  return mirrorShowcase(acc.id, showcase.products, (n, total) => reportSync(acc.id, "Foto produk", n, total));
 }
 
 // ---------------------------------------------------------------- JSON cache (overview, rankings)

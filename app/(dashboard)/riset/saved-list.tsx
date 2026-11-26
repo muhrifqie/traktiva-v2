@@ -2,11 +2,11 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Bookmark, Clapperboard, ExternalLink, ImageIcon, Loader2, Store, Trash2 } from "lucide-react";
+import { Bookmark, Clapperboard, ExternalLink, ImageIcon, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { CountryBadge } from "@/components/country-select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { kaloToShowcase } from "../kalodata/actions";
+import { ShowcaseButton } from "../kalodata/showcase-button";
 import { createProjectFromSaved, unsaveProduct } from "./actions";
 
 type Saved = {
@@ -106,15 +106,7 @@ export function SavedList({ items, concepts }: { items: Saved[]; concepts: Conce
                 <button type="button" onClick={() => setMaking(p)} title="Buat video dari produk ini" className="flex h-7 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md bg-primary text-[11px] font-medium text-primary-foreground hover:bg-primary/90">
                   <Clapperboard className="size-3.5" /> Video
                 </button>
-                <button
-                  type="button"
-                  title="Tambah ke etalase TikTok"
-                  disabled={busy === `e${p.id}`}
-                  onClick={() => run(`e${p.id}`, async () => { const r = await kaloToShowcase(p.productId); if (r.ok) toast.success(`Masuk etalase @${r.account}`); else toast.error(r.message); })}
-                  className="grid size-7 place-items-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
-                >
-                  {busy === `e${p.id}` ? <Loader2 className="size-3.5 animate-spin" /> : <Store className="size-3.5" />}
-                </button>
+                <ShowcaseButton productId={p.productId} name={p.title} variant="icon" />
                 <a href={`https://www.tiktok.com/view/product/${p.productId}`} target="_blank" rel="noreferrer" title="Buka di TikTok" className="grid size-7 place-items-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"><ExternalLink className="size-3.5" /></a>
                 <button type="button" title="Hapus dari tersimpan" disabled={busy === `d${p.id}`} onClick={() => run(`d${p.id}`, () => unsaveProduct(p.productId, p.country))} className="grid size-7 place-items-center rounded-md border text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-60">
                   {busy === `d${p.id}` ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}

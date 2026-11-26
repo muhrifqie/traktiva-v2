@@ -9,7 +9,8 @@ import { WritingRulesCard } from "./writing-rules";
 import { LicenseCard } from "./license-card";
 import { ADMIN_PANEL_URL, BUYER_AREA_URL, licenseView, serverInfo } from "@/lib/server-info";
 import pkg from "@/package.json";
-import { ChatgptAccount } from "./chatgpt-account";
+import { WriterCard } from "./writer-card";
+import { writerSetup } from "./actions";
 import { GoogleAccounts } from "./google-accounts";
 import { VoiceSetting } from "./voice-setting";
 import { getKv } from "@/lib/kalo";
@@ -59,7 +60,7 @@ export default async function PengaturanPage() {
           }))}
         />
 
-        <ChatgptAccount email={getSettings().chatgpt?.email ?? null} connectedAt={getSettings().chatgpt ? fmt.format(new Date(getSettings().chatgpt!.connectedAt)) : null} />
+        <WriterCard initial={await writerSetup()} chatgpt={{ email: getSettings().chatgpt?.email ?? null, connectedAt: getSettings().chatgpt ? fmt.format(new Date(getSettings().chatgpt!.connectedAt)) : null }} />
 
         <WritingRulesCard initial={writingRules()} />
 

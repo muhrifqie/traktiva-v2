@@ -217,3 +217,67 @@ export async function saveWritingRules(input: z.input<typeof Writing>) {
   updateSettings({ writing: Writing.parse(input) });
   revalidatePath("/pengaturan");
 }
+
+// ---------------------------------------------------------------- Penulis AI (agents on this PC, OpenAI-compatible APIs)
+
+const WriterInput = z.object({
+  mode: z.enum(["auto", "cli", "api", "gemini"]),
+  cli: z.object({ id: z.string().regex(/^[\w.-]{1,40}$/), model: z.string().trim().max(60).optional() }).optional(),
+  api: z
+    .object({
+      preset: z.string().max(30),
+      baseUrl: z.string().trim().url().max(200),
+      model: z.string().trim().min(1, "Isi nama model.").max(80),
+      apiKey: z.string().trim().max(300).optional(), // empty = keep the saved one
+      apiKeyEnv: z.string().regex(/^[A-Z0-9_]{0,40}$/).optional(),
+    })
+    .optional(),
+});
+
+/** The card's data: what is installed on this PC, the presets, and the current choice (key masked). */
+export async function writerSetup(fresh = false) {
+  const { detectAgents, API_PRESETS } = await import("@/lib/writer-agents");
+  const { getSettings } = await import("@/lib/settings");
+  const { maskKey } = await import("@/lib/cartesia");
+  const w = getSettings().writer ?? { mode: "auto" as const };
+  const { apiKey, ...api } = w.api ?? ({} as NonNullable<typeof w.api>);
+  return {
+    detected: await detectAgents(fresh),
+    presets: API_PRESETS.map((p) => ({ ...p })),
+    current: { mode: w.mode, cli: w.cli, api: w.api ? { ...api, maskedKey: apiKey ? maskKey(apiKey) : null } : undefined },
+    chatgpt: !!getSettings().chatgpt?.profileKey,
+  };
+}
+
+function withSavedKey(input: z.infer<typeof WriterInput>, saved: { apiKey?: string } | undefined) {
+  if (!input.api) return input;
+  return { ...input, api: { ...input.api, apiKey: input.api.apiKey || (input.api.apiKeyEnv ? undefined : saved?.apiKey) } };
+}
+
+export async function saveWriter(input: z.input<typeof WriterInput>) {
+  const { getSettings, updateSettings } = await import("@/lib/settings");
+  const w = WriterInput.parse(input);
+  if (w.mode === "cli" && !w.cli) throw new Error("Pilih agen AI-nya dulu.");
+  if (w.mode === "api" && !w.api) throw new Error("Lengkapi alamat API dan model.");
+  const next = withSavedKey(w, getSettings().writer?.api);
+  updateSettings({ writer: { mode: next.mode, cli: next.mode === "cli" ? next.cli : undefined, api: next.mode === "api" ? next.api : getSettings().writer?.api } });
+  refresh();
+}
+
+/** "Tes": the same short JSON task the writer gets, on the choice in the form (saved or not). */
+export async function testWriter(input: z.input<typeof WriterInput>) {
+  const { askApi, askCli, detectAgents } = await import("@/lib/writer-agents");
+  const { getSettings } = await import("@/lib/settings");
+  const w = withSavedKey(WriterInput.parse(input), getSettings().writer?.api);
+  const prompt = 'Tulis 1 kalimat hook jualan singkat untuk "sepatu lari ringan". Balas HANYA dengan JSON ini tanpa penjelasan: {"hook":"..."}';
+  const t0 = Date.now();
+  let answer: string;
+  if (w.mode === "cli") {
+    const agent = (await detectAgents()).clis.find((a) => a.id === w.cli?.id);
+    if (!agent) throw new Error("Agen ini tidak ditemukan di PC ini.");
+    answer = await askCli(agent, prompt, w.cli?.model, 120_000);
+  } else if (w.mode === "api" && w.api) answer = await askApi(w.api, prompt, 90_000);
+  else throw new Error("Pilih agen AI atau API untuk dites.");
+  const hook = answer.match(/"hook"\s*:\s*"([^"]+)"/)?.[1];
+  return { ok: !!hook, seconds: Math.round((Date.now() - t0) / 100) / 10, answer: (hook ?? answer).slice(0, 200) };
+}

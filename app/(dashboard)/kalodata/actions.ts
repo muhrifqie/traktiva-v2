@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { accounts, kaloSessions, videoProjects } from "@/lib/db/schema";
+import { accounts, kaloSessions, showcaseProducts, videoProjects } from "@/lib/db/schema";
 import { pruneUnsaved, UNSAVED } from "@/lib/unsaved";
 import { isCountry, SHOPEE_MARKETS, type CountryCode } from "@/lib/countries";
 import { getKv, kalo, kaloRange, setKv } from "@/lib/kalo";
@@ -134,10 +134,28 @@ export async function kaloDetail(productId: string, country: string = "ID") {
   return { ...detail, cached: false };
 }
 
-/** Put a researched product into the first logged-in TikTok account's showcase. */
-export async function kaloToShowcase(productId: string) {
-  const acc = await db.select().from(accounts).where(and(eq(accounts.platform, "tiktok"), eq(accounts.status, "active"))).get();
-  if (!acc?.sessionKey) throw new Error("Belum ada akun TikTok yang login. Tambahkan di Akun Sosial.");
+/** "Tambah ke Etalase" picker: every logged-in TikTok account, how full its showcase is and whether it has this product. */
+export async function showcaseTargets(productId: string) {
+  const id = z.string().regex(/^\d{10,22}$/).parse(productId);
+  const [list, rows] = await Promise.all([
+    db.select({ id: accounts.id, username: accounts.username, avatar: accounts.avatarUrl, sessionKey: accounts.sessionKey }).from(accounts).where(and(eq(accounts.platform, "tiktok"), eq(accounts.status, "active"))),
+    db.select({ accountId: showcaseProducts.accountId, productId: showcaseProducts.productId }).from(showcaseProducts),
+  ]);
+  return list
+    .filter((a) => a.sessionKey)
+    .map((a) => ({ id: a.id, username: a.username, avatar: a.avatar, count: rows.filter((r) => r.accountId === a.id).length, has: rows.some((r) => r.accountId === a.id && r.productId === id) }));
+}
+
+/**
+ * Put a researched product into one TikTok account's showcase. The picker calls it once per chosen account (in
+ * parallel: each account has its own Chrome profile). Without accountId only a single logged-in account is accepted.
+ */
+export async function kaloToShowcase(productId: string, accountId?: number) {
+  const active = await db.select().from(accounts).where(and(eq(accounts.platform, "tiktok"), eq(accounts.status, "active")));
+  const acc = accountId ? active.find((a) => a.id === z.number().int().positive().parse(accountId)) : active.length === 1 ? active[0] : undefined;
+  if (!active.length) throw new Error("Belum ada akun TikTok yang login. Tambahkan di Akun Sosial.");
+  if (!acc) throw new Error(accountId ? "Akun ini tidak aktif lagi. Login ulang di Akun Sosial." : "Pilih akun etalasenya dulu.");
+  if (!acc.sessionKey) throw new Error(`@${acc.username} belum login. Login dulu di Akun Sosial.`);
   const { results, showcase } = await addToShowcase(acc.sessionKey, [productId]);
   // answer as soon as TikTok accepted it; copying the showcase (and downloading every cover, ~15 s) runs in the background
   void mirrorShowcase(acc.id, showcase.products).catch((e) => console.error("[etalase] sinkron gagal:", e));

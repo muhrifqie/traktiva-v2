@@ -11,6 +11,7 @@ import { getShopCache, setShopCache } from "@/lib/showcase";
 import * as tiktok from "@/lib/platforms/tiktok";
 import * as meta from "@/lib/platforms/meta";
 import * as youtube from "@/lib/platforms/youtube";
+import { reportSync } from "@/lib/sync-progress";
 
 // Accounts are only created by a real platform login (username/uid read from the session), never typed in by hand.
 
@@ -143,7 +144,9 @@ async function pruneDeletedPosts(accountId: number, videos: tiktok.TikTokVideo[]
 export async function syncTikTokAccount(id: number) {
   const a = await getAccount(id);
   if (!isProfileKey(a.sessionKey)) throw new Error("Akun ini belum login di Traktiva. Login dulu.");
-  const p = await tiktok.syncProfile(a.sessionKey, a.username);
+  reportSync(a.id, "Membuka profil");
+  const p = await tiktok.syncProfile(a.sessionKey, a.username, { onVideos: (n) => reportSync(a.id, "Video", n) });
+  reportSync(a.id, "Menyimpan", p.videos.length);
   const now = new Date();
 
   await db
@@ -286,6 +289,7 @@ export async function checkMetaSession(id: number) {
 export async function syncFacebookPages(id: number) {
   const a = await getAccount(id);
   if (a.platform !== "facebook" || !isProfileKey(a.sessionKey)) throw new Error("Akun Facebook belum login di Traktiva.");
+  reportSync(a.id, "Membaca Page");
   const list = await meta.listFacebookIdentities(a.sessionKey);
   const prev = (await getShopCache<meta.FacebookIdentities>(a.id, meta.FB_IDENTITIES))?.data.target ?? null;
   const target = list.some((x) => x.id === prev) ? prev : (list.find((x) => x.kind === "page") ?? list[0])?.id ?? null;

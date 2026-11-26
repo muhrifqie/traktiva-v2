@@ -18,7 +18,7 @@ const r = await uploadToYouTube(
     title: "Traktiva uji coba upload",
     description: "Uji coba otomatis Traktiva.\nBaris kedua deskripsi.",
     tags: ["traktiva", "uji coba"],
-    visibility: "private",
+    visibility: (process.env.YT_VIS as "public" | "private") || "private",
     madeForKids: false,
     aiContent: true,
     dryRun: true,

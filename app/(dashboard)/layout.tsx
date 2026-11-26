@@ -1,3 +1,4 @@
+import { ConnectProgress } from "./akun/connect-progress";
 import { count, eq } from "drizzle-orm";
 import { pickActive } from "@/lib/settings";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -65,6 +66,7 @@ export default async function DashboardLayout({ children }: LayoutProps<"/">) {
         </SidebarInset>
       </div>
       <StatusBar />
+      <ConnectProgress />
       <MediaLightbox />
       <CommandMenu />
     </SidebarProvider>

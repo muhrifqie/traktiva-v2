@@ -17,7 +17,10 @@ const RETRY_MIN = 10; // after a failed sync, wait this long before trying that 
 // YouTube channels: Studio is read every few hours only (4 page loads per sync; Google flags busy sessions)
 export const YOUTUBE_SYNC_EVERY_MIN = 180;
 
-const g = globalThis as unknown as { __profileTimer?: ReturnType<typeof setInterval>; __profileBusy?: boolean; __profileTried?: Map<number, number> };
+const g = globalThis as unknown as { __profileTimer?: ReturnType<typeof setInterval>; __profileBusy?: boolean; __profileTried?: Map<number, number>; __profileNow?: ProfileSyncRun | null };
+type ProfileSyncRun = { platform: "tiktok" | "youtube"; username: string; startedAt: number };
+/** The account being synced right now (null when idle), for the status bar. */
+export const profileSyncNow = () => g.__profileNow ?? null;
 
 /** Sync the accounts that are due. Safe to call any time (no-op while a sync or an upload runs). */
 export async function tickProfileSync() {
@@ -47,6 +50,7 @@ export async function tickProfileSync() {
         .get();
       if (!newPost && !newUpload && now - last < PROFILE_SYNC_EVERY_MIN * 60_000) continue;
       tried.set(a.id, now);
+      g.__profileNow = { platform: "tiktok", username: a.username, startedAt: now };
       await syncTikTokAccount(a.id).catch((e) => console.warn("[profil-sync]", a.username, e instanceof Error ? e.message : e));
     }
 
@@ -60,10 +64,12 @@ export async function tickProfileSync() {
       const last = (await db.select({ at: shopCache.capturedAt }).from(shopCache).where(and(eq(shopCache.accountId, a.id), eq(shopCache.key, YT_CACHE))).get())?.at.getTime() ?? 0;
       if (now - last < YOUTUBE_SYNC_EVERY_MIN * 60_000) continue;
       tried.set(a.id, now);
+      g.__profileNow = { platform: "youtube", username: a.username, startedAt: now };
       await syncYouTubeAccount(a.id).catch((e) => console.warn("[youtube-sync]", a.username, e instanceof Error ? e.message : e));
     }
   } finally {
     g.__profileBusy = false;
+    g.__profileNow = null;
   }
 }
 

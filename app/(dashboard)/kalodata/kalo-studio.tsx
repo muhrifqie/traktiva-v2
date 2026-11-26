@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  CircleAlert, Download, ImageIcon, Play, Copy, ExternalLink, KeyRound, Loader2, Plus, RefreshCw, Sparkles, Store, Trash2, TrendingUp, UserPlus, Users, Video,
+  CircleAlert, Download, ImageIcon, Play, Copy, ExternalLink, KeyRound, Loader2, Plus, RefreshCw, Sparkles, Trash2, TrendingUp, UserPlus, Users, Video,
 } from "lucide-react";
 import { KaloDataIcon } from "@/components/brand-icons";
 import { toast } from "sonner";
@@ -18,7 +18,7 @@ import { EmptyBox, iconBtn, ListBox, pillBtn, ProductRow, RefreshButton, Refresh
 import type { KaloProductInfo } from "@/lib/kalodata";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  addKaloSession, checkKaloSessions, deleteKaloSession, createVideoFromKalo, kaloToShowcase, kaloVideoUrl, searchKalo, signupKaloSession, type KaloDetail, type KaloHit,
+  addKaloSession, checkKaloSessions, deleteKaloSession, createVideoFromKalo, kaloVideoUrl, searchKalo, signupKaloSession, type KaloDetail, type KaloHit,
 } from "./actions";
 
 export type TikTokTab = "produk" | "video" | "cari" | "tersimpan";
@@ -170,7 +170,7 @@ export function KaloStudio({
                         saved={savedKeys.includes(`${r.id}:${cc}`)}
                         product={{ productId: r.id, country: cc, source: "kalodata", title: r.name, image: kaloProductImg(r.id), metrics: { gmv30: money(cc).format(r.gmv30) } }}
                       />
-                      <ShowcaseButton productId={r.id} />
+                      <ShowcaseButton productId={r.id} name={r.name} />
                       <a href={productUrl(r.id)} target="_blank" rel="noreferrer" title="Buka di TikTok" className={iconBtn}><ExternalLink className="size-3.5" /></a>
                       <button type="button" title="Salin ID produk" onClick={() => { void navigator.clipboard.writeText(r.id); toast.success("ID produk disalin"); }} className={iconBtn}><Copy className="size-3.5" /></button>
                     </>
@@ -257,7 +257,6 @@ const initials = (s: string) => s.replace(/^@/, "").slice(0, 2).toUpperCase();
 
 function DetailDialog({ hit, country, savedKeys, onClose }: { hit: KaloHit | null; country: string; savedKeys: string[]; onClose: () => void }) {
   const [state, setState] = useState<{ id: string; data?: KaloDetail & { cached: boolean }; error?: string } | null>(null);
-  const [adding, setAdding] = useState(false);
   const [photo, setPhoto] = useState(0);
   const [making, startMaking] = useTransition();
   const makeVideo = () =>
@@ -296,19 +295,6 @@ function DetailDialog({ hit, country, savedKeys, onClose }: { hit: KaloHit | nul
   };
   const data = current?.data;
   const t = data?.total;
-  const toShowcase = async () => {
-    if (!hit) return;
-    setAdding(true);
-    try {
-      const r = await kaloToShowcase(hit.id);
-      if (r.ok) toast.success(`Masuk etalase @${r.account}`);
-      else toast.error(r.message);
-    } catch (e) {
-      toast.error(errMsg(e));
-    } finally {
-      setAdding(false);
-    }
-  };
 
   return (
     <Dialog open={!!hit} onOpenChange={(o) => !o && onClose()}>
@@ -345,9 +331,7 @@ function DetailDialog({ hit, country, savedKeys, onClose }: { hit: KaloHit | nul
                 >
                   {making ? <><Loader2 className="size-3.5 animate-spin" /> Meracik bahan...</> : <><Sparkles className="size-3.5" /> Buatkan videonya</>}
                 </button>
-                <button type="button" disabled={adding} onClick={toShowcase} className="flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium hover:bg-accent disabled:opacity-60">
-                  {adding ? <Loader2 className="size-3.5 animate-spin" /> : <Store className="size-3.5" />} Tambah ke Etalase
-                </button>
+                <ShowcaseButton productId={hit.id} name={hit.name} variant="outline" />
                 <a href={productUrl(hit.id)} target="_blank" rel="noreferrer" className="flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium hover:bg-accent"><ExternalLink className="size-3.5" /> Buka di TikTok</a>
                 <button type="button" onClick={() => { void navigator.clipboard.writeText(hit.id); toast.success("ID produk disalin"); }} className="flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium hover:bg-accent"><Copy className="size-3.5" /> Salin ID</button>
                 <SaveProductButton

@@ -84,10 +84,11 @@ function hardware() {
   return hwPromise;
 }
 
-function readStore() {
+async function readStore() {
   try {
     const s = JSON.parse(fs.readFileSync(STORE(), "utf8"));
-    const pem = safeStorage.decryptString(Buffer.from(s.key, "base64"));
+    // async decrypt (the sync one is deprecated in Electron 45); reads keys saved by encryptString too
+    const { result: pem } = await safeStorage.decryptStringAsync(Buffer.from(s.key, "base64"));
     return { deviceId: s.deviceId, privateKey: crypto.createPrivateKey(pem) };
   } catch {
     return null;
@@ -161,7 +162,7 @@ const NEEDS_KEY = new Set(["device_unknown", "bad_signature", "revoked", "invali
 
 /** Signed challenge → session token. Returns { ok, payload } or { ok:false, error, message, needKey, offline }. */
 async function session() {
-  const dev = readStore();
+  const dev = await readStore();
   if (!dev) return { ok: false, error: "not_activated", message: "Masukkan key lisensi untuk mulai memakai Traktiva.", needKey: true };
   try {
     const n = await post("/v1/nonce", { deviceId: dev.deviceId });
@@ -248,7 +249,7 @@ async function activate(key) {
  * then forget the local key. Offline: the slot stays taken until the admin resets it.
  */
 async function release() {
-  const dev = readStore();
+  const dev = await readStore();
   clearInterval(state.timer);
   if (dev) {
     try {

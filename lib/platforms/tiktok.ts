@@ -281,7 +281,7 @@ async function readUserDetail(page: Page) {
  * profile + video + playlist data. Headless renders fine once the profile is logged in; an anonymous
  * profile gets a blank page, which is why only logged-in accounts can sync.
  */
-export async function syncProfile(sessionKey: string, username: string, { maxVideos = 200 } = {}): Promise<TikTokProfile> {
+export async function syncProfile(sessionKey: string, username: string, { maxVideos = 200, onVideos }: { maxVideos?: number; onVideos?: (n: number) => void } = {}): Promise<TikTokProfile> {
   return withProfile(sessionKey, { headless: true }, async (ctx) => {
     const page = ctx.pages()[0] ?? (await ctx.newPage());
     const videos = new Map<string, TikTokVideo>();
@@ -303,6 +303,7 @@ export async function syncProfile(sessionKey: string, username: string, { maxVid
         for (const it of j.itemList ?? []) videos.set(String(it.id), mapVideo(it));
         hasMore = !!j.hasMore;
         pages++;
+        onVideos?.(videos.size);
       } else {
         playlists = j.playList ?? j.playlists ?? [];
       }

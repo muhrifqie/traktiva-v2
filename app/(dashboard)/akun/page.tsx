@@ -7,7 +7,7 @@ import { PLATFORM } from "@/lib/platforms";
 import { db } from "@/lib/db";
 import { accounts, PLATFORMS, type Account } from "@/lib/db/schema";
 import { AccountActions } from "./row-actions";
-import { ConnectTile, TikTokConnectButton } from "./tiktok-connect";
+import { AddAccountButton, ConnectTile } from "./tiktok-connect";
 
 export const dynamic = "force-dynamic";
 
@@ -102,7 +102,7 @@ export default async function AkunPage({ searchParams }: PageProps<"/akun">) {
   return (
     <>
       <PageHeader slug="akun">
-        <TikTokConnectButton />
+        <AddAccountButton counts={Object.fromEntries(counts.map(({ p, n }) => [p, n]))} />
       </PageHeader>
 
       <div className="-mt-2 flex flex-wrap items-center gap-2">

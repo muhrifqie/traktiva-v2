@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { accountPosts, accounts, accountStats } from "@/lib/db/schema";
 import { syncStudio, YT_CACHE, type StudioSync, type YouTubeCache } from "@/lib/platforms/youtube-studio";
 import { setShopCache } from "@/lib/showcase";
+import { reportSync } from "@/lib/sync-progress";
 
 // one sync per channel at a time: a second caller (login flow, page auto-sync in another window, the 3-hour
 // timer) waits for the running one instead of failing on the locked Chrome profile
@@ -31,7 +32,8 @@ async function runSync(id: number) {
 
   let r: StudioSync;
   try {
-    r = await syncStudio(a.sessionKey, a.externalId);
+    reportSync(a.id, "Membuka YouTube Studio");
+    r = await syncStudio(a.sessionKey, a.externalId, (stage, n) => reportSync(a.id, stage, n));
   } catch (e) {
     if (/Sesi YouTube habis/.test(String(e))) await db.update(accounts).set({ status: "need_login" }).where(eq(accounts.id, a.id));
     throw e;

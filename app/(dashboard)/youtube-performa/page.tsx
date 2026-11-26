@@ -8,7 +8,7 @@ import { YouTubeTabs } from "@/components/platform-tabs";
 import { PlatformIcon } from "@/components/platform-icon";
 import { db } from "@/lib/db";
 import { accountPosts, accounts, type Account } from "@/lib/db/schema";
-import { YT_CACHE, type InsightCard, type YouTubeCache } from "@/lib/platforms/youtube-studio";
+import { YT_CACHE, YT_CARD, ytSummary, type InsightCard, type YouTubeCache } from "@/lib/platforms/youtube-studio";
 import { getShopCache } from "@/lib/showcase";
 import { DailyBars } from "../beranda/charts";
 import { ChannelSelect } from "./channel-select";
@@ -38,18 +38,18 @@ function idNum(s: string | undefined) {
 const cards = (d: YouTubeCache) => [...d.insight.overview, ...d.insight.shorts];
 const card = (d: YouTubeCache, re: RegExp) => cards(d).find((c) => re.test(c.title));
 /** daily views of the last 28 days (overview chart) */
-const viewSeries = (d: YouTubeCache) => d.insight.overview.find((c) => c.series && /^Penayangan$/i.test(c.title))?.series?.points ?? [];
+const viewSeries = (d: YouTubeCache) => d.insight.overview.find((c) => c.series && YT_CARD.views.test(c.title))?.series?.points ?? [];
 function stats(c: Channel) {
   const d = c.cache?.data;
   if (!d) return null;
-  const stay = cards(d).flatMap((x) => x.metrics).find((m) => /tetap menonton/i.test(m.label ?? ""));
+  const sum = ytSummary(d); // both Studio languages (Indonesian / English)
   return {
-    subscribers: d.channel.subscribers,
+    subscribers: sum.subscribers,
     videos: c.posts.length,
     shorts: c.posts.filter((p) => d.types[p.externalId] === "short").length,
     views28: viewSeries(d).reduce((s, [, n]) => s + n, 0),
-    hours28: idNum(card(d, /waktu tonton/i)?.metrics[0]?.value) ?? 0,
-    stay: stay?.value ?? null,
+    hours28: sum.hours28,
+    stay: sum.stay,
     monetization: d.monetization,
   };
 }
@@ -190,7 +190,7 @@ function VideoTable({ rows, channelOf }: { rows: { p: Post; type: keyof typeof T
                     )}
                   </td>
                 )}
-                <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{p.postedAt ? dateFmt.format(p.postedAt) : "Draf"}</td>
+                <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{p.postedAt ? dateFmt.format(p.postedAt) : "Belum tayang"}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{dur(p.durationSec)}</td>
                 <td className="px-3 py-2 text-right font-medium tabular-nums">{num.format(p.views)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{num.format(p.likes)}</td>
@@ -376,19 +376,19 @@ function OneChannel({ c }: { c: Channel }) {
     if (x) all.filter((y) => y.title === x.title).forEach((y) => used.add(y)); // the same card can come twice
     return x;
   };
-  const views = take(/^Penayangan$/i);
+  const views = take(YT_CARD.views);
   const kpis = [
-    { icon: Clock, label: "Jam tonton", card: take(/waktu tonton/i) },
-    { icon: UserPlus, label: "Subscriber baru", card: take(/^Subscriber$/i) },
-    { icon: Zap, label: "Penayangan 48 jam", card: take(/48 jam/i) },
-    { icon: UsersRound, label: "Audiens bulanan", card: take(/audiens/i) },
+    { icon: Clock, label: "Jam tonton", card: take(YT_CARD.hours) },
+    { icon: UserPlus, label: "Subscriber baru", card: take(YT_CARD.newSubs) },
+    { icon: Zap, label: "Penayangan 48 jam", card: take(YT_CARD.views48) },
+    { icon: UsersRound, label: "Audiens bulanan", card: take(YT_CARD.audience) },
   ];
-  const stay = take(/berinteraksi/i);
-  const traffic = take(/menemukan/i);
-  const popular = [take(/konten populer/i), take(/terpopuler/i), take(/ditonton sekarang/i)].flatMap((x) => x?.rows ?? []);
+  const stay = take(YT_CARD.interact);
+  const traffic = take(YT_CARD.traffic);
+  const popular = [take(YT_CARD.popular), take(YT_CARD.topShorts), take(YT_CARD.now)].flatMap((x) => x?.rows ?? []);
   const top = popular.filter((r, i) => popular.findIndex((y) => y.label === r.label) === i).slice(0, 5);
-  take(/total subscriber/i); // same number as the Subscriber tile
-  take(/performa video terbaru/i); // Studio's per-video teaser: the table below has every video
+  take(YT_CARD.totalSubs); // same number as the Subscriber tile
+  take(YT_CARD.recent); // Studio's per-video teaser: the table below has every video
   const rest = all.filter((x, i) => !used.has(x) && all.findIndex((y) => y.title === x.title) === i);
   const metric = (x?: InsightCard) => x?.metrics[0]?.value ?? "—";
   const [stayPct, skipPct] = [stay?.metrics[0], stay?.metrics[1]];
